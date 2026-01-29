@@ -1,0 +1,439 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================================
+// Auth & User Models
+// ============================================================================
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  authAccounts     AuthAccount[]
+  oauthTokens      OAuthToken[]
+  dataSources      DataSource[]
+  fundingInstruments FundingInstrument[]
+  subscriptions    Subscription[]
+  subscriptionCharges SubscriptionCharge[]
+  transactions     Transaction[]
+  allocationPlans  AllocationPlan[]
+  ledgerEntries    LedgerEntry[]
+  featureFlags     UserFeatureFlag[]
+
+  @@index([email])
+}
+
+enum AuthProvider {
+  google
+  apple
+  microsoft
+}
+
+model AuthAccount {
+  id             String       @id @default(cuid())
+  userId         String
+  provider       AuthProvider
+  providerUserId String
+  email          String
+  createdAt      DateTime     @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerUserId])
+  @@index([userId])
+}
+
+enum OAuthProvider {
+  gmail
+  outlook
+}
+
+model OAuthToken {
+  id              String        @id @default(cuid())
+  userId          String
+  provider        OAuthProvider
+  accessTokenEnc  String        @db.Text
+  refreshTokenEnc String        @db.Text
+  expiry          DateTime
+  scopes          String[]
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, provider])
+  @@index([userId])
+}
+
+enum DataSourceType {
+  gmail
+  outlook
+  imap
+  sms
+  csv
+  eml_upload
+}
+
+enum DataSourceStatus {
+  active
+  error
+  disabled
+}
+
+model DataSource {
+  id        String           @id @default(cuid())
+  userId    String
+  type      DataSourceType
+  status    DataSourceStatus @default(active)
+  config    Json? // For IMAP credentials, etc.
+  lastSyncAt DateTime?
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+// ============================================================================
+// Funding & Wallet Models
+// ============================================================================
+
+enum FundingInstrumentType {
+  card
+  bank
+}
+
+enum CardBrand {
+  Visa
+  Mastercard
+  Amex
+  Discover
+  Bank
+  Unknown
+}
+
+model FundingInstrument {
+  id              String                @id @default(cuid())
+  userId          String
+  type            FundingInstrumentType
+  displayName     String
+  brand           CardBrand
+  last4           String
+  networkArt      String? // URL or identifier for card network logo
+  issuerColorHint String? // Hex color for card UI
+  isDefault       Boolean               @default(false)
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+
+  user                User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subscriptionCharges SubscriptionCharge[]
+
+  @@index([userId])
+}
+
+// ============================================================================
+// Merchant & Subscription Models
+// ============================================================================
+
+model Merchant {
+  id                        String    @id @default(cuid())
+  canonicalName             String    @unique
+  fingerprintKeys           Json // { domains: [], descriptors: [], patterns: [] }
+  logo                      String? // URL or path
+  cancellationDifficulty    Int       @default(3) // 1-5
+  difficultyLastUpdatedAt   DateTime  @default(now())
+  cancellationPlaybook      Json? // { url, steps, expectedEndState, retentionSteps, requiresLogin }
+  createdAt                 DateTime  @default(now())
+  updatedAt                 DateTime  @updatedAt
+
+  subscriptions       Subscription[]
+  subscriptionCharges SubscriptionCharge[]
+  cancelAttempts      CancelAttempt[]
+  proofArtifacts      ProofArtifact[]
+
+  @@index([canonicalName])
+}
+
+enum SubscriptionStatus {
+  active
+  trial
+  canceled
+  paused
+}
+
+enum SubscriptionCadence {
+  monthly
+  yearly
+  weekly
+  unknown
+}
+
+model Subscription {
+  id          String              @id @default(cuid())
+  userId      String
+  merchantId  String
+  status      SubscriptionStatus
+  cadence     SubscriptionCadence @default(unknown)
+  renewalDate DateTime?
+  startedAt   DateTime            @default(now())
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+
+  user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  merchant        Merchant         @relation(fields: [merchantId], references: [id])
+  trial           Trial?
+  priceHistory    PriceHistory[]
+  cancelAttempts  CancelAttempt[]
+  allocationPlans AllocationPlan[]
+
+  @@index([userId])
+  @@index([merchantId])
+  @@index([status])
+}
+
+enum BillingInterval {
+  monthly
+  yearly
+  weekly
+  unknown
+}
+
+enum InferenceSource {
+  transaction
+  email
+  sms
+}
+
+model SubscriptionCharge {
+  id                  String           @id @default(cuid())
+  userId              String
+  merchantId          String
+  merchantName        String
+  amountCents         Int
+  currency            String           @default("USD")
+  billingInterval     BillingInterval  @default(unknown)
+  chargeTimestamp     DateTime
+  fundingInstrumentId String
+  inferenceSource     InferenceSource
+  confidenceScore     Float            @default(1.0) // 0.0 to 1.0
+  evidenceRef         String? // Reference to raw transaction, email, or SMS
+  createdAt           DateTime         @default(now())
+
+  user              User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  merchant          Merchant          @relation(fields: [merchantId], references: [id])
+  fundingInstrument FundingInstrument @relation(fields: [fundingInstrumentId], references: [id])
+
+  @@index([userId])
+  @@index([merchantId])
+  @@index([fundingInstrumentId])
+  @@index([chargeTimestamp])
+}
+
+// ============================================================================
+// Transaction & Trial Models
+// ============================================================================
+
+model Transaction {
+  id              String   @id @default(cuid())
+  userId          String
+  merchantNameRaw String
+  amountCents     Int
+  date            DateTime
+  source          String // e.g., "csv_import", "plaid"
+  rawData         Json? // Original transaction data
+  createdAt       DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([date])
+}
+
+model Trial {
+  id             String   @id @default(cuid())
+  subscriptionId String   @unique
+  trialEndDate   DateTime
+  detectedFrom   String // e.g., "email", "sms"
+  decisionRuleId String?  @unique
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  subscription   Subscription   @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  decisionRule   DecisionRule?
+
+  @@index([trialEndDate])
+}
+
+enum DecisionRuleType {
+  autoCancel
+  convertIfUsage
+  convertIfBalance
+  downgrade
+}
+
+model DecisionRule {
+  id               String           @id @default(cuid())
+  trialId          String           @unique
+  type             DecisionRuleType
+  usageThreshold   Int? // For convertIfUsage
+  balanceThreshold Int? // For convertIfBalance in cents
+  runAtDate        DateTime
+  executed         Boolean          @default(false)
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+
+  trial Trial @relation(fields: [trialId], references: [id], onDelete: Cascade)
+
+  @@index([runAtDate, executed])
+}
+
+// ============================================================================
+// Price History
+// ============================================================================
+
+model PriceHistory {
+  id             String   @id @default(cuid())
+  subscriptionId String
+  month          String // Format: "YYYY-MM"
+  amountCents    Int
+  createdAt      DateTime @default(now())
+
+  subscription Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+
+  @@unique([subscriptionId, month])
+  @@index([subscriptionId])
+}
+
+// ============================================================================
+// Cancellation Spine
+// ============================================================================
+
+enum CancelMethod {
+  assisted
+  manual
+}
+
+enum CancelStatus {
+  in_progress
+  proof_uploaded
+  confirmed
+  failed
+}
+
+model CancelAttempt {
+  id               String        @id @default(cuid())
+  subscriptionId   String
+  merchantId       String
+  startedAt        DateTime      @default(now())
+  method           CancelMethod
+  status           CancelStatus  @default(in_progress)
+  proofArtifactId  String?       @unique
+  cancellationUrl  String?
+  notes            String?       @db.Text
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  subscription   Subscription   @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  merchant       Merchant       @relation(fields: [merchantId], references: [id])
+  proofArtifact  ProofArtifact? @relation(fields: [proofArtifactId], references: [id])
+
+  @@index([subscriptionId])
+  @@index([merchantId])
+  @@index([status])
+}
+
+enum ProofFileType {
+  image
+  email
+}
+
+model ProofArtifact {
+  id              String        @id @default(cuid())
+  merchantId      String
+  cancelAttemptId String        @unique
+  fileType        ProofFileType
+  fileUri         String
+  uploadedAt      DateTime      @default(now())
+  extractedText   String?       @db.Text
+  verified        Boolean       @default(false)
+  createdAt       DateTime      @default(now())
+
+  merchant      Merchant       @relation(fields: [merchantId], references: [id])
+  cancelAttempt CancelAttempt?
+
+  @@index([merchantId])
+}
+
+// ============================================================================
+// Reallocation & Ledger
+// ============================================================================
+
+enum AllocationTarget {
+  savings
+  debt
+  investing
+  subscription
+}
+
+model AllocationPlan {
+  id             String           @id @default(cuid())
+  userId         String
+  subscriptionId String?
+  month          String // Format: "YYYY-MM"
+  amountCents    Int
+  target         AllocationTarget
+  note           String?          @db.Text
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subscription Subscription? @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([month])
+}
+
+model LedgerEntry {
+  id             String   @id @default(cuid())
+  userId         String
+  month          String // Format: "YYYY-MM"
+  reclaimedCents Int
+  allocatedCents Int
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, month])
+  @@index([userId])
+}
+
+// ============================================================================
+// Feature Flags
+// ============================================================================
+
+model UserFeatureFlag {
+  id        String   @id @default(cuid())
+  userId    String
+  flagKey   String
+  enabled   Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, flagKey])
+  @@index([userId])
+}

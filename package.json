@@ -1,0 +1,37 @@
+{
+  "name": "ezer",
+  "version": "1.0.0",
+  "private": true,
+  "description": "EZER - Turn subscriptions into explicit decisions",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "test": "turbo run test",
+    "lint": "turbo run lint",
+    "clean": "turbo run clean && rm -rf node_modules",
+    "db:migrate": "pnpm --filter @ezer/db migrate",
+    "db:seed": "pnpm --filter @ezer/db seed",
+    "db:studio": "pnpm --filter @ezer/db studio",
+    "docker:up": "docker-compose up -d",
+    "docker:down": "docker-compose down",
+    "setup": "pnpm install && pnpm docker:up && sleep 5 && pnpm db:migrate && pnpm db:seed",
+    "mobile": "pnpm --filter @ezer/mobile start --lan",
+    "mobile:tunnel": "pnpm --filter @ezer/mobile start --tunnel",
+    "dev:mobile": "pnpm --filter @ezer/mobile dev --lan",
+    "dev:api": "pnpm --filter @ezer/api dev",
+    "install:all": "pnpm install"
+  },
+  "devDependencies": {
+    "turbo": "^2.0.0",
+    "typescript": "^5.3.3"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "pnpm": ">=8.0.0"
+  },
+  "packageManager": "pnpm@8.15.0"
+}
