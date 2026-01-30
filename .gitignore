@@ -35,6 +35,7 @@ pnpm-debug.log*
 # Expo
 .expo
 .expo-shared
+apps/mobile/local-packages
 
 # Prisma
 prisma/migrations

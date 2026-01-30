@@ -33,5 +33,9 @@
     "node": ">=18.0.0",
     "pnpm": ">=8.0.0"
   },
-  "packageManager": "pnpm@8.15.0"
+  "packageManager": "pnpm@8.15.0",
+  "dependencies": {
+    "jimp": "^1.6.0",
+    "pngjs": "^7.0.0"
+  }
 }
