@@ -11,23 +11,46 @@
       "resizeMode": "contain",
       "backgroundColor": "#F7F7F5"
     },
-    "assetBundlePatterns": ["**/*"],
+    "assetBundlePatterns": [
+      "**/*"
+    ],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.ezer.app"
+      "bundleIdentifier": "com.ezer.app",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#F7F7F5"
       },
-      "package": "com.ezer.app"
+      "package": "com.ezer.app",
+      "permissions": [
+        "android.permission.RECORD_AUDIO"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png",
       "bundler": "metro"
     },
     "scheme": "ezer",
-    "plugins": ["expo-router"]
+    "plugins": [
+      "expo-router",
+      "expo-image-picker"
+    ],
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "extra": {
+      "router": {
+        "origin": false
+      },
+      "eas": {
+        "projectId": "37fb7548-df7c-4bff-a745-98b927cc1d84"
+      }
+    },
+    "owner": "ch6ze"
   }
 }
