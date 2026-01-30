@@ -94,11 +94,8 @@ export const api = {
   },
 
   async uploadProof(attemptId: string, file: FormData) {
-    const { data } = await client.post(`/cancel-attempts/${attemptId}/proof`, file, {
-      headers: {
-        'Content-Type': 'multipart/form-data',
-      },
-    });
+    // Let axios/React Native set the Content-Type (including boundary)
+    const { data } = await client.post(`/cancel-attempts/${attemptId}/proof`, file);
     return data;
   },
 

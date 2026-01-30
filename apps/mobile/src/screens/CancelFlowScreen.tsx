@@ -44,7 +44,8 @@ export default function CancelFlowScreen({ route, navigation }: any) {
         await api.uploadProof(attemptId, formData);
         Alert.alert('Success', 'Proof uploaded');
       } catch (error: any) {
-        Alert.alert('Error', error.message);
+        const msg = error?.response?.data?.error || error?.message || 'Upload failed';
+        Alert.alert('Error', msg);
       }
     }
   };
