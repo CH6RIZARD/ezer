@@ -12,25 +12,22 @@
       "extends": "base",
       "developmentClient": true,
       "distribution": "internal",
-      "env": {
-        "NPM_CONFIG_LEGACY_PEER_DEPS": "true"
-      },
       "ios": {
-        "simulator": false
+        "simulator": false,
+        "image": "macos-ventura-13.6-xcode-15.2"
       },
       "android": {
-        "buildType": "apk"
+        "buildType": "apk",
+        "image": "ubuntu-22.04-jdk-17-ndk-r26b"
       }
     },
     "development-simulator": {
       "extends": "base",
       "developmentClient": true,
       "distribution": "internal",
-      "env": {
-        "NPM_CONFIG_LEGACY_PEER_DEPS": "true"
-      },
       "ios": {
-        "simulator": true
+        "simulator": true,
+        "image": "macos-ventura-13.6-xcode-15.2"
       }
     },
     "preview": {
