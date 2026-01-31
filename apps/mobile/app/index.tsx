@@ -1,44 +1,109 @@
-import React from 'react';
-import { NavigationContainer } from '@react-navigation/native';
-import { createStackNavigator } from '@react-navigation/stack';
-import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { StatusBar } from 'expo-status-bar';
-import OnboardingScreen from '../src/screens/OnboardingScreen';
-import HomeScreen from '../src/screens/HomeScreen';
-import WalletScreen from '../src/screens/WalletScreen';
-import CardDetailScreen from '../src/screens/CardDetailScreen';
-import RisksScreen from '../src/screens/RisksScreen';
-import TrialsScreen from '../src/screens/TrialsScreen';
-import TrialDecisionScreen from '../src/screens/TrialDecisionScreen';
-import SubscriptionDetailScreen from '../src/screens/SubscriptionDetailScreen';
-import CancelFlowScreen from '../src/screens/CancelFlowScreen';
-import LedgerScreen from '../src/screens/LedgerScreen';
+import React, { useState } from 'react';
+import { View, StyleSheet, Alert } from 'react-native';
+import { router } from 'expo-router';
+import { Text, Button } from '@ezer/ui';
+import { theme } from '@ezer/ui';
+import { api } from '../src/api/client';
 
-const Stack = createStackNavigator();
+export default function OnboardingScreen() {
+  const [loading, setLoading] = useState(false);
 
-export default function App() {
+  const handleProviderSelect = async (provider: 'google' | 'apple' | 'microsoft') => {
+    setLoading(true);
+    try {
+      const result = await api.devLogin(provider);
+      if (result.success) {
+        const inboxProvider = provider === 'google' ? 'gmail' : provider === 'microsoft' ? 'outlook' : 'gmail';
+        await api.mockInbox(inboxProvider);
+        router.replace('/home');
+      } else {
+        Alert.alert('Error', result.error || 'Login failed');
+      }
+    } catch (error: any) {
+      Alert.alert('Error', error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
-    <SafeAreaProvider>
-      <StatusBar style="dark" />
-      <NavigationContainer independent>
-        <Stack.Navigator
-          initialRouteName="Onboarding"
-          screenOptions={{
-            headerShown: false,
-          }}
-        >
-          <Stack.Screen name="Onboarding" component={OnboardingScreen} />
-          <Stack.Screen name="Home" component={HomeScreen} />
-          <Stack.Screen name="Wallet" component={WalletScreen} />
-          <Stack.Screen name="CardDetail" component={CardDetailScreen} />
-          <Stack.Screen name="Risks" component={RisksScreen} />
-          <Stack.Screen name="Trials" component={TrialsScreen} />
-          <Stack.Screen name="TrialDecision" component={TrialDecisionScreen} />
-          <Stack.Screen name="SubscriptionDetail" component={SubscriptionDetailScreen} />
-          <Stack.Screen name="CancelFlow" component={CancelFlowScreen} />
-          <Stack.Screen name="Ledger" component={LedgerScreen} />
-        </Stack.Navigator>
-      </NavigationContainer>
-    </SafeAreaProvider>
+    <View style={styles.container}>
+      <View style={styles.content}>
+        <Text variant="huge" style={styles.title}>
+          EZER
+        </Text>
+        <Text variant="subheading" style={styles.subtitle}>
+          Turn subscriptions into explicit decisions
+        </Text>
+
+        <View style={styles.buttons}>
+          <Button
+            variant="primary"
+            size="lg"
+            onPress={() => handleProviderSelect('google')}
+            loading={loading}
+            style={styles.button}
+          >
+            Continue with Google
+          </Button>
+
+          <Button
+            variant="secondary"
+            size="lg"
+            onPress={() => handleProviderSelect('apple')}
+            loading={loading}
+            style={styles.button}
+          >
+            Continue with Apple
+          </Button>
+
+          <Button
+            variant="ghost"
+            size="lg"
+            onPress={() => handleProviderSelect('microsoft')}
+            loading={loading}
+            style={styles.button}
+          >
+            Continue with Microsoft
+          </Button>
+        </View>
+
+        <Text variant="caption" style={styles.note}>
+          DEV MODE: Using simulator for local development
+        </Text>
+      </View>
+    </View>
   );
 }
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: theme.colors.background,
+  },
+  content: {
+    flex: 1,
+    justifyContent: 'center',
+    padding: theme.spacing.xl,
+  },
+  title: {
+    textAlign: 'center',
+    marginBottom: theme.spacing.md,
+    letterSpacing: 2,
+  },
+  subtitle: {
+    textAlign: 'center',
+    color: theme.colors.textSecondary,
+    marginBottom: theme.spacing.xxl,
+  },
+  buttons: {
+    gap: theme.spacing.md,
+  },
+  button: {
+    width: '100%',
+  },
+  note: {
+    textAlign: 'center',
+    marginTop: theme.spacing.xl,
+  },
+});
