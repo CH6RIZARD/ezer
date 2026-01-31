@@ -12,16 +12,11 @@
       "extends": "base",
       "developmentClient": true,
       "distribution": "internal",
-      "env": {
-        "EAS_SKIP_EXPO_DOCTOR": "1"
-      },
       "ios": {
-        "simulator": false,
-        "image": "macos-ventura-13.6-xcode-15.2"
+        "simulator": false
       },
       "android": {
-        "buildType": "apk",
-        "gradleCommand": ":app:assembleDebug"
+        "buildType": "apk"
       }
     },
     "development-simulator": {
@@ -29,8 +24,7 @@
       "developmentClient": true,
       "distribution": "internal",
       "ios": {
-        "simulator": true,
-        "image": "macos-ventura-13.6-xcode-15.2"
+        "simulator": true
       }
     },
     "preview": {
