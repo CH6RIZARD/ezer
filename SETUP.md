@@ -18,6 +18,35 @@ docker --version  # Any recent version
 docker-compose --version
 ```
 
+### Windows: Use D: drive (if C: is low on space)
+
+**Option 1 – Move the project to D:**  
+Clone or copy the repo to `D:\ezer` and run everything from there:
+
+```powershell
+# Example: clone to D:
+cd D:\
+git clone <your-repo-url> ezer
+cd ezer
+pnpm install
+```
+
+**Option 2 – Keep project on C: but use D: for temp/cache**  
+Run commands via the helper script so `TMP`/`TEMP` point to `D:\tmp` and C: doesn’t fill up:
+
+```powershell
+# From repo root (e.g. D:\ezer or C:\Users\...\ezer)
+.\run-with-d-temp.ps1 pnpm mobile
+.\run-with-d-temp.ps1 pnpm mobile:web
+.\run-with-d-temp.ps1 pnpm dev
+.\run-with-d-temp.ps1 pnpm dev:api
+.\run-with-d-temp.ps1 pnpm docker:up
+.\run-with-d-temp.ps1 pnpm db:migrate
+.\run-with-d-temp.ps1 pnpm db:seed
+```
+
+The script creates `D:\tmp` if needed and runs whatever you pass to it. Use it for any command that might use a lot of temp space (Expo, Node, etc.).
+
 ## Step-by-Step Setup
 
 ### 1. Install Dependencies

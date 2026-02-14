@@ -1,3 +1,5 @@
+# Restore apps/mobile/package.json (run from repo root: .\apps\mobile\fix-package.ps1)
+$json = @'
 {
   "name": "@ezer/mobile",
   "version": "1.0.0",
@@ -7,19 +9,16 @@
     "start": "expo start",
     "android": "expo start --android",
     "ios": "expo start --ios",
-    "web": "expo start --web --clear --port 8082",
+    "web": "expo start --web",
     "expo-go": "expo start --dev-client"
   },
   "dependencies": {
     "@expo/vector-icons": "15.0.3",
-    "@react-native-async-storage/async-storage": "^2.1.2",
     "@react-navigation/bottom-tabs": "7.10.1",
     "@react-navigation/native": "7.1.28",
     "expo": "54.0.32",
-    "expo-build-properties": "~0.14.0",
     "expo-font": "14.0.11",
     "expo-image-picker": "17.0.10",
-    "expo-linear-gradient": "~14.0.1",
     "expo-router": "6.0.22",
     "expo-status-bar": "3.0.9",
     "react": "19.1.0",
@@ -35,8 +34,11 @@
   "devDependencies": {
     "@babel/core": "7.28.6",
     "@types/react": "19.1.17",
-    "babel-plugin-module-resolver": "^5.0.2",
     "babel-preset-expo": "54.0.10",
     "typescript": "5.9.3"
   }
 }
+'@
+$dir = Split-Path -Parent $MyInvocation.MyCommand.Path
+[System.IO.File]::WriteAllText("$dir\package.json", $json)
+Write-Host "Wrote package.json"

@@ -1,149 +1,99 @@
-import React, { useState } from 'react';
-import { View, Text as RNText, StyleSheet, Alert, Pressable, ActivityIndicator } from 'react-native';
-import { router } from 'expo-router';
+// =============================================================================
+// EZER Mobile App - Onboarding Screen
+// Entry point with OAuth provider selection (DEV MODE: bypasses to tabs)
+// =============================================================================
 
-// Use basic RN components to avoid module resolution issues on web
-const COLORS = {
-  charcoal: '#1F2933',
-  offWhite: '#F7F7F5',
-  softGold: '#C4A15A',
-  gray600: '#4B5563',
-};
+import React, { useState } from 'react';
+import { View, Text, Pressable, ActivityIndicator } from 'react-native';
+import { router } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useTheme } from '../utils/ThemeContext';
+import { Button } from '../components';
 
 export default function OnboardingScreen() {
-  const [loading, setLoading] = useState(false);
+  const insets = useSafeAreaInsets();
+  const { colors } = useTheme();
+  const [loading, setLoading] = useState<string | null>(null);
 
   const handleProviderSelect = async (provider: 'google' | 'apple' | 'microsoft') => {
-    setLoading(true);
-    try {
-      // For now, just navigate to home directly for testing
-      router.replace('/home');
-    } catch (error: any) {
-      Alert.alert('Error', error.message);
-    } finally {
-      setLoading(false);
-    }
+    setLoading(provider);
+
+    // DEV MODE: Bypass OAuth, navigate directly to tabs after short delay
+    setTimeout(() => {
+      setLoading(null);
+      router.replace('/(tabs)/home');
+    }, 500);
   };
 
   return (
-    <View style={styles.container}>
-      <View style={styles.content}>
-        <RNText style={styles.hello}>HELLO EZER</RNText>
+    <View style={{ flex: 1, backgroundColor: colors.background, paddingTop: insets.top }}>
+      <View style={{ flex: 1, justifyContent: 'center', paddingHorizontal: 32 }}>
+        {/* Logo / Title */}
+        <Text style={{ fontSize: 40, fontWeight: '700', textAlign: 'center', color: colors.text, letterSpacing: 4, marginBottom: 12 }}>EZER</Text>
+        <Text style={{ fontSize: 16, textAlign: 'center', color: colors.textSecondary, marginBottom: 48 }}>Turn subscriptions into decisions</Text>
 
-        <RNText style={styles.title}>EZER</RNText>
-        <RNText style={styles.subtitle}>
-          Turn subscriptions into explicit decisions
-        </RNText>
-
-        <View style={styles.buttons}>
-          <Pressable
-            style={[styles.button, styles.primaryButton]}
+        {/* OAuth Provider Buttons */}
+        <View style={{ gap: 16 }}>
+          <Button
+            title="Continue with Google"
+            variant="primary"
+            loading={loading === 'google'}
+            disabled={loading !== null}
             onPress={() => handleProviderSelect('google')}
-            disabled={loading}
+          />
+
+          <Pressable
+            style={{
+              paddingVertical: 16,
+              paddingHorizontal: 24,
+              borderRadius: 12,
+              alignItems: 'center',
+              justifyContent: 'center',
+              borderWidth: 1,
+              borderColor: colors.text,
+              backgroundColor: 'transparent',
+              minHeight: 52,
+              opacity: loading !== null ? 0.5 : 1,
+            }}
+            onPress={() => handleProviderSelect('apple')}
+            disabled={loading !== null}
           >
-            {loading ? (
-              <ActivityIndicator color="#FFF" />
+            {loading === 'apple' ? (
+              <ActivityIndicator color={colors.text} />
             ) : (
-              <RNText style={styles.buttonText}>Continue with Google</RNText>
+              <Text style={{ color: colors.text, fontSize: 16, fontWeight: '600' }}>Continue with Apple</Text>
             )}
           </Pressable>
 
           <Pressable
-            style={[styles.button, styles.secondaryButton]}
-            onPress={() => handleProviderSelect('apple')}
-            disabled={loading}
-          >
-            <RNText style={styles.secondaryButtonText}>Continue with Apple</RNText>
-          </Pressable>
-
-          <Pressable
-            style={[styles.button, styles.ghostButton]}
+            style={{
+              paddingVertical: 16,
+              paddingHorizontal: 24,
+              borderRadius: 12,
+              alignItems: 'center',
+              justifyContent: 'center',
+              borderWidth: 1,
+              borderColor: colors.text,
+              backgroundColor: 'transparent',
+              minHeight: 52,
+              opacity: loading !== null ? 0.5 : 1,
+            }}
             onPress={() => handleProviderSelect('microsoft')}
-            disabled={loading}
+            disabled={loading !== null}
           >
-            <RNText style={styles.ghostButtonText}>Continue with Microsoft</RNText>
+            {loading === 'microsoft' ? (
+              <ActivityIndicator color={colors.text} />
+            ) : (
+              <Text style={{ color: colors.text, fontSize: 16, fontWeight: '600' }}>Continue with Microsoft</Text>
+            )}
           </Pressable>
         </View>
+      </View>
 
-        <RNText style={styles.note}>
-          DEV MODE: Using simulator for local development
-        </RNText>
+      {/* Dev Mode Indicator */}
+      <View style={{ paddingBottom: 32, alignItems: 'center' }}>
+        <Text style={{ fontSize: 12, color: colors.textSecondary }}>DEV MODE: OAuth bypassed</Text>
       </View>
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: COLORS.offWhite,
-  },
-  content: {
-    flex: 1,
-    justifyContent: 'center',
-    padding: 32,
-  },
-  hello: {
-    fontSize: 64,
-    fontWeight: '900',
-    textAlign: 'center',
-    color: COLORS.softGold,
-    marginBottom: 32,
-  },
-  title: {
-    fontSize: 48,
-    fontWeight: '700',
-    textAlign: 'center',
-    color: COLORS.charcoal,
-    marginBottom: 16,
-    letterSpacing: 2,
-  },
-  subtitle: {
-    fontSize: 18,
-    textAlign: 'center',
-    color: COLORS.gray600,
-    marginBottom: 48,
-  },
-  buttons: {
-    gap: 16,
-  },
-  button: {
-    paddingVertical: 16,
-    paddingHorizontal: 24,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  primaryButton: {
-    backgroundColor: COLORS.softGold,
-  },
-  secondaryButton: {
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: COLORS.charcoal,
-  },
-  ghostButton: {
-    backgroundColor: 'transparent',
-  },
-  buttonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  secondaryButtonText: {
-    color: COLORS.charcoal,
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  ghostButtonText: {
-    color: COLORS.charcoal,
-    fontSize: 16,
-    fontWeight: '500',
-  },
-  note: {
-    fontSize: 14,
-    textAlign: 'center',
-    color: COLORS.gray600,
-    marginTop: 32,
-  },
-});

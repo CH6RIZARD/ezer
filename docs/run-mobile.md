@@ -8,6 +8,12 @@ pnpm mobile
 
 This starts Expo in **LAN mode** (recommended for most setups).
 
+**Windows (use D: for temp to avoid C: full):** from repo root run:
+```powershell
+.\run-with-d-temp.ps1 pnpm mobile
+```
+For web: `.\run-with-d-temp.ps1 pnpm mobile:web` or use `.\apps\mobile\run-web.ps1`.
+
 ## Alternative: Tunnel Mode
 
 If LAN mode doesn't work (firewall issues, different networks):

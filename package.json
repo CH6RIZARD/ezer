@@ -21,6 +21,8 @@
     "setup": "pnpm install && pnpm docker:up && sleep 5 && pnpm db:migrate && pnpm db:seed",
     "mobile": "pnpm --filter @ezer/mobile start --lan",
     "mobile:tunnel": "pnpm --filter @ezer/mobile start --tunnel",
+    "mobile:web": "pnpm -C apps/mobile run web",
+    "mobile:expo-go": "pnpm -C apps/mobile run expo-go",
     "dev:mobile": "pnpm --filter @ezer/mobile dev --lan",
     "dev:api": "pnpm --filter @ezer/api dev",
     "install:all": "pnpm install"
