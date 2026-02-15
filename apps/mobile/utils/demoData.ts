@@ -348,14 +348,60 @@ export const demoAllocations: AllocationPlan[] = [
 ];
 
 // =============================================================================
-// Home Summary
+// Home Summary — computed from subscriptions + charges (single source of truth)
+// Dashboard and detail screens (MonthlyBurn, RiskDetail, SilentSubscriptions) use this.
 // =============================================================================
 
-export const demoHomeSummary: HomeSummary = {
-  monthlyBurnCents: 24785, // $247.85
-  next30DayRiskCents: 12499, // $124.99
-  silentSubscriptionCount: 6,
-};
+function daysUntil(date: Date): number {
+  const now = new Date();
+  const targetDate = new Date(date);
+  const diffTime = targetDate.getTime() - now.getTime();
+  return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+}
+
+export function getComputedHomeSummary(): HomeSummary {
+  // Monthly Burn: same logic as MonthlyBurn screen — sum of latest charge per active subscription
+  const monthlyBurnCents = demoSubscriptions.reduce((sum, sub) => {
+    const charges = demoCharges.filter((c) => c.merchantId === sub.merchantId);
+    const lastCharge = charges.sort(
+      (a, b) => new Date(b.chargeTimestamp).getTime() - new Date(a.chargeTimestamp).getTime()
+    )[0];
+    return sum + (lastCharge?.amountCents || 0);
+  }, 0);
+
+  // 30-Day Risk: renewals in 0–30 days + trials ending in 0–30 days (same logic as RiskDetail)
+  const riskFromRenewals = demoSubscriptions
+    .filter((sub) => {
+      const days = daysUntil(sub.renewalDate);
+      return days >= 0 && days <= 30;
+    })
+    .reduce((sum, sub) => {
+      const charges = demoCharges.filter((c) => c.merchantId === sub.merchantId);
+      const lastCharge = charges.sort(
+        (a, b) => new Date(b.chargeTimestamp).getTime() - new Date(a.chargeTimestamp).getTime()
+      )[0];
+      return sum + (lastCharge?.amountCents || 0);
+    }, 0);
+  const riskFromTrials = demoTrials
+    .filter((t) => {
+      const days = daysUntil(t.trialEndDate);
+      return days >= 0 && days <= 30;
+    })
+    .reduce((sum, t) => sum + t.amountCentsAfterTrial, 0);
+  const next30DayRiskCents = riskFromRenewals + riskFromTrials;
+
+  // Silent count: number of subscriptions we show on Silent Subscriptions screen (all active subs)
+  const silentSubscriptionCount = demoSubscriptions.length;
+
+  return {
+    monthlyBurnCents,
+    next30DayRiskCents,
+    silentSubscriptionCount,
+  };
+}
+
+/** @deprecated Use getComputedHomeSummary() so dashboard matches detail screens. */
+export const demoHomeSummary: HomeSummary = getComputedHomeSummary();
 
 // =============================================================================
 // Helper function to get merchant by ID

@@ -4,17 +4,19 @@
 // =============================================================================
 
 import React from 'react';
-import { View, Text, ScrollView, Pressable, Switch, Alert, Linking } from 'react-native';
+import { View, Text, ScrollView, Pressable, Switch, Alert, Linking, Share, Platform } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../utils/ThemeContext';
 import { useAuth } from '../utils/AuthContext';
+import { usePremium } from '../utils/PremiumContext';
 
 export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
   const { isDark, toggleTheme, colors } = useTheme();
   const { logout, user } = useAuth();
+  const { status, daysRemaining, restorePurchases } = usePremium();
 
   const handleLogout = () => {
     Alert.alert(
@@ -59,13 +61,21 @@ export default function SettingsScreen() {
   };
 
   const handleRateApp = () => {
-    // In production, link to App Store / Play Store
-    Alert.alert('Rate EZER', 'Thanks for considering rating us! This would open the app store in production.');
+    const storeUrl = Platform.OS === 'ios'
+      ? 'https://apps.apple.com/app/ezer/id6504567890'
+      : 'https://play.google.com/store/apps/details?id=com.ezer.app';
+    Linking.openURL(storeUrl);
   };
 
-  const handleShareApp = () => {
-    // In production, use Share API
-    Alert.alert('Share EZER', 'This would open the share sheet in production.');
+  const handleShareApp = async () => {
+    try {
+      await Share.share({
+        message: 'Check out EZER — it tracks your subscriptions, catches hidden charges, and helps you save automatically. https://ezer.app/download',
+        title: 'EZER - Stop Subscription Drain',
+      });
+    } catch (_) {
+      // User dismissed share sheet
+    }
   };
 
   const itemStyle = {
@@ -159,6 +169,26 @@ export default function SettingsScreen() {
         </Pressable>
       </View>
 
+      {/* Premium */}
+      <View style={{ marginHorizontal: 24, marginBottom: 24 }}>
+        <Text style={{ fontSize: 14, fontWeight: '700', color: colors.accent, marginBottom: 12, textTransform: 'uppercase', letterSpacing: 0.5 }}>Premium</Text>
+        {status === 'premium' ? (
+          <View style={itemStyle}>
+            <Ionicons name="diamond" size={24} color={colors.accent} />
+            <Text style={{ flex: 1, fontSize: 16, fontWeight: '600', color: colors.text, marginLeft: 12 }}>Premium Active</Text>
+            <Ionicons name="checkmark-circle" size={20} color={colors.accent} />
+          </View>
+        ) : (
+          <Pressable style={[itemStyle, { borderWidth: 1, borderColor: colors.accent + '30' }]} onPress={() => router.push('/screens/Paywall')}>
+            <Ionicons name="diamond-outline" size={24} color={colors.accent} />
+            <Text style={{ flex: 1, fontSize: 16, fontWeight: '600', color: colors.text, marginLeft: 12 }}>
+              {status === 'trial' ? `Upgrade to Premium (${daysRemaining}d left)` : 'Unlock Premium — $3'}
+            </Text>
+            <Ionicons name="chevron-forward" size={20} color={colors.accent} />
+          </Pressable>
+        )}
+      </View>
+
       {/* Support */}
       <View style={{ marginHorizontal: 24, marginBottom: 24 }}>
         <Text style={{ fontSize: 14, fontWeight: '700', color: colors.textSecondary, marginBottom: 12, textTransform: 'uppercase', letterSpacing: 0.5 }}>Support</Text>
@@ -180,6 +210,18 @@ export default function SettingsScreen() {
         <Pressable style={itemStyle} onPress={handleShareApp}>
           <Ionicons name="share-social-outline" size={24} color={colors.text} />
           <Text style={{ flex: 1, fontSize: 16, fontWeight: '600', color: colors.text, marginLeft: 12 }}>Share with Friends</Text>
+          <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
+        </Pressable>
+        <Pressable style={itemStyle} onPress={async () => {
+          const restored = await restorePurchases();
+          if (restored) {
+            Alert.alert('Restored', 'Your premium access has been restored.');
+          } else {
+            Alert.alert('No Purchase Found', 'We couldn\'t find a previous purchase on this account.');
+          }
+        }}>
+          <Ionicons name="refresh-outline" size={24} color={colors.text} />
+          <Text style={{ flex: 1, fontSize: 16, fontWeight: '600', color: colors.text, marginLeft: 12 }}>Restore Purchases</Text>
           <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
         </Pressable>
       </View>

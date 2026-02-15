@@ -290,13 +290,19 @@ export default function TrialDecisionScreen() {
               onPress={() => setSelected('saveHalf')}
             >
               <Text style={{ fontSize: 28 }}>💰</Text>
-              <View style={{ flex: 1 }}>
+              <View style={{ flex: 1, minWidth: 0 }}>
                 <Text style={{ fontSize: 16, fontWeight: '700', color: colors.text, marginBottom: 4 }}>
                   Pay Full, Save Half
                 </Text>
-                <Text style={{ fontSize: 14, color: colors.textSecondary, lineHeight: 20 }}>
-                  Pay ${fullPrice} subscription + automatically transfer ${halfPrice} to your savings (${totalSaveHalf} total/month)
-                </Text>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 2 }}>
+                  <Text style={{ fontSize: 14, color: colors.textSecondary }}>Pay </Text>
+                  <Text style={{ fontSize: 14, fontWeight: '600', color: colors.text }}>${fullPrice}</Text>
+                  <Text style={{ fontSize: 14, color: colors.textSecondary }}> subscription + transfer </Text>
+                  <Text style={{ fontSize: 14, fontWeight: '600', color: colors.text }}>${halfPrice}</Text>
+                  <Text style={{ fontSize: 14, color: colors.textSecondary }}> to savings (</Text>
+                  <Text style={{ fontSize: 14, fontWeight: '600', color: colors.text }}>${totalSaveHalf}</Text>
+                  <Text style={{ fontSize: 14, color: colors.textSecondary }}> total/month)</Text>
+                </View>
               </View>
               <View
                 style={{
@@ -343,13 +349,19 @@ export default function TrialDecisionScreen() {
               onPress={() => setSelected('matchFull')}
             >
               <Text style={{ fontSize: 28 }}>📈</Text>
-              <View style={{ flex: 1 }}>
+              <View style={{ flex: 1, minWidth: 0 }}>
                 <Text style={{ fontSize: 16, fontWeight: '700', color: colors.text, marginBottom: 4 }}>
                   Pay Full, Match Full
                 </Text>
-                <Text style={{ fontSize: 14, color: colors.textSecondary, lineHeight: 20 }}>
-                  Pay ${fullPrice} subscription + automatically transfer ${fullPrice} to investment (${totalMatchFull} total/month)
-                </Text>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 2 }}>
+                  <Text style={{ fontSize: 14, color: colors.textSecondary }}>Pay </Text>
+                  <Text style={{ fontSize: 14, fontWeight: '600', color: colors.text }}>${fullPrice}</Text>
+                  <Text style={{ fontSize: 14, color: colors.textSecondary }}> subscription + transfer </Text>
+                  <Text style={{ fontSize: 14, fontWeight: '600', color: colors.text }}>${fullPrice}</Text>
+                  <Text style={{ fontSize: 14, color: colors.textSecondary }}> to investment (</Text>
+                  <Text style={{ fontSize: 14, fontWeight: '600', color: colors.text }}>${totalMatchFull}</Text>
+                  <Text style={{ fontSize: 14, color: colors.textSecondary }}> total/month)</Text>
+                </View>
               </View>
               <View
                 style={{

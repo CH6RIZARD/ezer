@@ -3,14 +3,13 @@
 // Guided checklist for canceling a subscription
 // =============================================================================
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, Linking, Alert } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
-import * as ImagePicker from 'expo-image-picker';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../../utils/ThemeContext';
 import { Card, Button } from '../../components';
-import { demoMerchants } from '../../utils/demoData';
+import { demoMerchants, demoCharges } from '../../utils/demoData';
 
 interface ChecklistItem {
   id: string;
@@ -38,8 +37,15 @@ export default function CancelFlowScreen() {
     { id: '2', text: 'Navigate to Billing or Account Settings', checked: false },
     { id: '3', text: "Find 'Cancel Subscription' button", checked: false },
     { id: '4', text: 'Complete cancellation', checked: false },
-    { id: '5', text: 'Take a screenshot of confirmation', checked: false },
   ]);
+
+  const latestCharge = useMemo(
+    () =>
+      demoCharges
+        .filter((c) => c.merchantId === merchantId)
+        .sort((a, b) => new Date(b.chargeTimestamp).getTime() - new Date(a.chargeTimestamp).getTime())[0],
+    [merchantId]
+  );
 
   const handleBack = () => {
     router.back();
@@ -71,23 +77,15 @@ export default function CancelFlowScreen() {
     }
   };
 
-  const handleUploadProof = async () => {
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'],
-      allowsEditing: false,
-      quality: 0.8,
+  const handleSendToReallocate = () => {
+    router.push({
+      pathname: '/screens/Reallocate',
+      params: {
+        merchantId,
+        amountCents: (latestCharge?.amountCents ?? 0).toString(),
+        billingInterval: latestCharge?.billingInterval ?? 'monthly',
+      },
     });
-
-    if (!result.canceled && result.assets.length > 0) {
-      const imageUri = result.assets[0].uri;
-      router.push({
-        pathname: '/screens/ConfirmCancel',
-        params: {
-          merchantId,
-          proofUri: imageUri,
-        },
-      });
-    }
   };
 
   const getDifficultyLabel = (difficulty: string) => {
@@ -230,13 +228,16 @@ export default function CancelFlowScreen() {
           </Card>
         )}
 
-        {/* Upload Proof CTA */}
+        {/* Hero CTA: refunnel freed money to savings / reallocate */}
         <View style={{ marginTop: 8 }}>
           <Button
-            title="Upload Proof"
+            title="I've cancelled — choose where to send the money"
             variant="primary"
-            onPress={handleUploadProof}
+            onPress={handleSendToReallocate}
           />
+          <Text style={{ fontSize: 13, color: colors.textSecondary, textAlign: 'center', marginTop: 12 }}>
+            Send this freed amount to savings, debt paydown, or another goal.
+          </Text>
         </View>
       </ScrollView>
     </View>

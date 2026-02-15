@@ -19,6 +19,9 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { usePlaid, PlaidAccount } from '../../utils/usePlaid';
+import { useCashAdvance } from '../../contexts/CashAdvanceContext';
+import { usePremium } from '../../utils/PremiumContext';
+import { CASH_ADVANCE_MIN, CASH_ADVANCE_MAX, CASH_ADVANCE_PRESETS } from '../../constants/money';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -57,24 +60,25 @@ const CHECK_STEPS = [
   { id: 4, emoji: '✅', text: 'Finalizing your offer' },
 ];
 
-// Quick Amount Options
-const QUICK_AMOUNTS = [50, 100, 250, 500, 750, 1000, 1250, 1500];
-
-const MIN_AMOUNT_FLOW = 50;
-const MAX_AMOUNT_FLOW = 1500;
-
 function parseAmountParam(param: string | undefined): number {
   if (param == null || param === '') return 500;
   const n = parseInt(param, 10);
   if (Number.isNaN(n)) return 500;
-  return Math.max(MIN_AMOUNT_FLOW, Math.min(MAX_AMOUNT_FLOW, Math.round(n / 50) * 50));
+  return Math.max(CASH_ADVANCE_MIN, Math.min(CASH_ADVANCE_MAX, Math.round(n / 50) * 50));
 }
 
 export default function CashAdvanceFlowScreen() {
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{ amount?: string }>();
-  const initialAmount = parseAmountParam(params.amount);
   const { linkedAccounts, openPlaidLink, isLoading: isPlaidLoading } = usePlaid();
+  const cashAdvance = useCashAdvance();
+  const { status: premiumStatus, getCashAdvanceLimit } = usePremium();
+
+  const advanceLimit = getCashAdvanceLimit();
+  const initialAmount = Math.min(parseAmountParam(params.amount), advanceLimit);
+  const quickAmounts = CASH_ADVANCE_PRESETS.filter((a) => a <= advanceLimit);
+
+  // Premium: allow using flow until confirm; paywall is shown on "Check My Eligibility"
 
   const [currentStep, setCurrentStep] = useState(1);
   const [selectedBankId, setSelectedBankId] = useState<string | null>(null);
@@ -83,9 +87,12 @@ export default function CashAdvanceFlowScreen() {
   const [isLoading, setIsLoading] = useState(false);
 
   const slideAnim = useRef(new Animated.Value(0)).current;
-  const progressAnim = useRef(new Animated.Value(0.2)).current; // 5 steps now
+  const progressAnim = useRef(new Animated.Value(0.2)).current;
 
-  // Auto-select first bank if none selected
+  useEffect(() => {
+    cashAdvance.startFlow();
+  }, []);
+
   useEffect(() => {
     if (!selectedBankId && linkedAccounts.length > 0) {
       setSelectedBankId(linkedAccounts[0].id);
@@ -117,8 +124,8 @@ export default function CashAdvanceFlowScreen() {
     );
   };
 
-  const minAmount = 50;
-  const maxAmount = 1500;
+  const minAmount = CASH_ADVANCE_MIN;
+  const maxAmount = advanceLimit;
 
   // Calculate fee and total
   const fee = Math.max(selectedAmount * 0.05, 2.99);
@@ -184,8 +191,12 @@ export default function CashAdvanceFlowScreen() {
     setTimeout(runNextCheck, 500);
   };
 
-  // Handle Step 1 submit
+  // Handle Step 1 submit — show paywall if not premium (freemium: usable until confirm)
   const handleCheckEligibility = () => {
+    if (premiumStatus !== 'active') {
+      router.push('/screens/Paywall');
+      return;
+    }
     animateToStep(2);
     setTimeout(runAutoChecks, 300);
   };
@@ -459,12 +470,12 @@ export default function CashAdvanceFlowScreen() {
               {/* Add Account via Plaid */}
               <AddAccountCard onPress={handleAddAccount} />
 
-              {/* Warning Card */}
+              {/* Warning Card - single line, no indent so it fits on narrow screens */}
               <View style={{
                 flexDirection: 'row',
                 alignItems: 'center',
-                gap: 12,
-                padding: 14,
+                gap: 8,
+                padding: 12,
                 backgroundColor: 'rgba(126,184,255,0.08)',
                 borderWidth: 1,
                 borderColor: 'rgba(126,184,255,0.15)',
@@ -472,8 +483,10 @@ export default function CashAdvanceFlowScreen() {
                 marginBottom: 24,
                 marginTop: 8,
               }}>
-                <Text style={{ fontSize: 18 }}>ℹ️</Text>
-                <Text style={{ fontSize: 13, color: COLORS.accent2 }}>30+ days account history required</Text>
+                <Text style={{ fontSize: 16 }}>ℹ️</Text>
+                <Text style={{ flex: 1, fontSize: 12, color: COLORS.accent2 }} numberOfLines={1}>
+                  30+ days acct. history required
+                </Text>
               </View>
 
               {/* CTA Button */}
@@ -574,7 +587,7 @@ export default function CashAdvanceFlowScreen() {
               }}>
                 <View style={{ alignItems: 'center', paddingBottom: 20, borderBottomWidth: 1, borderBottomColor: COLORS.border }}>
                   <Text style={{ fontSize: 14, color: COLORS.textMuted, marginBottom: 8 }}>Your Approved Limit</Text>
-                  <Text style={{ fontSize: 48, fontWeight: '800', color: COLORS.accent, letterSpacing: -1 }}>$1,500</Text>
+                  <Text style={{ fontSize: 48, fontWeight: '800', color: COLORS.accent, letterSpacing: -1 }}>${advanceLimit.toLocaleString()}</Text>
                 </View>
 
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: COLORS.border }}>
@@ -675,7 +688,7 @@ export default function CashAdvanceFlowScreen() {
                 <Text style={{ fontSize: 56, fontWeight: '800', color: COLORS.text, letterSpacing: -2 }}>
                   {formatCurrency(selectedAmount, false)}
                 </Text>
-                <Text style={{ fontSize: 13, color: COLORS.textMuted, marginTop: 8 }}>Maximum limit: $1,500</Text>
+                <Text style={{ fontSize: 13, color: COLORS.textMuted, marginTop: 8 }}>Maximum limit: ${advanceLimit.toLocaleString()}</Text>
               </View>
 
               {/* Slider */}
@@ -710,14 +723,14 @@ export default function CashAdvanceFlowScreen() {
                   }} />
                 </View>
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 12 }}>
-                  <Text style={{ fontSize: 12, color: COLORS.textMuted }}>$50</Text>
-                  <Text style={{ fontSize: 12, color: COLORS.textMuted }}>$1,500</Text>
+                  <Text style={{ fontSize: 12, color: COLORS.textMuted }}>${CASH_ADVANCE_MIN}</Text>
+                  <Text style={{ fontSize: 12, color: COLORS.textMuted }}>${advanceLimit.toLocaleString()}</Text>
                 </View>
               </View>
 
               {/* Quick Select Grid */}
               <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 24 }}>
-                {QUICK_AMOUNTS.map((amount) => (
+                {quickAmounts.map((amount) => (
                   <View key={amount} style={{ width: '23%' }}>
                     <QuickButton amount={amount} />
                   </View>
@@ -846,7 +859,10 @@ export default function CashAdvanceFlowScreen() {
 
               {/* Buttons */}
               <View style={{ width: '100%', gap: 12 }}>
-                <Pressable onPress={() => router.replace('/(tabs)/home')}>
+                <Pressable onPress={() => {
+                  cashAdvance.completeFlow(selectedAmount);
+                  router.replace('/(tabs)/home');
+                }}>
                   <LinearGradient
                     colors={[COLORS.accent, COLORS.accent2]}
                     start={{ x: 0, y: 0 }}

@@ -99,14 +99,12 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   };
 
   const colors = isDark ? darkColors : lightColors;
-
-  // Don't render until theme is loaded to prevent flash
-  if (!isLoaded) {
-    return null;
-  }
+  // Before storage loads, use system theme so first paint matches device (avoids light flash on dark-mode iPhone)
+  const resolvedColors = isLoaded ? colors : (systemColorScheme === 'dark' ? darkColors : lightColors);
+  const resolvedDark = isLoaded ? isDark : (systemColorScheme === 'dark');
 
   return (
-    <ThemeContext.Provider value={{ isDark, colors, toggleTheme, setTheme }}>
+    <ThemeContext.Provider value={{ isDark: resolvedDark, colors: resolvedColors, toggleTheme, setTheme }}>
       {children}
     </ThemeContext.Provider>
   );

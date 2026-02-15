@@ -1,12 +1,6 @@
-import React, { useCallback } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  Pressable,
-} from 'react-native';
-import { colors } from '@/theme/colors';
+import React, { useState } from 'react';
+import { View, Text, StyleSheet, Pressable } from 'react-native';
+import { useTheme } from '../utils/ThemeContext';
 import { spacing, borderRadius, fontSize, fontWeight, shadow } from '@/theme/spacing';
 import { formatCurrency } from '@/utils/format';
 
@@ -21,15 +15,156 @@ export function LiquidityPanel({
   cashAvailable,
   onPressMoveMoney,
 }: LiquidityPanelProps) {
-  const [pressed, setPressed] = React.useState(false);
+  const [pressed, setPressed] = useState(false);
+  const { colors } = useTheme();
+
+  const styles = StyleSheet.create({
+    container: {
+      marginHorizontal: spacing.lg,
+      marginTop: spacing.lg,
+      marginBottom: spacing.xl,
+    },
+    backgroundLayer2: {
+      position: 'absolute' as const,
+      top: 8,
+      left: 8,
+      right: -8,
+      bottom: -8,
+      backgroundColor: colors.primary,
+      borderRadius: borderRadius.xl,
+      opacity: 0.35,
+    },
+    backgroundLayer1: {
+      position: 'absolute' as const,
+      top: 4,
+      left: 4,
+      right: -4,
+      bottom: -4,
+      backgroundColor: colors.primary,
+      borderRadius: borderRadius.xl,
+      opacity: 0.5,
+    },
+    mainCard: {
+      backgroundColor: colors.primary,
+      borderRadius: borderRadius.xl,
+      padding: spacing.xl,
+      shadowColor: colors.shadow,
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.2,
+      shadowRadius: 12,
+      elevation: 4,
+    },
+    header: {
+      flexDirection: 'row' as const,
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginBottom: spacing.sm,
+    },
+    headerLabel: {
+      fontSize: fontSize.sm,
+      color: 'rgba(255, 255, 255, 0.7)',
+      fontWeight: fontWeight.medium,
+      textTransform: 'uppercase' as const,
+      letterSpacing: 1,
+    },
+    statusBadge: {
+      flexDirection: 'row' as const,
+      alignItems: 'center',
+      backgroundColor: 'rgba(255, 255, 255, 0.15)',
+      paddingHorizontal: spacing.md,
+      paddingVertical: spacing.xs,
+      borderRadius: borderRadius.full,
+    },
+    statusDot: {
+      width: 6,
+      height: 6,
+      borderRadius: 3,
+      backgroundColor: colors.success,
+      marginRight: spacing.xs,
+    },
+    statusText: {
+      fontSize: fontSize.xs,
+      color: '#FFFFFF',
+      fontWeight: fontWeight.medium,
+    },
+    balanceAmount: {
+      fontSize: fontSize.hero,
+      color: '#FFFFFF',
+      fontWeight: fontWeight.bold,
+      marginBottom: spacing.lg,
+    },
+    divider: {
+      height: 1,
+      backgroundColor: 'rgba(255, 255, 255, 0.15)',
+      marginBottom: spacing.lg,
+    },
+    cashRow: {
+      flexDirection: 'row' as const,
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginBottom: spacing.lg,
+    },
+    cashInfo: { flex: 1 },
+    cashLabel: {
+      fontSize: fontSize.sm,
+      color: 'rgba(255, 255, 255, 0.7)',
+      marginBottom: spacing.xs,
+    },
+    cashAmount: {
+      fontSize: fontSize.xl,
+      color: '#FFFFFF',
+      fontWeight: fontWeight.semibold,
+    },
+    actionButton: {
+      flexDirection: 'row' as const,
+      alignItems: 'center',
+      backgroundColor: 'rgba(255, 255, 255, 0.2)',
+      paddingHorizontal: spacing.lg,
+      paddingVertical: spacing.md,
+      borderRadius: borderRadius.lg,
+    },
+    actionButtonPressed: {
+      backgroundColor: 'rgba(255, 255, 255, 0.3)',
+      transform: [{ scale: 0.98 }],
+    },
+    actionButtonIcon: {
+      fontSize: fontSize.lg,
+      color: '#FFFFFF',
+      marginRight: spacing.sm,
+    },
+    actionButtonText: {
+      fontSize: fontSize.md,
+      color: '#FFFFFF',
+      fontWeight: fontWeight.semibold,
+    },
+    statsRow: {
+      flexDirection: 'row' as const,
+      backgroundColor: 'rgba(255, 255, 255, 0.1)',
+      borderRadius: borderRadius.lg,
+      padding: spacing.md,
+    },
+    statItem: { flex: 1, alignItems: 'center' as const },
+    statValue: {
+      fontSize: fontSize.lg,
+      color: '#FFFFFF',
+      fontWeight: fontWeight.bold,
+      marginBottom: spacing.xs,
+    },
+    statLabel: {
+      fontSize: fontSize.xs,
+      color: 'rgba(255, 255, 255, 0.7)',
+    },
+    statDivider: {
+      width: 1,
+      backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    },
+  });
 
   return (
     <View style={styles.container}>
-      {/* Layered background cards for depth effect */}
       <View style={styles.backgroundLayer2} />
       <View style={styles.backgroundLayer1} />
 
-      {/* Main card */}
       <View style={styles.mainCard}>
         <View style={styles.header}>
           <Text style={styles.headerLabel}>Total Savings</Text>
@@ -64,7 +199,6 @@ export function LiquidityPanel({
           </Pressable>
         </View>
 
-        {/* Quick stats row */}
         <View style={styles.statsRow}>
           <View style={styles.statItem}>
             <Text style={styles.statValue}>+$142</Text>
@@ -85,146 +219,3 @@ export function LiquidityPanel({
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    marginHorizontal: spacing.lg,
-    marginTop: spacing.lg,
-    marginBottom: spacing.xl,
-  },
-  backgroundLayer2: {
-    position: 'absolute',
-    top: 8,
-    left: 8,
-    right: -8,
-    bottom: -8,
-    backgroundColor: colors.primaryMuted,
-    borderRadius: borderRadius.xl,
-    opacity: 0.5,
-  },
-  backgroundLayer1: {
-    position: 'absolute',
-    top: 4,
-    left: 4,
-    right: -4,
-    bottom: -4,
-    backgroundColor: colors.primaryLight,
-    borderRadius: borderRadius.xl,
-    opacity: 0.3,
-  },
-  mainCard: {
-    backgroundColor: colors.primary,
-    borderRadius: borderRadius.xl,
-    padding: spacing.xl,
-    ...shadow.lg,
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: spacing.sm,
-  },
-  headerLabel: {
-    fontSize: fontSize.sm,
-    color: colors.primaryMuted,
-    fontWeight: fontWeight.medium,
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-  },
-  statusBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.15)',
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
-    borderRadius: borderRadius.full,
-  },
-  statusDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: '#4ADE80',
-    marginRight: spacing.xs,
-  },
-  statusText: {
-    fontSize: fontSize.xs,
-    color: colors.textInverse,
-    fontWeight: fontWeight.medium,
-  },
-  balanceAmount: {
-    fontSize: fontSize.hero,
-    color: colors.textInverse,
-    fontWeight: fontWeight.bold,
-    marginBottom: spacing.lg,
-  },
-  divider: {
-    height: 1,
-    backgroundColor: 'rgba(255, 255, 255, 0.15)',
-    marginBottom: spacing.lg,
-  },
-  cashRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: spacing.lg,
-  },
-  cashInfo: {
-    flex: 1,
-  },
-  cashLabel: {
-    fontSize: fontSize.sm,
-    color: colors.primaryMuted,
-    marginBottom: spacing.xs,
-  },
-  cashAmount: {
-    fontSize: fontSize.xl,
-    color: colors.textInverse,
-    fontWeight: fontWeight.semibold,
-  },
-  actionButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-    borderRadius: borderRadius.lg,
-  },
-  actionButtonPressed: {
-    backgroundColor: 'rgba(255, 255, 255, 0.3)',
-    transform: [{ scale: 0.98 }],
-  },
-  actionButtonIcon: {
-    fontSize: fontSize.lg,
-    color: colors.textInverse,
-    marginRight: spacing.sm,
-  },
-  actionButtonText: {
-    fontSize: fontSize.md,
-    color: colors.textInverse,
-    fontWeight: fontWeight.semibold,
-  },
-  statsRow: {
-    flexDirection: 'row',
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-    borderRadius: borderRadius.lg,
-    padding: spacing.md,
-  },
-  statItem: {
-    flex: 1,
-    alignItems: 'center',
-  },
-  statValue: {
-    fontSize: fontSize.lg,
-    color: colors.textInverse,
-    fontWeight: fontWeight.bold,
-    marginBottom: spacing.xs,
-  },
-  statLabel: {
-    fontSize: fontSize.xs,
-    color: colors.primaryMuted,
-  },
-  statDivider: {
-    width: 1,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-  },
-});

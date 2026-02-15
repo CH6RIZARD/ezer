@@ -36,11 +36,15 @@ export default function LoginScreen() {
     }
 
     setIsLoading(true);
-    const success = await login(email, password);
+    const { success, hasCompletedOnboarding } = await login(email, password);
     setIsLoading(false);
 
     if (success) {
-      router.replace('/(tabs)/home');
+      if (hasCompletedOnboarding) {
+        router.replace('/(tabs)/home');
+      } else {
+        router.replace('/onboarding');
+      }
     } else {
       Alert.alert('Login Failed', 'Invalid email or password. Please try again.');
     }

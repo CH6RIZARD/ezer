@@ -125,11 +125,17 @@ export interface HomeSummary {
   silentSubscriptionCount: number;
 }
 
+export type DateRangeType = 'custom' | 'thisMonth' | 'lastYear';
+
 export interface DateRange {
+  type: DateRangeType;
   start: Date;
   end: Date;
+  /** Display label for chips (e.g. "This Month", "Jan 2 – Feb 14") */
   label: string;
 }
+
+export type PremiumStatus = 'loading' | 'trial' | 'expired' | 'premium';
 
 export interface MerchantChargeGroup {
   merchantId: string;

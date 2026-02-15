@@ -1,0 +1,10 @@
+{
+  "name": "Poisoned Delta",
+  "short_name": "Delta",
+  "description": "Inside-style Niger Delta 3D world",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0a0a0a",
+  "theme_color": "#1a1a0a",
+  "orientation": "any"
+}

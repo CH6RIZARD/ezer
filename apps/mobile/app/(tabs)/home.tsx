@@ -1,98 +1,94 @@
-// =============================================================================
-// EZER Mobile App - Home Tab
-// Calendar with merchant icons + toggle view + stats
-// =============================================================================
-
-import React, { useState } from 'react';
-import { View, Text, ScrollView, Pressable } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, ScrollView, Pressable, Dimensions } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../../utils/ThemeContext';
-import { MerchantLogo, CashAdvancePanel } from '../../components';
-import { demoHomeSummary, demoSubscriptions, demoTrials, demoMerchants, demoCharges } from '../../utils/demoData';
+import { usePremium } from '../../utils/PremiumContext';
+import { useCashAdvance } from '../../contexts/CashAdvanceContext';
+import { useSubscriptions } from '../../contexts/SubscriptionsContext';
+import { MerchantLogo, CashAdvancePanel, TrialBanner } from '../../components';
+import { getComputedHomeSummary, demoSubscriptions, demoTrials, demoMerchants, demoCharges } from '../../utils/demoData';
 import { formatCents, daysUntil } from '../../utils/calculations';
-
-// Cash Advance States
-type CashAdvanceState = 'check_eligibility' | 'pending' | 'approved' | 'active';
+import { CASH_ADVANCE_MAX } from '../../constants/money';
 
 export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const { colors, isDark } = useTheme();
+  const premium = usePremium();
+  const cashAdvance = useCashAdvance();
+  const { isCancelled } = useSubscriptions();
   const [viewMode, setViewMode] = useState<'calendar' | 'list'>('calendar');
   const [currentMonth, setCurrentMonth] = useState(new Date());
-
-  // Cash Advance state (can be cycled with dev toggle)
-  const [advanceState, setAdvanceState] = useState<CashAdvanceState>('approved');
   const [devTapCount, setDevTapCount] = useState(0);
 
-  // Demo data for active advance
-  const activeAdvance = {
-    amountOwed: 25000, // $250.00 in cents
-    dueDate: new Date(Date.now() + 13 * 24 * 60 * 60 * 1000), // 13 days from now
+  // Redirect expired users to paywall
+  useEffect(() => {
+    if (premium.status === 'expired') {
+      router.replace('/screens/Paywall');
+    }
+  }, [premium.status]);
+
+  const getCashAdvanceCard = () => {
+    const status = cashAdvance.status;
+    if (status === 'none' || status === 'repaid') {
+      return {
+        icon: 'cash-outline' as const,
+        value: 'Check →',
+        label: 'Cash Advance',
+        subtext: 'See if you qualify',
+        borderColor: colors.accent + '30',
+        valueColor: colors.accent,
+        route: '/screens/CashAdvanceFlow',
+      };
+    }
+    if (status === 'in_flow') {
+      return {
+        icon: 'time-outline' as const,
+        value: 'Pending',
+        label: 'Cash Advance',
+        subtext: 'Review in progress',
+        borderColor: '#F59E0B40',
+        valueColor: '#F59E0B',
+        route: '/screens/CashAdvanceFlow',
+      };
+    }
+    if (status === 'active') {
+      const amountCents = Math.round(cashAdvance.activeAdvanceAmount * 100);
+      const dueDate = new Date(Date.now() + 13 * 24 * 60 * 60 * 1000);
+      return {
+        icon: 'sync-outline' as const,
+        value: formatCents(amountCents) + ' owed',
+        label: 'Active Advance',
+        subtext: `Due ${dueDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} · 13 days`,
+        borderColor: '#F59E0B50',
+        valueColor: '#F59E0B',
+        route: '/screens/CashAdvanceFlow',
+      };
+    }
+    const limit = premium.getCashAdvanceLimit();
+    return {
+      icon: 'cash-outline' as const,
+      value: `$${limit.toLocaleString()}`,
+      label: 'Available Now',
+      subtext: limit < CASH_ADVANCE_MAX ? 'Trial limit' : 'Tap to request',
+      borderColor: colors.accent + '60',
+      valueColor: colors.accent,
+      route: '/screens/CashAdvanceFlow',
+      glow: true,
+    };
   };
 
-  // Dev toggle - tap header 5 times to cycle states
+  const cashAdvanceCard = getCashAdvanceCard();
+
   const handleDevTap = () => {
     const newCount = devTapCount + 1;
     setDevTapCount(newCount);
     if (newCount >= 5) {
       setDevTapCount(0);
-      const states: CashAdvanceState[] = ['check_eligibility', 'pending', 'approved', 'active'];
-      const currentIndex = states.indexOf(advanceState);
-      const nextIndex = (currentIndex + 1) % states.length;
-      setAdvanceState(states[nextIndex]);
+      cashAdvance.reset();
     }
   };
-
-  // Get Cash Advance card config based on state
-  const getCashAdvanceCard = () => {
-    switch (advanceState) {
-      case 'check_eligibility':
-        return {
-          icon: 'cash-outline' as const,
-          value: 'Check →',
-          label: 'Cash Advance',
-          subtext: 'See if you qualify',
-          borderColor: colors.accent + '30',
-          valueColor: colors.accent,
-          route: '/screens/CashAdvanceFlow',
-        };
-      case 'pending':
-        return {
-          icon: 'time-outline' as const,
-          value: 'Pending',
-          label: 'Cash Advance',
-          subtext: 'Review in progress',
-          borderColor: '#F59E0B40',
-          valueColor: '#F59E0B',
-          route: '/screens/CashAdvanceFlow',
-        };
-      case 'approved':
-        return {
-          icon: 'cash-outline' as const,
-          value: '$1,500',
-          label: 'Available Now',
-          subtext: 'Tap to request',
-          borderColor: colors.accent + '60',
-          valueColor: colors.accent,
-          route: '/screens/CashAdvanceFlow',
-          glow: true,
-        };
-      case 'active':
-        return {
-          icon: 'sync-outline' as const,
-          value: formatCents(activeAdvance.amountOwed) + ' owed',
-          label: 'Active Advance',
-          subtext: `Due ${activeAdvance.dueDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} · 13 days`,
-          borderColor: '#F59E0B50',
-          valueColor: '#F59E0B',
-          route: '/screens/CashAdvanceFlow',
-        };
-    }
-  };
-
-  const cashAdvanceCard = getCashAdvanceCard();
 
   const getTimeOfDay = () => {
     const hour = new Date().getHours();
@@ -150,6 +146,9 @@ export default function HomeScreen() {
   };
 
   const upcomingEvents = getUpcomingEvents();
+  const homeSummary = getComputedHomeSummary();
+  const cancelledCount = demoSubscriptions.filter((s) => isCancelled(s.id)).length;
+  const silentCount = Math.max(0, homeSummary.silentSubscriptionCount - cancelledCount);
 
   const handlePreviousMonth = () => {
     setCurrentMonth(prev => {
@@ -167,67 +166,68 @@ export default function HomeScreen() {
     });
   };
 
+  const topInset = Math.max(insets.top, 44);
+  const headerBarHeight = 52;
+  const paddingTop = topInset + 8;
+
   return (
     <ScrollView
       style={{ flex: 1, backgroundColor: colors.background }}
-      contentContainerStyle={{ paddingHorizontal: 24, paddingTop: insets.top + 16, paddingBottom: insets.bottom + 16 }}
+      contentContainerStyle={{ paddingHorizontal: 24, paddingTop, paddingBottom: insets.bottom + 16 }}
       showsVerticalScrollIndicator={false}
     >
-      {/* EZER Branding - Fixed Position */}
-      <View style={{ position: 'absolute', top: 16, right: 24, zIndex: 1000 }}>
+      <View style={{ position: 'absolute', top: paddingTop, right: 24, height: headerBarHeight, justifyContent: 'center', zIndex: 1000 }}>
         <Text style={{ fontSize: 20, fontWeight: '700', color: colors.accent, letterSpacing: 2 }}>EZER</Text>
       </View>
 
-      {/* Header - Tap 5 times for dev toggle */}
-      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
+      <View style={{ flexDirection: 'row', flexWrap: 'nowrap', justifyContent: 'space-between', alignItems: 'center', minHeight: headerBarHeight, marginBottom: 20 }}>
         <Pressable style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: colors.card, justifyContent: 'center', alignItems: 'center', shadowColor: colors.shadow, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.2, shadowRadius: 8, elevation: 2 }} onPress={() => router.push('/settings')}>
           <Ionicons name="settings-outline" size={24} color={colors.text} />
         </Pressable>
-        <Pressable style={{ flex: 1, alignItems: 'center' }} onPress={handleDevTap}>
-          <Text style={{ fontSize: 16, color: colors.textSecondary, marginBottom: 4, textAlign: 'center' }}>Good {getTimeOfDay()}</Text>
-          <Text style={{ fontSize: 28, fontWeight: '700', color: colors.text, textAlign: 'center' }}>Your Dashboard</Text>
+        <Pressable style={{ flex: 1, alignItems: 'center', justifyContent: 'center', minHeight: headerBarHeight, minWidth: 0, maxWidth: Dimensions.get('window').width - 24 * 2 - 44 * 2 }} onPress={__DEV__ ? handleDevTap : undefined}>
+          <Text numberOfLines={1} adjustsFontSizeToFit style={{ fontSize: 16, color: colors.textSecondary, marginBottom: 2, textAlign: 'center' }}>Good{'\u00A0'}{getTimeOfDay()}</Text>
+          <Text numberOfLines={1} adjustsFontSizeToFit style={{ fontSize: 28, fontWeight: '700', color: colors.text, textAlign: 'center' }}>Your Dashboard</Text>
         </Pressable>
         <View style={{ width: 44 }} />
       </View>
 
-      {/* Stats Cards - 2x2 Grid */}
-      <View style={{ flexDirection: 'row', gap: 12, marginBottom: 12 }}>
-        {/* Monthly Burn */}
+      {/* Trial Banner */}
+      {premium.status === 'trial' && <TrialBanner daysRemaining={premium.daysRemaining} />}
+
+      <View style={{ flexDirection: 'row', flexWrap: 'nowrap', gap: 12, marginBottom: 12 }}>
         <Pressable
-          style={{ flex: 1, backgroundColor: colors.card, padding: 20, borderRadius: 16, alignItems: 'center', shadowColor: colors.shadow, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.2, shadowRadius: 12, elevation: 2 }}
+          style={{ flex: 1, minWidth: 0, maxWidth: Dimensions.get('window').width - 136, backgroundColor: colors.card, padding: 20, borderRadius: 16, alignItems: 'center', shadowColor: colors.shadow, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.2, shadowRadius: 12, elevation: 2 }}
           onPress={() => router.push('/screens/MonthlyBurn')}
         >
           <Ionicons name="flame-outline" size={28} color={colors.danger} />
-          <Text style={{ fontSize: 24, fontWeight: '700', color: colors.text, marginVertical: 6, fontVariant: ['tabular-nums'] }}>{formatCents(demoHomeSummary.monthlyBurnCents)}</Text>
-          <Text style={{ fontSize: 12, color: colors.textSecondary, textAlign: 'center' }}>Monthly Burn</Text>
+          <Text numberOfLines={1} adjustsFontSizeToFit style={{ fontSize: 24, fontWeight: '700', color: colors.text, marginVertical: 6, fontVariant: ['tabular-nums'] }}>{formatCents(homeSummary.monthlyBurnCents)}</Text>
+          <Text numberOfLines={1} style={{ fontSize: 12, color: colors.textSecondary, textAlign: 'center' }}>Monthly Burn</Text>
         </Pressable>
 
-        {/* 30-Day Risk */}
         <Pressable
-          style={{ flex: 1, backgroundColor: colors.card, padding: 20, borderRadius: 16, alignItems: 'center', shadowColor: colors.shadow, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.2, shadowRadius: 12, elevation: 2 }}
+          style={{ flex: 1, minWidth: 0, maxWidth: Dimensions.get('window').width - 136, backgroundColor: colors.card, padding: 20, borderRadius: 16, alignItems: 'center', shadowColor: colors.shadow, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.2, shadowRadius: 12, elevation: 2 }}
           onPress={() => router.push('/screens/RiskDetail')}
         >
           <Ionicons name="warning-outline" size={28} color={colors.accent} />
-          <Text style={{ fontSize: 24, fontWeight: '700', color: colors.text, marginVertical: 6, fontVariant: ['tabular-nums'] }}>{formatCents(demoHomeSummary.next30DayRiskCents)}</Text>
-          <Text style={{ fontSize: 12, color: colors.textSecondary, textAlign: 'center' }}>30-Day Risk</Text>
+          <Text numberOfLines={1} adjustsFontSizeToFit style={{ fontSize: 24, fontWeight: '700', color: colors.text, marginVertical: 6, fontVariant: ['tabular-nums'] }}>{formatCents(homeSummary.next30DayRiskCents)}</Text>
+          <Text numberOfLines={1} style={{ fontSize: 12, color: colors.textSecondary, textAlign: 'center' }}>30-Day Risk</Text>
         </Pressable>
       </View>
 
-      <View style={{ flexDirection: 'row', gap: 12, marginBottom: 24 }}>
-        {/* Silent Subscriptions */}
+      <View style={{ flexDirection: 'row', flexWrap: 'nowrap', gap: 12, marginBottom: 12 }}>
         <Pressable
-          style={{ flex: 1, backgroundColor: colors.card, padding: 20, borderRadius: 16, alignItems: 'center', shadowColor: colors.shadow, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.2, shadowRadius: 12, elevation: 2 }}
+          style={{ flex: 1, minWidth: 0, maxWidth: Dimensions.get('window').width - 136, backgroundColor: colors.card, padding: 20, borderRadius: 16, alignItems: 'center', shadowColor: colors.shadow, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.2, shadowRadius: 12, elevation: 2 }}
           onPress={() => router.push('/screens/SilentSubscriptions')}
         >
           <Ionicons name="eye-off-outline" size={28} color={colors.textSecondary} />
-          <Text style={{ fontSize: 24, fontWeight: '700', color: colors.text, marginVertical: 6, fontVariant: ['tabular-nums'] }}>{demoHomeSummary.silentSubscriptionCount}</Text>
-          <Text style={{ fontSize: 12, color: colors.textSecondary, textAlign: 'center' }}>Silent Subscriptions</Text>
+          <Text numberOfLines={1} adjustsFontSizeToFit style={{ fontSize: 24, fontWeight: '700', color: colors.text, marginVertical: 6, fontVariant: ['tabular-nums'] }}>{silentCount}</Text>
+          <Text numberOfLines={1} style={{ fontSize: 12, color: colors.textSecondary, textAlign: 'center' }}>Silent Subscriptions</Text>
         </Pressable>
 
-        {/* Cash Advance - Always show card in 2x2 grid */}
         <Pressable
           style={{
             flex: 1,
+            minWidth: 0, maxWidth: Dimensions.get('window').width - 136,
             backgroundColor: colors.card,
             padding: 16,
             borderRadius: 16,
@@ -246,7 +246,7 @@ export default function HomeScreen() {
           <Text style={{ fontSize: 20, fontWeight: '700', color: cashAdvanceCard.valueColor, marginVertical: 4 }} numberOfLines={1}>
             {cashAdvanceCard.value}
           </Text>
-          <Text style={{ fontSize: 11, color: colors.textSecondary, textAlign: 'center', marginBottom: 2 }}>
+          <Text numberOfLines={1} style={{ fontSize: 11, color: colors.textSecondary, textAlign: 'center', marginBottom: 2 }}>
             {cashAdvanceCard.label}
           </Text>
           <Text style={{ fontSize: 10, color: colors.textSecondary, textAlign: 'center', opacity: 0.7 }} numberOfLines={1}>
@@ -255,7 +255,20 @@ export default function HomeScreen() {
         </Pressable>
       </View>
 
-      {/* View Toggle */}
+      <Pressable
+        style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: colors.card, padding: 16, borderRadius: 16, marginBottom: 24, shadowColor: colors.shadow, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.2, shadowRadius: 12, elevation: 2 }}
+        onPress={() => router.push('/savings')}
+      >
+        <View style={{ width: 48, height: 48, borderRadius: 24, backgroundColor: colors.primary + '20', justifyContent: 'center', alignItems: 'center', marginRight: 12 }}>
+          <Ionicons name="download-outline" size={24} color={colors.primary} />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={{ fontSize: 16, fontWeight: '700', color: colors.text }}>Withdraw</Text>
+          <Text style={{ fontSize: 13, color: colors.textSecondary }}>Transfer savings to your bank</Text>
+        </View>
+        <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
+      </Pressable>
+
       <View style={{ flexDirection: 'row', marginBottom: 16, backgroundColor: colors.card, borderRadius: 12, padding: 4, shadowColor: colors.shadow, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.2, shadowRadius: 12, elevation: 2 }}>
         <Pressable
           style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 12, borderRadius: 8, backgroundColor: viewMode === 'calendar' ? colors.primary : 'transparent' }}
@@ -274,10 +287,10 @@ export default function HomeScreen() {
         </Pressable>
       </View>
 
-      {/* CALENDAR VIEW */}
       {viewMode === 'calendar' && (
         <View style={{ backgroundColor: colors.card, padding: 20, borderRadius: 16, marginBottom: 24, shadowColor: colors.shadow, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.2, shadowRadius: 12, elevation: 2 }}>
           <Text style={{ fontSize: 20, fontWeight: '700', color: colors.text, marginBottom: 16 }}>Upcoming Charges</Text>
+          <View style={{ marginHorizontal: -8 }}>
           <CalendarWithIcons
             subscriptions={upcomingEvents}
             currentMonth={currentMonth}
@@ -285,10 +298,10 @@ export default function HomeScreen() {
             onNextMonth={handleNextMonth}
             colors={colors}
           />
+          </View>
         </View>
       )}
 
-      {/* LIST VIEW */}
       {viewMode === 'list' && (
         <View style={{ marginBottom: 24 }}>
           <Text style={{ fontSize: 20, fontWeight: '700', color: colors.text, marginBottom: 16 }}>Upcoming Subscriptions</Text>
@@ -339,7 +352,6 @@ export default function HomeScreen() {
   );
 }
 
-// CALENDAR COMPONENT WITH MERCHANT ICONS
 function CalendarWithIcons({
   subscriptions,
   currentMonth,
@@ -370,14 +382,13 @@ function CalendarWithIcons({
       return subDate === dateStr;
     });
 
-    // Calculate total charge and savings for this day
     let totalCharge = 0;
     let totalSavings = 0;
 
     subsOnDay.forEach((sub) => {
       const price = sub.amountCents || 0;
       totalCharge += price;
-      totalSavings += price * 0.5; // 50% savings
+      totalSavings += price * 0.5;
     });
 
     currentWeek.push({
@@ -415,7 +426,6 @@ function CalendarWithIcons({
         </Pressable>
       </View>
 
-      {/* Day headers */}
       <View style={{ flexDirection: 'row', marginBottom: 4 }}>
         {dayNames.map(day => (
           <View key={day} style={{ flex: 1, alignItems: 'center', paddingVertical: 8 }}>
@@ -424,11 +434,10 @@ function CalendarWithIcons({
         ))}
       </View>
 
-      {/* Calendar grid */}
       {weeks.map((week, weekIdx) => (
         <View key={weekIdx} style={{ flexDirection: 'row', marginBottom: 4 }}>
           {week.map((cell, cellIdx) => (
-            <View key={cellIdx} style={{ flex: 1, minHeight: 80, padding: 4, alignItems: 'center', justifyContent: 'flex-start', backgroundColor: colors.background, borderRadius: 8, margin: 2 }}>
+            <View key={cellIdx} style={{ flex: 1, minHeight: 80, padding: 4, alignItems: 'center', justifyContent: 'flex-start', backgroundColor: colors.background, borderRadius: 8, marginHorizontal: 1, marginVertical: 2 }}>
               {cell && (
                 <>
                   <Text
@@ -462,7 +471,6 @@ function CalendarWithIcons({
         </View>
       ))}
 
-      {/* Legend */}
       <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 24, marginTop: 16, paddingTop: 16, borderTopWidth: 1, borderTopColor: colors.border }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
           <View style={{ width: 12, height: 12, borderRadius: 6, backgroundColor: colors.danger }} />

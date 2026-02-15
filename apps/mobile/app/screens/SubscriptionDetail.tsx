@@ -33,6 +33,8 @@ export default function SubscriptionDetailScreen() {
 
   const [showInvestment, setShowInvestment] = useState(false);
   const [selectedPaymentOption, setSelectedPaymentOption] = useState<string | null>(null);
+  /** Which duration is selected for Save Smart (all three cards are clickable). */
+  const [selectedSaveSmartMonths, setSelectedSaveSmartMonths] = useState<6 | 12 | 24>(12);
 
   const merchant = demoMerchants[merchantId] || {
     id: merchantId,
@@ -238,7 +240,7 @@ export default function SubscriptionDetailScreen() {
                     labels: monthlyHistory.slice().reverse().map(p => p.month.split(' ')[0].substring(0, 3)),
                     datasets: [{
                       data: monthlyHistory.slice().reverse().map(p => p.amountCents / 100),
-                      color: () => colors.card,
+                      color: () => '#FFFFFF',
                       strokeWidth: 3,
                     }],
                   }}
@@ -249,12 +251,12 @@ export default function SubscriptionDetailScreen() {
                     backgroundGradientFrom: colors.primary,
                     backgroundGradientTo: '#7C3AED',
                     decimalPlaces: 2,
-                    color: () => colors.card,
-                    labelColor: () => colors.card,
+                    color: () => '#FFFFFF',
+                    labelColor: () => '#FFFFFF',
                     propsForDots: {
                       r: '8',
                       strokeWidth: '3',
-                      stroke: colors.card,
+                      stroke: '#FFFFFF',
                       fill: colors.primary,
                     },
                     propsForBackgroundLines: {
@@ -355,13 +357,19 @@ export default function SubscriptionDetailScreen() {
           >
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
               <Text style={{ fontSize: 32 }}>💰</Text>
-              <View style={{ flex: 1 }}>
+              <View style={{ flex: 1, minWidth: 0 }}>
                 <Text style={{ fontSize: 16, fontWeight: '700', color: colors.text, marginBottom: 4 }}>
                   Pay Full + Save Half
                 </Text>
-                <Text style={{ fontSize: 14, color: colors.textSecondary, lineHeight: 20 }}>
-                  Pay ${(currentPriceCents / 100).toFixed(2)} subscription + transfer ${(currentPriceCents / 200).toFixed(2)} to savings (${(currentPriceCents * 1.5 / 100).toFixed(2)} total/month)
-                </Text>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 2 }}>
+                  <Text style={{ fontSize: 14, color: colors.textSecondary }}>Pay </Text>
+                  <Text style={{ fontSize: 14, fontWeight: '600', color: colors.text }}>${(currentPriceCents / 100).toFixed(2)}</Text>
+                  <Text style={{ fontSize: 14, color: colors.textSecondary }}> subscription + transfer </Text>
+                  <Text style={{ fontSize: 14, fontWeight: '600', color: colors.text }}>${(currentPriceCents / 200).toFixed(2)}</Text>
+                  <Text style={{ fontSize: 14, color: colors.textSecondary }}> to savings (</Text>
+                  <Text style={{ fontSize: 14, fontWeight: '600', color: colors.text }}>${(currentPriceCents * 1.5 / 100).toFixed(2)}</Text>
+                  <Text style={{ fontSize: 14, color: colors.textSecondary }}> total/month)</Text>
+                </View>
               </View>
               <View
                 style={{
@@ -402,13 +410,19 @@ export default function SubscriptionDetailScreen() {
           >
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
               <Text style={{ fontSize: 32 }}>📈</Text>
-              <View style={{ flex: 1 }}>
+              <View style={{ flex: 1, minWidth: 0 }}>
                 <Text style={{ fontSize: 16, fontWeight: '700', color: colors.text, marginBottom: 4 }}>
                   Pay Full + Match Full
                 </Text>
-                <Text style={{ fontSize: 14, color: colors.textSecondary, lineHeight: 20 }}>
-                  Pay ${(currentPriceCents / 100).toFixed(2)} subscription + transfer ${(currentPriceCents / 100).toFixed(2)} to investment (${(currentPriceCents * 2 / 100).toFixed(2)} total/month)
-                </Text>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 2 }}>
+                  <Text style={{ fontSize: 14, color: colors.textSecondary }}>Pay </Text>
+                  <Text style={{ fontSize: 14, fontWeight: '600', color: colors.text }}>${(currentPriceCents / 100).toFixed(2)}</Text>
+                  <Text style={{ fontSize: 14, color: colors.textSecondary }}> subscription + transfer </Text>
+                  <Text style={{ fontSize: 14, fontWeight: '600', color: colors.text }}>${(currentPriceCents / 100).toFixed(2)}</Text>
+                  <Text style={{ fontSize: 14, color: colors.textSecondary }}> to investment (</Text>
+                  <Text style={{ fontSize: 14, fontWeight: '600', color: colors.text }}>${(currentPriceCents * 2 / 100).toFixed(2)}</Text>
+                  <Text style={{ fontSize: 14, color: colors.textSecondary }}> total/month)</Text>
+                </View>
               </View>
               <View
                 style={{
@@ -443,6 +457,20 @@ export default function SubscriptionDetailScreen() {
                 borderRadius: 12,
                 alignItems: 'center',
                 marginTop: 8,
+              }}
+              onPress={() => {
+                const savingsAmount = selectedPaymentOption === 'split'
+                  ? (currentPriceCents / 200).toFixed(2)
+                  : (currentPriceCents / 100).toFixed(2);
+                const subAmount = (currentPriceCents / 100).toFixed(2);
+                Alert.alert(
+                  'Smart Saving Enabled',
+                  `Each billing cycle, you'll pay $${subAmount} for ${merchant.canonicalName} and automatically transfer $${savingsAmount} to your savings.`,
+                  [
+                    { text: 'View Savings', onPress: () => router.push('/(tabs)/saved') },
+                    { text: 'Done' },
+                  ]
+                );
               }}
             >
               <Text style={{ color: colors.card, fontSize: 16, fontWeight: '700' }}>
@@ -492,73 +520,33 @@ export default function SubscriptionDetailScreen() {
               </Text>
 
               <View style={{ flexDirection: 'row', gap: 12, marginBottom: 16 }}>
-                {/* 6 Months */}
-                <Pressable
-                  style={{
-                    flex: 1,
-                    backgroundColor: colors.background,
-                    padding: 16,
-                    borderRadius: 12,
-                    alignItems: 'center',
-                  }}
-                  onPress={() => Alert.alert(
-                    'After 6 Months',
-                    `By saving ${formatCents(currentPriceCents)}/month, you'll have ${formatCents(currentPriceCents * 6)} after 6 months.`
-                  )}
-                >
-                  <Text style={{ fontSize: 12, color: colors.textSecondary, marginBottom: 8 }}>
-                    After 6 months
-                  </Text>
-                  <Text style={{ fontSize: 20, fontWeight: '700', color: colors.primary, fontVariant: ['tabular-nums'] }}>
-                    ${((currentPriceCents / 100) * 6).toFixed(2)}
-                  </Text>
-                </Pressable>
-
-                {/* 1 Year */}
-                <Pressable
-                  style={{
-                    flex: 1,
-                    backgroundColor: '#F5F3FF',
-                    padding: 16,
-                    borderRadius: 12,
-                    alignItems: 'center',
-                    borderWidth: 2,
-                    borderColor: colors.primary,
-                  }}
-                  onPress={() => Alert.alert(
-                    'After 1 Year',
-                    `By saving ${formatCents(currentPriceCents)}/month, you'll have ${formatCents(currentPriceCents * 12)} after 1 year.`
-                  )}
-                >
-                  <Text style={{ fontSize: 12, color: colors.textSecondary, marginBottom: 8 }}>
-                    After 1 year
-                  </Text>
-                  <Text style={{ fontSize: 20, fontWeight: '700', color: colors.primary, fontVariant: ['tabular-nums'] }}>
-                    ${((currentPriceCents / 100) * 12).toFixed(2)}
-                  </Text>
-                </Pressable>
-
-                {/* 2 Years */}
-                <Pressable
-                  style={{
-                    flex: 1,
-                    backgroundColor: colors.background,
-                    padding: 16,
-                    borderRadius: 12,
-                    alignItems: 'center',
-                  }}
-                  onPress={() => Alert.alert(
-                    'After 2 Years',
-                    `By saving ${formatCents(currentPriceCents)}/month, you'll have ${formatCents(currentPriceCents * 24)} after 2 years without changing your lifestyle!`
-                  )}
-                >
-                  <Text style={{ fontSize: 12, color: colors.textSecondary, marginBottom: 8 }}>
-                    After 2 years
-                  </Text>
-                  <Text style={{ fontSize: 20, fontWeight: '700', color: colors.primary, fontVariant: ['tabular-nums'] }}>
-                    ${((currentPriceCents / 100) * 24).toFixed(2)}
-                  </Text>
-                </Pressable>
+                {([6, 12, 24] as const).map((months) => {
+                  const isSelected = selectedSaveSmartMonths === months;
+                  const amount = (currentPriceCents / 100) * months;
+                  const label = months === 6 ? 'After 6 months' : months === 12 ? 'After 1 year' : 'After 2 years';
+                  return (
+                    <Pressable
+                      key={months}
+                      style={{
+                        flex: 1,
+                        backgroundColor: isSelected ? '#F5F3FF' : colors.background,
+                        padding: 16,
+                        borderRadius: 12,
+                        alignItems: 'center',
+                        borderWidth: 2,
+                        borderColor: isSelected ? colors.primary : colors.border,
+                      }}
+                      onPress={() => setSelectedSaveSmartMonths(months)}
+                    >
+                      <Text style={{ fontSize: 12, color: colors.textSecondary, marginBottom: 8 }}>
+                        {label}
+                      </Text>
+                      <Text style={{ fontSize: 20, fontWeight: '700', color: colors.primary, fontVariant: ['tabular-nums'] }}>
+                        ${amount.toFixed(2)}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
               </View>
 
               <Pressable
@@ -569,11 +557,11 @@ export default function SubscriptionDetailScreen() {
                 }}
                 onPress={() => Alert.alert(
                   'Smart Savings',
-                  `That's ${formatCents(currentPriceCents * 24)} saved over 2 years without changing your lifestyle. The subscription is paid in full, and savings are automatically transferred from your linked account.`
+                  `That's ${formatCents(currentPriceCents * selectedSaveSmartMonths)} saved over ${selectedSaveSmartMonths === 6 ? '6 months' : selectedSaveSmartMonths === 12 ? '1 year' : '2 years'} without changing your lifestyle. The subscription is paid in full, and savings are automatically transferred from your linked account.`
                 )}
               >
                 <Text style={{ fontSize: 14, fontWeight: '600', color: colors.card, textAlign: 'center' }}>
-                  That's ${((currentPriceCents / 100) * 24).toFixed(2)} saved without changing your lifestyle
+                  That's ${((currentPriceCents / 100) * selectedSaveSmartMonths).toFixed(2)} saved without changing your lifestyle
                 </Text>
               </Pressable>
             </>
@@ -593,7 +581,7 @@ export default function SubscriptionDetailScreen() {
         {/* Cancel CTA */}
         <View style={{ marginTop: 8 }}>
           <Button
-            title="Cancel Subscription"
+            title="Cancel & choose where to send the money"
             variant="danger"
             onPress={handleCancelSubscription}
           />

@@ -1,8 +1,3 @@
-// =============================================================================
-// EZER Mobile App - Root Layout
-// Stack navigator for the entire app with auth and theme providers
-// =============================================================================
-
 import React from 'react';
 import { Stack } from 'expo-router';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -10,7 +5,12 @@ import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { View } from 'react-native';
 import { AuthProvider } from '../utils/AuthContext';
+import { PremiumProvider } from '../utils/PremiumContext';
 import { ThemeProvider, useTheme } from '../utils/ThemeContext';
+import { DateRangeProvider } from '../utils/DateRangeContext';
+import { CashAdvanceProvider } from '../contexts/CashAdvanceContext';
+import { SubscriptionsProvider } from '../contexts/SubscriptionsContext';
+import { SavingsGoalsProvider } from '../utils/SavingsGoalsContext';
 
 function RootLayoutNav() {
   const { isDark, colors } = useTheme();
@@ -43,6 +43,7 @@ function RootLayoutNav() {
           <Stack.Screen name="screens/RiskDetail" />
           <Stack.Screen name="screens/SilentSubscriptions" />
           <Stack.Screen name="savings" />
+          <Stack.Screen name="screens/Paywall" options={{ presentation: 'fullScreenModal', animation: 'slide_from_bottom' }} />
         </Stack>
       </View>
     </>
@@ -54,9 +55,19 @@ export default function RootLayout() {
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
         <AuthProvider>
+          <PremiumProvider>
           <ThemeProvider>
-            <RootLayoutNav />
+            <DateRangeProvider>
+              <CashAdvanceProvider>
+                <SubscriptionsProvider>
+                  <SavingsGoalsProvider>
+                    <RootLayoutNav />
+                  </SavingsGoalsProvider>
+                </SubscriptionsProvider>
+              </CashAdvanceProvider>
+            </DateRangeProvider>
           </ThemeProvider>
+          </PremiumProvider>
         </AuthProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>

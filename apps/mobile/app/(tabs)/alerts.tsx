@@ -3,11 +3,12 @@
 // Trials expiring and upcoming renewals
 // =============================================================================
 
-import React from 'react';
+import React, { useEffect } from 'react';
 import { View, Text, ScrollView, TouchableOpacity } from 'react-native';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../../utils/ThemeContext';
+import { usePremium } from '../../utils/PremiumContext';
 import { Card, Button } from '../../components';
 import { demoTrials, demoSubscriptions, demoMerchants, demoCharges } from '../../utils/demoData';
 import { daysUntil, formatDate, formatCents } from '../../utils/calculations';
@@ -15,6 +16,11 @@ import { daysUntil, formatDate, formatCents } from '../../utils/calculations';
 export default function AlertsScreen() {
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
+  const { status: premiumStatus } = usePremium();
+
+  useEffect(() => {
+    if (premiumStatus === 'expired') router.replace('/screens/Paywall');
+  }, [premiumStatus]);
 
   // Get upcoming renewals (next 30 days)
   const upcomingRenewals = demoSubscriptions.filter((sub) => {
@@ -50,19 +56,25 @@ export default function AlertsScreen() {
 
   const hasAlerts = demoTrials.length > 0 || upcomingRenewals.length > 0;
 
+  const topInset = Math.max(insets.top, 44);
+  const headerBarHeight = 52;
+  const paddingTop = topInset + 8;
+
   return (
     <ScrollView
       style={{ flex: 1, backgroundColor: colors.background }}
-      contentContainerStyle={{ paddingHorizontal: 24, paddingTop: insets.top + 16, paddingBottom: insets.bottom + 16 }}
+      contentContainerStyle={{ paddingHorizontal: 24, paddingTop, paddingBottom: insets.bottom + 16 }}
       showsVerticalScrollIndicator={false}
     >
-      {/* EZER Branding - Fixed Position */}
-      <View style={{ position: 'absolute', top: 16, right: 24, zIndex: 1000 }}>
+      {/* EZER Branding - same height as header bar for center alignment */}
+      <View style={{ position: 'absolute', top: paddingTop, right: 24, height: headerBarHeight, justifyContent: 'center', zIndex: 1000 }}>
         <Text style={{ fontSize: 20, fontWeight: '700', color: colors.accent, letterSpacing: 2 }}>EZER</Text>
       </View>
 
-      {/* Title */}
-      <Text style={{ fontSize: 28, fontWeight: '700', color: colors.text, marginBottom: 24 }}>Alerts (Next 30 Days)</Text>
+      {/* Title - fixed-height bar so center mass aligns with status bar */}
+      <View style={{ minHeight: headerBarHeight, justifyContent: 'center', marginBottom: 24 }}>
+        <Text style={{ fontSize: 28, fontWeight: '700', color: colors.text }}>Alerts (Next 30 Days)</Text>
+      </View>
 
       {!hasAlerts ? (
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: 100 }}>
@@ -149,7 +161,7 @@ export default function AlertsScreen() {
                           marginRight: 12,
                         }}>
                           <Text style={{ color: '#FFFFFF', fontSize: 20, fontWeight: '700' }}>
-                            {merchant?.canonicalName.charAt(0) || '?'}
+                            {merchant?.canonicalName?.charAt(0) || '?'}
                           </Text>
                         </View>
                         <View style={{ flex: 1 }}>

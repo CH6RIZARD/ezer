@@ -122,10 +122,10 @@ export function CreditCard({ card, isActive = true, size = 'normal' }: CreditCar
   const cardWidth = size === 'small' ? CARD_WIDTH * 0.7 : CARD_WIDTH;
   const cardHeight = cardWidth / 1.586;
 
-  // Format card number display
-  const cardLast4 = card.last4 && card.last4 !== '****' && card.last4 !== '0000'
+  // Stable last4: always show 4 digits (match user/bank data when connected); no masked ****
+  const cardLast4 = (card.last4 && card.last4.length === 4 && /^\d{4}$/.test(card.last4))
     ? card.last4
-    : String(Math.floor(1000 + Math.random() * 9000));
+    : (card.id === '1' ? '4832' : card.id === '2' ? '0005' : '0000');
 
   const LogoComponent = LogoComponents[config.logoType];
 

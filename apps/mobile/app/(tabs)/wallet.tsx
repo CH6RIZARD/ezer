@@ -1,9 +1,9 @@
 // =============================================================================
 // EZER Mobile App - Wallet Tab
-// Card carousel with drain summary
+// Card carousel with drain summary; date range: Custom, This Month, Last Year
 // =============================================================================
 
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -16,65 +16,81 @@ import {
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../../utils/ThemeContext';
-import { Card, Button, CreditCard } from '../../components';
+import { usePremium } from '../../utils/PremiumContext';
+import { useDateRange } from '../../utils/DateRangeContext';
+import { Card, Button, CreditCard, CustomDateRangeModal } from '../../components';
 import {
   demoFundingInstruments,
   demoCharges,
   demoMerchants,
   groupChargesByMerchant,
 } from '../../utils/demoData';
-import { calculateDrain, getDateRange, formatDollars } from '../../utils/calculations';
-import type { FundingInstrument, DateRange } from '../../types';
+import { calculateDrain, formatDollars } from '../../utils/calculations';
+import type { FundingInstrument } from '../../types';
+import type { DateRangeType } from '../../types';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const CAROUSEL_PADDING = 24; // matches outer ScrollView paddingHorizontal
 const CARD_WIDTH = SCREEN_WIDTH - 48;
 const CARD_SPACING = 16;
+const CAROUSEL_VIEWPORT_WIDTH = SCREEN_WIDTH - CAROUSEL_PADDING * 2;
 
-type DateRangeType = 'sinceStart' | 'thisMonth' | 'lastYear';
+const PRESET_KEYS: DateRangeType[] = ['custom', 'thisMonth', 'lastYear'];
 
-const DATE_RANGE_OPTIONS: { key: DateRangeType; label: string }[] = [
-  { key: 'sinceStart', label: 'Since Start' },
-  { key: 'thisMonth', label: 'This Month' },
-  { key: 'lastYear', label: 'Last Year' },
-];
+function getChargesSubtitle(type: DateRangeType): string {
+  switch (type) {
+    case 'thisMonth':
+      return 'this month';
+    case 'lastYear':
+      return 'last year';
+    case 'custom':
+    default:
+      return 'in range';
+  }
+}
 
 export default function WalletScreen() {
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
+  const { status: premiumStatus } = usePremium();
+  const { dateRange, setPreset, setCustomRange, setCustomPickerOpen, isCustomPickerOpen } = useDateRange();
+
+  useEffect(() => {
+    if (premiumStatus === 'expired') router.replace('/screens/Paywall');
+  }, [premiumStatus]);
   const scrollRef = useRef<ScrollView>(null);
   const [activeCardIndex, setActiveCardIndex] = useState(0);
-  const [selectedDateRange, setSelectedDateRange] = useState<DateRangeType>('sinceStart');
 
   const cards = demoFundingInstruments;
   const activeCard = cards[activeCardIndex];
-  const dateRange = getDateRange(selectedDateRange, demoCharges);
+  const { start, end } = dateRange;
 
-  // Calculate drain for active card
+  // Calculate drain for active card using same range as context
   const drainAmount = useMemo(() => {
-    return calculateDrain(demoCharges, activeCard.id, dateRange);
-  }, [activeCard.id, dateRange]);
+    return calculateDrain(demoCharges, activeCard.id, { type: dateRange.type, start, end, label: dateRange.label });
+  }, [activeCard.id, dateRange.type, start, end, dateRange.label]);
 
-  // Get charges for active card
+  // Get charges for active card in range
   const cardCharges = useMemo(() => {
     return demoCharges.filter(
       (c) =>
         c.fundingInstrumentId === activeCard.id &&
-        new Date(c.chargeTimestamp) >= dateRange.start &&
-        new Date(c.chargeTimestamp) <= dateRange.end
+        new Date(c.chargeTimestamp) >= start &&
+        new Date(c.chargeTimestamp) <= end
     );
-  }, [activeCard.id, dateRange]);
+  }, [activeCard.id, start, end]);
 
-  // Group by merchant and get top 3
-  const topMerchants = useMemo(() => {
+  // All merchants with charges in range (for Subscription Breakdown)
+  const breakdownMerchants = useMemo(() => {
     const grouped = groupChargesByMerchant(cardCharges);
-    const sorted = Object.entries(grouped)
+    return Object.entries(grouped)
       .map(([merchantId, charges]) => ({
         merchantId,
         merchantName: charges[0].merchantName,
         total: charges.reduce((sum, c) => sum + c.amountCents, 0),
+        count: charges.length,
       }))
       .sort((a, b) => b.total - a.total);
-    return sorted.slice(0, 3);
   }, [cardCharges]);
 
   const handleScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
@@ -96,36 +112,77 @@ export default function WalletScreen() {
   const handleReviewDrain = () => {
     router.push({
       pathname: '/screens/CardDetail',
-      params: {
-        cardId: activeCard.id,
-        dateRangeType: selectedDateRange,
-      },
+      params: { cardId: activeCard.id },
     });
   };
+
+  const handleChipPress = (key: DateRangeType) => {
+    if (key === 'custom') {
+      setCustomPickerOpen(true);
+    } else {
+      setPreset(key);
+    }
+  };
+
+  const chipLabel = (key: DateRangeType) => {
+    if (key === 'custom') {
+      return dateRange.type === 'custom' ? dateRange.label : 'Select range';
+    }
+    if (key === 'thisMonth') return 'This Month';
+    if (key === 'lastYear') return 'Last Year';
+    return key;
+  };
+
+  const isSelected = (key: DateRangeType) => {
+    if (key === 'custom') return dateRange.type === 'custom';
+    return dateRange.type === key;
+  };
+
+  const chargesSubtitle = getChargesSubtitle(dateRange.type);
+
+  // Constrain custom date range to what the API/charges data supports
+  const { minChargeDate, maxChargeDate } = useMemo(() => {
+    if (demoCharges.length === 0) {
+      const now = new Date();
+      return { minChargeDate: new Date(now.getFullYear() - 1, now.getMonth(), 1), maxChargeDate: now };
+    }
+    const times = demoCharges.map((c) => new Date(c.chargeTimestamp).getTime());
+    return { minChargeDate: new Date(Math.min(...times)), maxChargeDate: new Date(Math.max(...times)) };
+  }, []);
+
+  const topInset = Math.max(insets.top, 44);
+  const headerBarHeight = 52;
+  const paddingTop = topInset + 8;
 
   return (
     <ScrollView
       style={{ flex: 1, backgroundColor: colors.background }}
-      contentContainerStyle={{ paddingHorizontal: 24, paddingTop: insets.top + 16, paddingBottom: insets.bottom + 16 }}
+      contentContainerStyle={{ paddingHorizontal: 24, paddingTop, paddingBottom: insets.bottom + 16 }}
       showsVerticalScrollIndicator={false}
     >
-      {/* EZER Branding - Fixed Position */}
-      <View style={{ position: 'absolute', top: 16, right: 24, zIndex: 1000 }}>
+      {/* EZER Branding - Fixed Position, same height as header bar for center alignment */}
+      <View style={{ position: 'absolute', top: paddingTop, right: 24, height: headerBarHeight, justifyContent: 'center', zIndex: 1000 }}>
         <Text style={{ fontSize: 20, fontWeight: '700', color: colors.accent, letterSpacing: 2 }}>EZER</Text>
       </View>
 
-      {/* Title */}
-      <Text style={{ fontSize: 28, fontWeight: '700', color: colors.text, marginBottom: 16 }}>Wallet</Text>
+      {/* Title - in fixed-height bar so center mass aligns with status bar */}
+      <View style={{ minHeight: headerBarHeight, justifyContent: 'center', marginBottom: 16 }}>
+        <Text style={{ fontSize: 28, fontWeight: '700', color: colors.text }}>Wallet</Text>
+      </View>
 
-      {/* Card Carousel */}
+      {/* Card Carousel - centered like web */}
       <ScrollView
         ref={scrollRef}
         horizontal
         pagingEnabled
         showsHorizontalScrollIndicator={false}
         onMomentumScrollEnd={handleScroll}
-        contentContainerStyle={{ paddingHorizontal: 24 }}
+        contentContainerStyle={{
+          paddingHorizontal: (CAROUSEL_VIEWPORT_WIDTH - CARD_WIDTH) / 2,
+          alignItems: 'center',
+        }}
         snapToInterval={CARD_WIDTH + CARD_SPACING}
+        snapToAlignment="center"
         decelerationRate="fast"
       >
         {cards.map((card, index) => (
@@ -164,28 +221,28 @@ export default function WalletScreen() {
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={{ paddingHorizontal: 24, marginTop: 24, gap: 12 }}
       >
-        {DATE_RANGE_OPTIONS.map((option) => (
+        {PRESET_KEYS.map((key) => (
           <TouchableOpacity
-            key={option.key}
+            key={key}
             style={{
               paddingVertical: 10,
               paddingHorizontal: 16,
               borderRadius: 20,
               borderWidth: 1,
-              borderColor: selectedDateRange === option.key ? colors.accent : colors.text,
-              backgroundColor: selectedDateRange === option.key ? colors.accent : 'transparent',
+              borderColor: isSelected(key) ? colors.accent : colors.text,
+              backgroundColor: isSelected(key) ? colors.accent : 'transparent',
               marginRight: 12,
             }}
-            onPress={() => setSelectedDateRange(option.key)}
+            onPress={() => handleChipPress(key)}
           >
             <Text
               style={{
                 fontSize: 14,
                 fontWeight: '500',
-                color: selectedDateRange === option.key ? '#FFFFFF' : colors.text,
+                color: isSelected(key) ? '#FFFFFF' : colors.text,
               }}
             >
-              {option.label}
+              {chipLabel(key)}
             </Text>
           </TouchableOpacity>
         ))}
@@ -200,17 +257,17 @@ export default function WalletScreen() {
           {formatDollars(drainAmount)}
         </Text>
         <Text style={{ fontSize: 14, color: colors.textSecondary, marginBottom: 4 }}>
-          {topMerchants.length} active subscription{topMerchants.length !== 1 ? 's' : ''}
+          {breakdownMerchants.length} active subscription{breakdownMerchants.length !== 1 ? 's' : ''}
         </Text>
       </Card>
 
-      {/* Subscription Breakdown (only for Since Start) */}
-      {selectedDateRange === 'sinceStart' && topMerchants.length > 0 && (
+      {/* Subscription Breakdown - for all date ranges */}
+      {breakdownMerchants.length > 0 && (
         <View style={{ marginTop: 24 }}>
           <Text style={{ fontSize: 18, fontWeight: '700', color: colors.text, marginBottom: 16 }}>Subscription Breakdown</Text>
-          {topMerchants.map((merchant) => {
-            const merchantCharges = cardCharges.filter(c => c.merchantId === merchant.merchantId);
-            const merchantColor = demoMerchants[merchant.merchantId]?.brandColor || colors.textSecondary;
+          {breakdownMerchants.map((merchant) => {
+            const merchantCharges = cardCharges.filter((c) => c.merchantId === merchant.merchantId);
+            const merchantColor = (demoMerchants[merchant.merchantId] as { brandColor?: string })?.brandColor || colors.textSecondary;
 
             return (
               <View
@@ -243,7 +300,7 @@ export default function WalletScreen() {
                 <View style={{ flex: 1 }}>
                   <Text style={{ fontSize: 16, fontWeight: '600', color: colors.text, marginBottom: 4 }}>{merchant.merchantName}</Text>
                   <Text style={{ fontSize: 13, color: colors.textSecondary }}>
-                    {merchantCharges.length} charge{merchantCharges.length !== 1 ? 's' : ''} since start
+                    {merchant.count} charge{merchant.count !== 1 ? 's' : ''} {chargesSubtitle}
                   </Text>
                 </View>
                 <Text style={{ fontSize: 18, fontWeight: '700', color: colors.danger }}>
@@ -263,6 +320,16 @@ export default function WalletScreen() {
           variant="primary"
         />
       </View>
+
+      <CustomDateRangeModal
+        visible={isCustomPickerOpen}
+        onClose={() => setCustomPickerOpen(false)}
+        onApply={setCustomRange}
+        initialStart={dateRange.type === 'custom' ? dateRange.start : undefined}
+        initialEnd={dateRange.type === 'custom' ? dateRange.end : undefined}
+        minDate={minChargeDate}
+        maxDate={maxChargeDate}
+      />
     </ScrollView>
   );
 }

@@ -36,7 +36,7 @@ export default function MonthlyBurnScreen() {
       name: merchant?.canonicalName || 'Unknown',
       logo: merchant?.canonicalName?.charAt(0) || '?',
       amountCents: lastCharge?.amountCents || 0,
-      cycle: sub.billingCycle,
+      cycle: sub.cadence,
       merchantId: sub.merchantId,
     };
   }).sort((a, b) => b.amountCents - a.amountCents);

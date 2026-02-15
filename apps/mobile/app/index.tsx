@@ -1,29 +1,68 @@
 // =============================================================================
-// EZER Mobile App - Onboarding Screen
-// Entry point with OAuth provider selection (DEV MODE: bypasses to tabs)
+// EZER Mobile App - Entry (OAuth / Welcome)
+// Auth gate: redirect authenticated users; show OAuth when not.
 // =============================================================================
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, Pressable, ActivityIndicator } from 'react-native';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../utils/ThemeContext';
+import { useAuth } from '../utils/AuthContext';
 import { Button } from '../components';
 
-export default function OnboardingScreen() {
+export default function IndexScreen() {
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
+  const { isLoading, isAuthenticated, hasCompletedOnboarding, loginWithProvider } = useAuth();
   const [loading, setLoading] = useState<string | null>(null);
+
+  // Auth gate: once hydrated, redirect authenticated users (no OAuth flash)
+  useEffect(() => {
+    if (isLoading) return;
+    if (isAuthenticated && hasCompletedOnboarding) {
+      router.replace('/(tabs)/home');
+      return;
+    }
+    if (isAuthenticated && !hasCompletedOnboarding) {
+      router.replace('/onboarding');
+      return;
+    }
+  }, [isLoading, isAuthenticated, hasCompletedOnboarding]);
 
   const handleProviderSelect = async (provider: 'google' | 'apple' | 'microsoft') => {
     setLoading(provider);
-
-    // DEV MODE: Bypass OAuth, navigate directly to tabs after short delay
-    setTimeout(() => {
+    try {
+      const goToHome = await loginWithProvider(provider);
       setLoading(null);
-      router.replace('/(tabs)/home');
-    }, 500);
+      if (goToHome) {
+        router.replace('/(tabs)/home');
+      } else {
+        router.replace('/onboarding');
+      }
+    } catch {
+      setLoading(null);
+    }
   };
+
+  // Loading guard: do not show OAuth UI until auth state is known
+  if (isLoading) {
+    return (
+      <View style={{ flex: 1, backgroundColor: colors.background, justifyContent: 'center', alignItems: 'center', paddingTop: insets.top }}>
+        <ActivityIndicator size="large" color={colors.primary} />
+        <Text style={{ marginTop: 16, fontSize: 14, color: colors.textSecondary }}>Loading…</Text>
+      </View>
+    );
+  }
+
+  // If authenticated, we're about to redirect (effect above); show same loading to avoid flash
+  if (isAuthenticated) {
+    return (
+      <View style={{ flex: 1, backgroundColor: colors.background, justifyContent: 'center', alignItems: 'center', paddingTop: insets.top }}>
+        <ActivityIndicator size="large" color={colors.primary} />
+      </View>
+    );
+  }
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background, paddingTop: insets.top }}>
@@ -88,12 +127,24 @@ export default function OnboardingScreen() {
             )}
           </Pressable>
         </View>
+
+        {/* Email auth links - minimal, below OAuth */}
+        <View style={{ marginTop: 24, alignItems: 'center', gap: 12 }}>
+          <Pressable onPress={() => router.push('/auth/login')} style={{ paddingVertical: 8, paddingHorizontal: 16 }}>
+            <Text style={{ fontSize: 14, color: colors.primary, fontWeight: '600' }}>Log in with email</Text>
+          </Pressable>
+          <Pressable onPress={() => router.push('/auth/signup')} style={{ paddingVertical: 8, paddingHorizontal: 16 }}>
+            <Text style={{ fontSize: 14, color: colors.textSecondary }}>Sign up with email</Text>
+          </Pressable>
+        </View>
       </View>
 
-      {/* Dev Mode Indicator */}
-      <View style={{ paddingBottom: 32, alignItems: 'center' }}>
-        <Text style={{ fontSize: 12, color: colors.textSecondary }}>DEV MODE: OAuth bypassed</Text>
-      </View>
+      {/* Dev Mode Indicator - only in development */}
+      {__DEV__ && (
+        <View style={{ paddingBottom: 32, alignItems: 'center' }}>
+          <Text style={{ fontSize: 12, color: colors.textSecondary }}>DEV MODE: OAuth bypassed</Text>
+        </View>
+      )}
     </View>
   );
 }

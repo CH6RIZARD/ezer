@@ -1,26 +1,22 @@
-// =============================================================================
-// EZER Mobile App - Silent Subscriptions Page
-// Shows subscriptions quietly charging with cancel functionality
-// =============================================================================
-
 import React, { useState } from 'react';
 import { View, Text, ScrollView, Pressable } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../../utils/ThemeContext';
-import { demoSubscriptions, demoMerchants, demoCharges, demoHomeSummary } from '../../utils/demoData';
+import { useSubscriptions } from '../../contexts/SubscriptionsContext';
+import { demoSubscriptions, demoMerchants, demoCharges } from '../../utils/demoData';
 import { formatCents } from '../../utils/calculations';
 
-type CancelState = 'idle' | 'confirming' | 'cancelling' | 'cancelled';
+type PendingState = 'idle' | 'confirming' | 'cancelling';
 
 export default function SilentSubscriptionsScreen() {
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
-  const [cancelStates, setCancelStates] = useState<Record<string, CancelState>>({});
+  const { cancelSubscription, isCancelled } = useSubscriptions();
+  const [pendingState, setPendingState] = useState<Record<string, PendingState>>({});
 
-  // Get silent subscriptions (ones user hasn't interacted with recently)
-  const silentSubs = demoSubscriptions.slice(0, demoHomeSummary.silentSubscriptionCount).map(sub => {
+  const silentSubs = demoSubscriptions.map(sub => {
     const merchant = demoMerchants[sub.merchantId];
     const charges = demoCharges.filter(c => c.merchantId === sub.merchantId);
     const lastCharge = charges.sort((a, b) =>
@@ -37,23 +33,34 @@ export default function SilentSubscriptionsScreen() {
     };
   });
 
-  const activeSubs = silentSubs.filter(sub => cancelStates[sub.id] !== 'cancelled');
+  const activeSubs = silentSubs.filter(sub => !isCancelled(sub.id));
   const totalSilentSpend = activeSubs.reduce((acc, sub) => acc + sub.amountCents, 0);
 
   const handleCancel = (subId: string) => {
-    setCancelStates(prev => ({ ...prev, [subId]: 'confirming' }));
+    setPendingState(prev => ({ ...prev, [subId]: 'confirming' }));
   };
 
   const confirmCancel = (subId: string) => {
-    setCancelStates(prev => ({ ...prev, [subId]: 'cancelling' }));
-
-    // Simulate cancellation
+    setPendingState(prev => ({ ...prev, [subId]: 'cancelling' }));
+    cancelSubscription(subId);
     setTimeout(() => {
-      setCancelStates(prev => ({ ...prev, [subId]: 'cancelled' }));
+      setPendingState(prev => ({ ...prev, [subId]: 'idle' }));
     }, 1500);
   };
 
-  const getCancelButtonContent = (state: CancelState, subId: string) => {
+  const getCancelButtonContent = (subId: string) => {
+    const state = pendingState[subId] || 'idle';
+    const cancelled = isCancelled(subId);
+
+    if (cancelled) {
+      return (
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 12, paddingVertical: 6, backgroundColor: 'rgba(16,185,129,0.1)', borderRadius: 6 }}>
+          <Ionicons name="checkmark" size={14} color="#10B981" />
+          <Text style={{ fontSize: 12, fontWeight: '600', color: '#10B981' }}>Cancelled</Text>
+        </View>
+      );
+    }
+
     switch (state) {
       case 'confirming':
         return (
@@ -65,7 +72,7 @@ export default function SilentSubscriptionsScreen() {
               <Text style={{ fontSize: 12, fontWeight: '600', color: '#FFFFFF' }}>Confirm</Text>
             </Pressable>
             <Pressable
-              onPress={() => setCancelStates(prev => ({ ...prev, [subId]: 'idle' }))}
+              onPress={() => setPendingState(prev => ({ ...prev, [subId]: 'idle' }))}
               style={{ paddingHorizontal: 12, paddingVertical: 6, backgroundColor: colors.background, borderRadius: 6 }}
             >
               <Text style={{ fontSize: 12, fontWeight: '600', color: colors.textSecondary }}>Back</Text>
@@ -76,13 +83,6 @@ export default function SilentSubscriptionsScreen() {
         return (
           <View style={{ paddingHorizontal: 16, paddingVertical: 6, backgroundColor: colors.background, borderRadius: 6 }}>
             <Text style={{ fontSize: 12, fontWeight: '600', color: colors.textSecondary }}>Cancelling...</Text>
-          </View>
-        );
-      case 'cancelled':
-        return (
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 12, paddingVertical: 6, backgroundColor: 'rgba(16,185,129,0.1)', borderRadius: 6 }}>
-            <Ionicons name="checkmark" size={14} color="#10B981" />
-            <Text style={{ fontSize: 12, fontWeight: '600', color: '#10B981' }}>Cancelled</Text>
           </View>
         );
       default:
@@ -103,7 +103,6 @@ export default function SilentSubscriptionsScreen() {
         contentContainerStyle={{ paddingHorizontal: 24, paddingTop: insets.top + 16, paddingBottom: insets.bottom + 100 }}
         showsVerticalScrollIndicator={false}
       >
-        {/* Header */}
         <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 24 }}>
           <Pressable
             onPress={() => router.back()}
@@ -114,7 +113,6 @@ export default function SilentSubscriptionsScreen() {
           <Text style={{ fontSize: 24, fontWeight: '700', color: colors.text }}>Silent Subscriptions</Text>
         </View>
 
-        {/* Summary Card */}
         <View style={{ backgroundColor: colors.card, padding: 24, borderRadius: 20, marginBottom: 24, alignItems: 'center' }}>
           <Ionicons name="eye-off" size={40} color={colors.textSecondary} />
           <Text style={{ fontSize: 20, fontWeight: '600', color: colors.text, marginTop: 12, textAlign: 'center' }}>
@@ -126,12 +124,10 @@ export default function SilentSubscriptionsScreen() {
           <Text style={{ fontSize: 14, color: colors.textSecondary, marginTop: 4 }}>per month</Text>
         </View>
 
-        {/* Subscriptions List */}
         <View style={{ marginBottom: 16 }}>
           {silentSubs.map(sub => {
-            const state = cancelStates[sub.id] || 'idle';
             const lastChargedDate = new Date(sub.lastCharged).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-            const isCancelled = state === 'cancelled';
+            const cancelled = isCancelled(sub.id);
 
             return (
               <View
@@ -143,14 +139,14 @@ export default function SilentSubscriptionsScreen() {
                   padding: 16,
                   borderRadius: 12,
                   marginBottom: 12,
-                  opacity: isCancelled ? 0.5 : 1,
+                  opacity: cancelled ? 0.5 : 1,
                 }}
               >
                 <View style={{
                   width: 48,
                   height: 48,
                   borderRadius: 24,
-                  backgroundColor: isCancelled ? colors.textSecondary : colors.primary,
+                  backgroundColor: cancelled ? colors.textSecondary : colors.primary,
                   justifyContent: 'center',
                   alignItems: 'center',
                   marginRight: 12,
@@ -161,20 +157,20 @@ export default function SilentSubscriptionsScreen() {
                   <Text style={{
                     fontSize: 16,
                     fontWeight: '600',
-                    color: isCancelled ? colors.textSecondary : colors.text,
+                    color: cancelled ? colors.textSecondary : colors.text,
                     marginBottom: 2,
-                    textDecorationLine: isCancelled ? 'line-through' : 'none',
+                    textDecorationLine: cancelled ? 'line-through' : 'none',
                   }}>
                     {sub.name}
                   </Text>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                    <Text style={{ fontSize: 14, fontWeight: '600', color: isCancelled ? colors.textSecondary : colors.text }}>
+                    <Text style={{ fontSize: 14, fontWeight: '600', color: cancelled ? colors.textSecondary : colors.text }}>
                       {formatCents(sub.amountCents)}
                     </Text>
                     <Text style={{ fontSize: 12, color: colors.textSecondary }}>· Last charged {lastChargedDate}</Text>
                   </View>
                 </View>
-                {getCancelButtonContent(state, sub.id)}
+                {getCancelButtonContent(sub.id)}
               </View>
             );
           })}

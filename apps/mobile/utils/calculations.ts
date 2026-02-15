@@ -2,7 +2,57 @@
 // EZER Mobile App - Calculation Utilities
 // =============================================================================
 
-import type { SubscriptionCharge, DateRange, BillingInterval } from '../types';
+import type { SubscriptionCharge, DateRange, DateRangeType, BillingInterval } from '../types';
+
+function formatRangeLabel(start: Date, end: Date): string {
+  const s = start.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  const e = end.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  return `${s} – ${e}`;
+}
+
+/**
+ * Single canonical resolver: given type and optional custom dates, returns DateRange.
+ * Used by DateRangeContext and anywhere we need start/end/label.
+ */
+export function getResolvedDateRange(
+  type: DateRangeType,
+  charges?: SubscriptionCharge[],
+  customStart?: Date,
+  customEnd?: Date
+): DateRange {
+  const now = new Date();
+  const end = new Date(now);
+  let start: Date;
+  let label: string;
+
+  switch (type) {
+    case 'custom':
+      if (customStart && customEnd) {
+        start = new Date(customStart);
+        const endDate = new Date(customEnd);
+        label = formatRangeLabel(start, endDate);
+        return { type: 'custom', start, end: endDate, label };
+      }
+      // Fallback to this month if custom not set
+      start = new Date(now.getFullYear(), now.getMonth(), 1);
+      label = 'This Month';
+      return { type: 'thisMonth', start, end, label };
+    case 'thisMonth':
+      start = new Date(now.getFullYear(), now.getMonth(), 1);
+      label = 'This Month';
+      break;
+    case 'lastYear':
+      start = new Date(now);
+      start.setFullYear(start.getFullYear() - 1);
+      label = 'Last Year';
+      break;
+    default:
+      start = new Date(now.getFullYear(), now.getMonth(), 1);
+      label = 'This Month';
+  }
+
+  return { type, start, end, label };
+}
 
 /**
  * Calculate total drain for a specific card within a date range
@@ -70,43 +120,16 @@ export function formatDollars(dollars: number): string {
 }
 
 /**
- * Get date range object for common ranges
+ * @deprecated Use getResolvedDateRange from DateRangeContext / calculations instead.
+ * Legacy getDateRange for callers that only have preset keys; returns range with type.
  */
 export function getDateRange(
-  type: 'sinceStart' | 'thisMonth' | 'lastYear',
-  charges?: SubscriptionCharge[]
+  type: 'thisMonth' | 'lastYear' | 'custom',
+  charges?: SubscriptionCharge[],
+  customStart?: Date,
+  customEnd?: Date
 ): DateRange {
-  const now = new Date();
-  const end = new Date(now);
-  let start: Date;
-  let label: string;
-
-  switch (type) {
-    case 'sinceStart':
-      if (charges && charges.length > 0) {
-        const dates = charges.map((c) => new Date(c.chargeTimestamp).getTime());
-        const earliest = Math.min(...dates);
-        start = new Date(earliest);
-        label = 'Since Start';
-      } else {
-        // Fallback if no charges provided
-        start = new Date(now);
-        start.setFullYear(start.getFullYear() - 1);
-        label = 'Since Start';
-      }
-      break;
-    case 'thisMonth':
-      start = new Date(now.getFullYear(), now.getMonth(), 1);
-      label = 'This Month';
-      break;
-    case 'lastYear':
-      start = new Date(now);
-      start.setFullYear(start.getFullYear() - 1);
-      label = 'Last Year';
-      break;
-  }
-
-  return { start, end, label };
+  return getResolvedDateRange(type, charges, customStart, customEnd);
 }
 
 /**

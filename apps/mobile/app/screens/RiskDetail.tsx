@@ -9,7 +9,7 @@ import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../../utils/ThemeContext';
-import { demoSubscriptions, demoMerchants, demoCharges, demoHomeSummary } from '../../utils/demoData';
+import { demoSubscriptions, demoMerchants, demoCharges, demoTrials } from '../../utils/demoData';
 import { formatCents, daysUntil } from '../../utils/calculations';
 
 // Get risk level
@@ -19,36 +19,71 @@ const getRiskLevel = (days: number) => {
   return { color: '#10B981', label: 'Low Risk', bg: 'rgba(16,185,129,0.15)', score: 30 };
 };
 
+type UpcomingItem =
+  | { type: 'renewal'; id: string; name: string; logo: string; amountCents: number; date: Date; daysUntil: number; merchantId: string }
+  | { type: 'trial'; id: string; name: string; logo: string; amountCents: number; date: Date; daysUntil: number; trialId: string };
+
 export default function RiskDetailScreen() {
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
 
-  // Calculate risk data
-  const riskySubscriptions = demoSubscriptions.map(sub => {
-    const merchant = demoMerchants[sub.merchantId];
-    const charges = demoCharges.filter(c => c.merchantId === sub.merchantId);
-    const lastCharge = charges.sort((a, b) =>
-      new Date(b.chargeTimestamp).getTime() - new Date(a.chargeTimestamp).getTime()
-    )[0];
-    const days = daysUntil(sub.renewalDate);
+  // Renewals in 0–30 days
+  const riskySubscriptions = demoSubscriptions
+    .map(sub => {
+      const merchant = demoMerchants[sub.merchantId];
+      const charges = demoCharges.filter(c => c.merchantId === sub.merchantId);
+      const lastCharge = charges.sort((a, b) =>
+        new Date(b.chargeTimestamp).getTime() - new Date(a.chargeTimestamp).getTime()
+      )[0];
+      const days = daysUntil(sub.renewalDate);
+      return {
+        id: sub.id,
+        name: merchant?.canonicalName || 'Unknown',
+        logo: merchant?.canonicalName?.charAt(0) || '?',
+        amountCents: lastCharge?.amountCents || 0,
+        renewalDate: sub.renewalDate,
+        daysUntil: days,
+        merchantId: sub.merchantId,
+      };
+    })
+    .filter(sub => sub.daysUntil >= 0 && sub.daysUntil <= 30);
 
-    return {
+  // Trials ending in 0–30 days (count as risk too)
+  const riskyTrials = demoTrials
+    .filter(t => {
+      const days = daysUntil(t.trialEndDate);
+      return days >= 0 && days <= 30;
+    })
+    .map(t => ({
+      type: 'trial' as const,
+      id: t.id,
+      name: t.merchantName,
+      logo: t.merchantName.charAt(0),
+      amountCents: t.amountCentsAfterTrial,
+      date: t.trialEndDate,
+      daysUntil: daysUntil(t.trialEndDate),
+      trialId: t.id,
+    }));
+
+  // Combined upcoming charges: renewals + trials, sorted by days until
+  const upcomingCharges: UpcomingItem[] = [
+    ...riskySubscriptions.map(sub => ({
+      type: 'renewal' as const,
       id: sub.id,
-      name: merchant?.canonicalName || 'Unknown',
-      logo: merchant?.canonicalName?.charAt(0) || '?',
-      amountCents: lastCharge?.amountCents || 0,
-      renewalDate: sub.renewalDate,
-      daysUntil: days,
+      name: sub.name,
+      logo: sub.logo,
+      amountCents: sub.amountCents,
+      date: sub.renewalDate,
+      daysUntil: sub.daysUntil,
       merchantId: sub.merchantId,
-    };
-  })
-    .filter(sub => sub.daysUntil >= 0 && sub.daysUntil <= 30)
-    .sort((a, b) => a.daysUntil - b.daysUntil);
+    })),
+    ...riskyTrials,
+  ].sort((a, b) => a.daysUntil - b.daysUntil);
 
-  const totalAtRisk = riskySubscriptions.reduce((acc, sub) => acc + sub.amountCents, 0);
+  const totalAtRisk = upcomingCharges.reduce((acc, item) => acc + item.amountCents, 0);
 
-  // Overall risk score (0-100)
-  const riskScore = Math.min(100, Math.round((riskySubscriptions.length / 10) * 100));
+  // Overall risk score (0-100) based on count of renewals + trials
+  const riskScore = Math.min(100, Math.round((upcomingCharges.length / 10) * 100));
   const riskColor = riskScore >= 70 ? '#EF4444' : riskScore >= 40 ? '#F59E0B' : '#10B981';
 
   return (
@@ -112,34 +147,43 @@ export default function RiskDetailScreen() {
           <Text style={{ fontSize: 14, color: colors.textSecondary, marginTop: 4 }}>At risk in next 30 days</Text>
         </View>
 
-        {/* Risk Breakdown */}
+        {/* Risk Breakdown — renewals + trials */}
         <Text style={{ fontSize: 18, fontWeight: '700', color: colors.text, marginBottom: 16 }}>Upcoming Charges</Text>
-        {riskySubscriptions.length === 0 ? (
+        {upcomingCharges.length === 0 ? (
           <View style={{ alignItems: 'center', paddingVertical: 40, backgroundColor: colors.card, borderRadius: 16 }}>
             <Ionicons name="checkmark-circle-outline" size={48} color={colors.accent} />
             <Text style={{ fontSize: 16, fontWeight: '600', color: colors.text, marginTop: 12 }}>No risky charges!</Text>
             <Text style={{ fontSize: 14, color: colors.textSecondary, marginTop: 4 }}>You're in good shape</Text>
           </View>
         ) : (
-          riskySubscriptions.map(sub => {
-            const risk = getRiskLevel(sub.daysUntil);
-            const chargeDate = new Date(sub.renewalDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+          upcomingCharges.map((item) => {
+            const risk = getRiskLevel(item.daysUntil);
+            const chargeDate = new Date(item.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+            const isTrial = item.type === 'trial';
 
             return (
               <Pressable
-                key={sub.id}
+                key={item.id}
                 style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: colors.card, padding: 16, borderRadius: 12, marginBottom: 12 }}
-                onPress={() => router.push({ pathname: '/screens/SubscriptionDetail', params: { merchantId: sub.merchantId } })}
+                onPress={() => {
+                  if (item.type === 'trial') {
+                    router.push({ pathname: '/screens/TrialDecision', params: { trialId: item.trialId } });
+                  } else {
+                    router.push({ pathname: '/screens/SubscriptionDetail', params: { merchantId: item.merchantId } });
+                  }
+                }}
               >
-                <View style={{ width: 48, height: 48, borderRadius: 24, backgroundColor: colors.primary, justifyContent: 'center', alignItems: 'center', marginRight: 12 }}>
-                  <Text style={{ fontSize: 20, fontWeight: '700', color: '#FFFFFF' }}>{sub.logo}</Text>
+                <View style={{ width: 48, height: 48, borderRadius: 24, backgroundColor: isTrial ? colors.accent : colors.primary, justifyContent: 'center', alignItems: 'center', marginRight: 12 }}>
+                  <Text style={{ fontSize: 20, fontWeight: '700', color: '#FFFFFF' }}>{item.logo}</Text>
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: 16, fontWeight: '600', color: colors.text, marginBottom: 2 }}>{sub.name}</Text>
-                  <Text style={{ fontSize: 12, color: colors.textSecondary }}>{chargeDate} · {sub.daysUntil === 0 ? 'Today' : `${sub.daysUntil} days`}</Text>
+                  <Text style={{ fontSize: 16, fontWeight: '600', color: colors.text, marginBottom: 2 }}>{item.name}</Text>
+                  <Text style={{ fontSize: 12, color: colors.textSecondary }}>
+                    {chargeDate} · {item.daysUntil === 0 ? 'Today' : `${item.daysUntil} days`} · {isTrial ? 'Trial ending' : 'Renewal'}
+                  </Text>
                 </View>
                 <View style={{ alignItems: 'flex-end' }}>
-                  <Text style={{ fontSize: 16, fontWeight: '700', color: colors.text, marginBottom: 4 }}>{formatCents(sub.amountCents)}</Text>
+                  <Text style={{ fontSize: 16, fontWeight: '700', color: colors.text, marginBottom: 4 }}>{formatCents(item.amountCents)}</Text>
                   <View style={{ paddingHorizontal: 8, paddingVertical: 2, backgroundColor: risk.bg, borderRadius: 4 }}>
                     <Text style={{ fontSize: 10, fontWeight: '600', color: risk.color }}>{risk.label}</Text>
                   </View>

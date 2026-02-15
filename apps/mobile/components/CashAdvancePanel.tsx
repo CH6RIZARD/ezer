@@ -8,13 +8,13 @@ import { View, Text, Pressable, TextInput } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useTheme } from '../utils/ThemeContext';
+import { CASH_ADVANCE_MIN, CASH_ADVANCE_MAX, CASH_ADVANCE_PRESETS } from '../constants/money';
 
 type CashAdvancePanelProps = {
   maxAmount?: number;
   onRequestAdvance?: (amount: number) => void;
 };
 
-const QUICK_AMOUNTS = [50, 100, 250, 500, 1000, 2000];
 const FEE_PERCENTAGE = 0.05;
 const MIN_FEE = 2.99;
 
@@ -30,15 +30,15 @@ const getDueDate = (): string => {
   return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 };
 
-export function CashAdvancePanel({ maxAmount = 1500, onRequestAdvance }: CashAdvancePanelProps) {
+export function CashAdvancePanel({ maxAmount = CASH_ADVANCE_MAX, onRequestAdvance }: CashAdvancePanelProps) {
   const router = useRouter();
   const { colors } = useTheme();
   const [isExpanded, setIsExpanded] = useState(false);
-  const [selectedAmount, setSelectedAmount] = useState<number | null>(50);
+  const [selectedAmount, setSelectedAmount] = useState<number | null>(CASH_ADVANCE_MIN);
   const [customAmount, setCustomAmount] = useState('');
 
   const activeAmount = selectedAmount || (customAmount ? parseInt(customAmount) : 0);
-  const isValidAmount = activeAmount >= 50 && activeAmount <= maxAmount;
+  const isValidAmount = activeAmount >= CASH_ADVANCE_MIN && activeAmount <= maxAmount;
   const fee = calculateFee(activeAmount);
   const totalRepayment = activeAmount + fee;
   const dueDate = getDueDate();
@@ -132,7 +132,7 @@ export function CashAdvancePanel({ maxAmount = 1500, onRequestAdvance }: CashAdv
 
           {/* Quick Amount Buttons */}
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 20 }}>
-            {QUICK_AMOUNTS.map((amount) => {
+            {CASH_ADVANCE_PRESETS.map((amount) => {
               const isDisabled = amount > maxAmount;
               const isActive = selectedAmount === amount;
 

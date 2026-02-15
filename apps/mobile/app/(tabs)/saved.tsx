@@ -3,32 +3,21 @@
 // Goal-based savings with subscription roundups + Cash Advance
 // =============================================================================
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { View, Text, ScrollView, Pressable, Alert, TextInput, Animated, LayoutAnimation, Platform, UIManager } from 'react-native';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../../utils/ThemeContext';
+import { usePremium } from '../../utils/PremiumContext';
+import { useSavingsGoals } from '../../utils/SavingsGoalsContext';
+import { useCashAdvance } from '../../contexts/CashAdvanceContext';
 import { demoLedgerEntry, demoSubscriptions, demoMerchants } from '../../utils/demoData';
+import { CASH_ADVANCE_MIN, CASH_ADVANCE_MAX, CASH_ADVANCE_PRESETS } from '../../constants/money';
 
-// Enable LayoutAnimation on Android
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
-
-interface CashAdvanceState {
-  eligible: boolean;
-  eligibleLimit: number;
-  reasonLocked?: string;
-  selectedAmount: number;
-  fee: number;
-  totalRepayment: number;
-  repaymentDate: string;
-}
-
-const PRESET_AMOUNTS = [50, 100, 250, 500, 1000, 2000];
-const MIN_AMOUNT = 50;
-const MAX_AMOUNT = 2000;
 
 const calculateFee = (amount: number): number => {
   const feePercentage = 0.05;
@@ -47,42 +36,19 @@ const formatDateShort = (isoString: string): string => {
   return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 };
 
-interface SavingsGoal {
-  id: string;
-  name: string;
-  targetAmount: number;
-  currentAmount: number;
-  icon: string;
-  color: string;
-  subscriptionIds: string[];
-}
-
 export default function SavedScreen() {
   const insets = useSafeAreaInsets();
   const { colors, isDark } = useTheme();
+  const { status: premiumStatus } = usePremium();
+  const params = useLocalSearchParams<{ openCreate?: string }>();
+  const { goals: savingsGoals, addGoal, updateGoal, deleteGoal } = useSavingsGoals();
+  const cashAdvance = useCashAdvance();
+
+  useEffect(() => {
+    if (premiumStatus === 'expired') router.replace('/screens/Paywall');
+  }, [premiumStatus]);
 
   const totalReclaimed = demoLedgerEntry.reclaimedCents / 100;
-
-  const [savingsGoals, setSavingsGoals] = useState<SavingsGoal[]>([
-    {
-      id: '1',
-      name: 'Emergency Fund',
-      targetAmount: 5000,
-      currentAmount: 1247.50,
-      icon: 'shield-checkmark',
-      color: colors.primary,
-      subscriptionIds: ['sub1', 'sub2'],
-    },
-    {
-      id: '2',
-      name: 'Vacation',
-      targetAmount: 2000,
-      currentAmount: 687.23,
-      icon: 'airplane',
-      color: colors.accent,
-      subscriptionIds: ['sub3'],
-    },
-  ]);
 
   const [showCreateGoal, setShowCreateGoal] = useState(false);
   const [newGoalName, setNewGoalName] = useState('');
@@ -90,6 +56,15 @@ export default function SavedScreen() {
   const [editingGoalId, setEditingGoalId] = useState<string | null>(null);
   const [editGoalName, setEditGoalName] = useState('');
   const [editGoalTarget, setEditGoalTarget] = useState('');
+  const [advanceExpanded, setAdvanceExpanded] = useState(false);
+  const [advanceCustomInput, setAdvanceCustomInput] = useState('');
+  const rotateAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (params.openCreate === '1') {
+      setShowCreateGoal(true);
+    }
+  }, [params.openCreate]);
 
   const connectedAccount = {
     institution: 'Chase',
@@ -97,18 +72,14 @@ export default function SavedScreen() {
     last4: '4532',
   };
 
-  // Cash Advance State
-  const [advanceExpanded, setAdvanceExpanded] = useState(false);
-  const [advanceCustomInput, setAdvanceCustomInput] = useState('');
-  const rotateAnim = useRef(new Animated.Value(0)).current;
-  const [advanceState, setAdvanceState] = useState<CashAdvanceState>({
-    eligible: true,
-    eligibleLimit: 1500,
-    selectedAmount: 0,
-    fee: 0,
-    totalRepayment: 0,
-    repaymentDate: calculateRepaymentDate(),
-  });
+  const selectedAmount = cashAdvance.selectedAmount;
+  const fee = Math.max(2.99, selectedAmount * 0.05);
+  const totalRepayment = selectedAmount + fee;
+  const repaymentDate = (() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 14);
+    return d.toISOString();
+  })();
 
   const toggleAdvanceExpanded = () => {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
@@ -121,21 +92,9 @@ export default function SavedScreen() {
     }).start();
   };
 
-  const handleAdvanceAmountChange = (amount: number) => {
-    const fee = calculateFee(amount);
-    const totalRepayment = amount + fee;
-    setAdvanceState(prev => ({
-      ...prev,
-      selectedAmount: amount,
-      fee,
-      totalRepayment,
-      repaymentDate: calculateRepaymentDate(),
-    }));
-  };
-
   const handlePresetPress = (amount: number) => {
-    if (amount <= advanceState.eligibleLimit) {
-      handleAdvanceAmountChange(amount);
+    if (amount <= cashAdvance.eligibleMax) {
+      cashAdvance.setSelectedAmount(amount);
       setAdvanceCustomInput('');
     }
   };
@@ -146,21 +105,18 @@ export default function SavedScreen() {
     if (numericText) {
       const amount = parseInt(numericText, 10);
       if (!isNaN(amount)) {
-        handleAdvanceAmountChange(Math.min(amount, MAX_AMOUNT));
+        cashAdvance.setSelectedAmount(Math.min(amount, CASH_ADVANCE_MAX));
       }
     }
   };
 
   const handleGetAdvance = () => {
     if (!canGetAdvance) return;
+    // Open approval UI directly; paywall shows after user taps "Check My Eligibility" in flow
     router.push({
       pathname: '/screens/CashAdvanceFlow',
-      params: { amount: String(advanceState.selectedAmount) },
+      params: { amount: String(selectedAmount) },
     });
-  };
-
-  const handleLearnUnlock = () => {
-    Alert.alert('Unlock Cash Advance', 'To unlock Cash Advance, maintain a positive balance and complete at least 3 months of savings activity.');
   };
 
   const chevronRotation = rotateAnim.interpolate({
@@ -168,7 +124,7 @@ export default function SavedScreen() {
     outputRange: ['0deg', '180deg'],
   });
 
-  const canGetAdvance = advanceState.eligible && advanceState.selectedAmount >= MIN_AMOUNT && advanceState.selectedAmount <= advanceState.eligibleLimit;
+  const canGetAdvance = selectedAmount >= CASH_ADVANCE_MIN && selectedAmount <= cashAdvance.eligibleMax;
 
   const handleCreateGoal = () => {
     if (!newGoalName || !newGoalTarget) {
@@ -176,17 +132,14 @@ export default function SavedScreen() {
       return;
     }
 
-    const newGoal: SavingsGoal = {
-      id: Date.now().toString(),
+    addGoal({
       name: newGoalName,
       targetAmount: parseFloat(newGoalTarget),
       currentAmount: 0,
       icon: 'flag',
       color: colors.primary,
       subscriptionIds: [],
-    };
-
-    setSavingsGoals([...savingsGoals, newGoal]);
+    });
     setNewGoalName('');
     setNewGoalTarget('');
     setShowCreateGoal(false);
@@ -220,6 +173,7 @@ export default function SavedScreen() {
                 {
                   text: 'Withdraw',
                   onPress: () => {
+                    updateGoal(goalId, { currentAmount: 0 });
                     Alert.alert('Success', `$${goal.currentAmount.toFixed(2)} transferred successfully.`);
                   },
                 },
@@ -240,7 +194,7 @@ export default function SavedScreen() {
                   text: 'Delete',
                   style: 'destructive',
                   onPress: () => {
-                    setSavingsGoals(savingsGoals.filter(g => g.id !== goalId));
+                    deleteGoal(goalId);
                   },
                 },
               ]
@@ -254,11 +208,10 @@ export default function SavedScreen() {
   const handleSaveEdit = () => {
     if (!editingGoalId || !editGoalName || !editGoalTarget) return;
 
-    setSavingsGoals(savingsGoals.map(goal =>
-      goal.id === editingGoalId
-        ? { ...goal, name: editGoalName, targetAmount: parseFloat(editGoalTarget) }
-        : goal
-    ));
+    updateGoal(editingGoalId, {
+      name: editGoalName,
+      targetAmount: parseFloat(editGoalTarget),
+    });
     setEditingGoalId(null);
     setEditGoalName('');
     setEditGoalTarget('');
@@ -272,33 +225,95 @@ export default function SavedScreen() {
     return totalReclaimed - getTotalSaved();
   };
 
+  const topInset = Math.max(insets.top, 44);
+  const headerBarHeight = 52;
+  const paddingTop = topInset + 8;
+
   return (
     <ScrollView
       style={{ flex: 1, backgroundColor: colors.background }}
-      contentContainerStyle={{ paddingHorizontal: 24, paddingTop: insets.top + 16, paddingBottom: insets.bottom + 16 }}
+      contentContainerStyle={{ paddingHorizontal: 24, paddingTop, paddingBottom: insets.bottom + 16 }}
       showsVerticalScrollIndicator={false}
     >
-      {/* EZER Branding */}
-      <View style={{ position: 'absolute', top: 16, right: 24, zIndex: 1000 }}>
+      {/* EZER Branding - same height as header bar for center alignment */}
+      <View style={{ position: 'absolute', top: paddingTop, right: 24, height: headerBarHeight, justifyContent: 'center', zIndex: 1000 }}>
         <Text style={{ fontSize: 20, fontWeight: '700', color: colors.accent, letterSpacing: 2 }}>EZER</Text>
       </View>
 
-      {/* Header */}
-      <Text style={{ fontSize: 32, fontWeight: '700', color: colors.text, marginBottom: 16 }}>Savings</Text>
+      {/* Header - fixed-height bar so center mass aligns with status bar */}
+      <View style={{ minHeight: headerBarHeight, justifyContent: 'center', marginBottom: 16 }}>
+        <Text style={{ fontSize: 32, fontWeight: '700', color: colors.text }}>Savings</Text>
+      </View>
 
-      {/* Hero Card - Total Saved */}
-      <View style={{ backgroundColor: colors.primary, padding: 24, borderRadius: 16, marginBottom: 24 }}>
-        <Text style={{ fontSize: 13, fontWeight: '600', color: 'rgba(255,255,255,0.7)', marginBottom: 8 }}>Total Saved</Text>
-        <Text style={{ fontSize: 40, fontWeight: '700', color: '#FFFFFF', marginBottom: 20 }}>${getTotalSaved().toFixed(2)}</Text>
-        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-          <View style={{ flex: 1 }}>
-            <Text style={{ fontSize: 12, color: 'rgba(255,255,255,0.6)', marginBottom: 4 }}>Goals</Text>
-            <Text style={{ fontSize: 18, fontWeight: '700', color: '#FFFFFF' }}>{savingsGoals.length}</Text>
+      {/* Hero Card - Liquidity Dashboard */}
+      <View style={{ marginBottom: 24 }}>
+        {/* Stacked background layers */}
+        <View style={{ position: 'absolute', top: 8, left: 8, right: -8, bottom: -8, backgroundColor: colors.primary, borderRadius: 20, opacity: 0.35 }} />
+        <View style={{ position: 'absolute', top: 4, left: 4, right: -4, bottom: -4, backgroundColor: colors.primary, borderRadius: 20, opacity: 0.5 }} />
+
+        <View style={{
+          backgroundColor: colors.primary,
+          borderRadius: 20,
+          padding: 24,
+          shadowColor: colors.shadow,
+          shadowOffset: { width: 0, height: 4 },
+          shadowOpacity: 0.2,
+          shadowRadius: 12,
+          elevation: 4,
+        }}>
+          {/* Header row */}
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+            <Text style={{ fontSize: 13, color: 'rgba(255,255,255,0.7)', fontWeight: '500', textTransform: 'uppercase', letterSpacing: 1 }}>Total Savings</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.15)', paddingHorizontal: 12, paddingVertical: 4, borderRadius: 20 }}>
+              <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: colors.success, marginRight: 6 }} />
+              <Text style={{ fontSize: 12, color: '#FFFFFF', fontWeight: '500' }}>Active</Text>
+            </View>
           </View>
-          <View style={{ width: 1, height: 32, backgroundColor: 'rgba(255,255,255,0.2)', marginHorizontal: 16 }} />
-          <View style={{ flex: 1 }}>
-            <Text style={{ fontSize: 12, color: 'rgba(255,255,255,0.6)', marginBottom: 4 }}>Unallocated</Text>
-            <Text style={{ fontSize: 18, fontWeight: '700', color: '#FFFFFF' }}>${Math.max(0, getUnallocatedAmount()).toFixed(2)}</Text>
+
+          {/* Balance */}
+          <Text style={{ fontSize: 40, fontWeight: '700', color: '#FFFFFF', marginBottom: 20 }}>
+            ${getTotalSaved().toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          </Text>
+
+          <View style={{ height: 1, backgroundColor: 'rgba(255,255,255,0.15)', marginBottom: 20 }} />
+
+          {/* Cash Available + Move Money */}
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+            <View>
+              <Text style={{ fontSize: 13, color: 'rgba(255,255,255,0.7)', marginBottom: 4 }}>Cash Available</Text>
+              <Text style={{ fontSize: 20, fontWeight: '600', color: '#FFFFFF' }}>
+                ${Math.max(0, getUnallocatedAmount()).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </Text>
+            </View>
+            <Pressable
+              onPress={() => router.push('/savings')}
+              style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.2)', paddingHorizontal: 16, paddingVertical: 10, borderRadius: 12 }}
+            >
+              <Text style={{ fontSize: 16, color: '#FFFFFF', marginRight: 8 }}>↔</Text>
+              <Text style={{ fontSize: 15, fontWeight: '600', color: '#FFFFFF' }}>Move Money</Text>
+            </Pressable>
+          </View>
+
+          {/* Stats row */}
+          <View style={{ flexDirection: 'row', backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 12, padding: 12 }}>
+            <View style={{ flex: 1, alignItems: 'center' }}>
+              <Text style={{ fontSize: 18, fontWeight: '700', color: '#FFFFFF', marginBottom: 4 }}>+${Math.round(totalReclaimed)}</Text>
+              <Text style={{ fontSize: 11, color: 'rgba(255,255,255,0.7)' }}>This month</Text>
+            </View>
+            <View style={{ width: 1, backgroundColor: 'rgba(255,255,255,0.2)' }} />
+            <View style={{ flex: 1, alignItems: 'center' }}>
+              <Text style={{ fontSize: 18, fontWeight: '700', color: '#FFFFFF', marginBottom: 4 }}>{savingsGoals.length}</Text>
+              <Text style={{ fontSize: 11, color: 'rgba(255,255,255,0.7)' }}>Active buckets</Text>
+            </View>
+            <View style={{ width: 1, backgroundColor: 'rgba(255,255,255,0.2)' }} />
+            <View style={{ flex: 1, alignItems: 'center' }}>
+              <Text style={{ fontSize: 18, fontWeight: '700', color: '#FFFFFF', marginBottom: 4 }}>
+                {savingsGoals.length > 0
+                  ? Math.round(savingsGoals.reduce((sum, g) => sum + Math.min(100, (g.currentAmount / g.targetAmount) * 100), 0) / savingsGoals.length)
+                  : 0}%
+              </Text>
+              <Text style={{ fontSize: 11, color: 'rgba(255,255,255,0.7)' }}>On track</Text>
+            </View>
           </View>
         </View>
       </View>
@@ -436,20 +451,20 @@ export default function SavedScreen() {
           style={({ pressed }) => [{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 16 }, pressed && { backgroundColor: colors.background }]}
         >
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-            <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: advanceState.eligible ? `${colors.primary}20` : colors.border, justifyContent: 'center', alignItems: 'center' }}>
-              <Ionicons name={advanceState.eligible ? 'cash-outline' : 'lock-closed'} size={20} color={advanceState.eligible ? colors.primary : colors.textSecondary} />
+            <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: `${colors.primary}20`, justifyContent: 'center', alignItems: 'center' }}>
+              <Ionicons name="cash-outline" size={20} color={colors.primary} />
             </View>
             <View>
               <Text style={{ fontSize: 16, fontWeight: '600', color: colors.text }}>Cash Advance</Text>
               <Text style={{ fontSize: 13, color: colors.textSecondary, marginTop: 2 }}>
-                {advanceState.eligible ? `Up to $${advanceState.eligibleLimit} available` : 'Locked'}
+                Up to ${cashAdvance.eligibleMax} available
               </Text>
             </View>
           </View>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-            {advanceState.eligible && advanceState.selectedAmount > 0 && (
+            {selectedAmount > 0 && (
               <View style={{ backgroundColor: `${colors.primary}20`, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 }}>
-                <Text style={{ fontSize: 13, fontWeight: '600', color: colors.primary }}>${advanceState.selectedAmount}</Text>
+                <Text style={{ fontSize: 13, fontWeight: '600', color: colors.primary }}>${selectedAmount}</Text>
               </View>
             )}
             <Animated.View style={{ transform: [{ rotate: chevronRotation }] }}>
@@ -460,26 +475,12 @@ export default function SavedScreen() {
 
         {advanceExpanded && (
           <View style={{ borderTopWidth: 1, borderTopColor: colors.border }}>
-            {!advanceState.eligible ? (
-              <View style={{ padding: 24, alignItems: 'center' }}>
-                <View style={{ width: 64, height: 64, borderRadius: 32, backgroundColor: colors.border, justifyContent: 'center', alignItems: 'center', marginBottom: 16 }}>
-                  <Ionicons name="lock-closed" size={32} color={colors.textSecondary} />
-                </View>
-                <Text style={{ fontSize: 18, fontWeight: '600', color: colors.text, marginBottom: 8 }}>Cash Advance Locked</Text>
-                <Text style={{ fontSize: 14, color: colors.textSecondary, textAlign: 'center', marginBottom: 16, lineHeight: 20 }}>
-                  {advanceState.reasonLocked || "You're not yet eligible for Cash Advance."}
-                </Text>
-                <Pressable onPress={handleLearnUnlock} style={{ paddingVertical: 8, paddingHorizontal: 16 }}>
-                  <Text style={{ fontSize: 15, fontWeight: '600', color: colors.primary }}>Learn how to unlock →</Text>
-                </Pressable>
-              </View>
-            ) : (
               <View style={{ padding: 16 }}>
                 <Text style={{ fontSize: 13, fontWeight: '500', color: colors.textSecondary, marginBottom: 8 }}>Select amount</Text>
                 <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 }}>
-                  {PRESET_AMOUNTS.map((amount) => {
-                    const isDisabled = amount > advanceState.eligibleLimit;
-                    const isSelected = amount === advanceState.selectedAmount;
+                  {CASH_ADVANCE_PRESETS.map((amount) => {
+                    const isDisabled = amount > cashAdvance.eligibleMax;
+                    const isSelected = amount === selectedAmount;
                     return (
                       <Pressable
                         key={amount}
@@ -507,7 +508,7 @@ export default function SavedScreen() {
                   <Text style={{ fontSize: 20, fontWeight: '500', color: colors.textSecondary }}>$</Text>
                   <TextInput
                     style={{ flex: 1, fontSize: 20, fontWeight: '600', color: colors.text, paddingVertical: 12, paddingHorizontal: 8 }}
-                    value={advanceCustomInput || (advanceState.selectedAmount > 0 ? advanceState.selectedAmount.toString() : '')}
+                    value={advanceCustomInput || (selectedAmount > 0 ? selectedAmount.toString() : '')}
                     onChangeText={handleAdvanceCustomInputChange}
                     placeholder="0"
                     placeholderTextColor={colors.textSecondary}
@@ -516,24 +517,24 @@ export default function SavedScreen() {
                   />
                 </View>
 
-                {advanceState.selectedAmount > 0 && (
+                {selectedAmount > 0 && (
                   <View style={{ backgroundColor: colors.background, borderRadius: 8, padding: 16, marginBottom: 16 }}>
                     <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 }}>
                       <Text style={{ fontSize: 14, color: colors.textSecondary }}>Advance amount</Text>
-                      <Text style={{ fontSize: 14, fontWeight: '500', color: colors.text }}>${advanceState.selectedAmount.toFixed(2)}</Text>
+                      <Text style={{ fontSize: 14, fontWeight: '500', color: colors.text }}>${selectedAmount.toFixed(2)}</Text>
                     </View>
                     <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 }}>
                       <Text style={{ fontSize: 14, color: colors.textSecondary }}>Fee (5%)</Text>
-                      <Text style={{ fontSize: 14, fontWeight: '500', color: colors.text }}>${advanceState.fee.toFixed(2)}</Text>
+                      <Text style={{ fontSize: 14, fontWeight: '500', color: colors.text }}>${fee.toFixed(2)}</Text>
                     </View>
                     <View style={{ height: 1, backgroundColor: colors.border, marginVertical: 8 }} />
                     <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 }}>
                       <Text style={{ fontSize: 15, fontWeight: '600', color: colors.text }}>Total repayment</Text>
-                      <Text style={{ fontSize: 15, fontWeight: '700', color: colors.text }}>${advanceState.totalRepayment.toFixed(2)}</Text>
+                      <Text style={{ fontSize: 15, fontWeight: '700', color: colors.text }}>${totalRepayment.toFixed(2)}</Text>
                     </View>
                     <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
                       <Text style={{ fontSize: 14, color: colors.textSecondary }}>Due date</Text>
-                      <Text style={{ fontSize: 14, fontWeight: '500', color: colors.text }}>{formatDateShort(advanceState.repaymentDate)}</Text>
+                      <Text style={{ fontSize: 14, fontWeight: '500', color: colors.text }}>{formatDateShort(repaymentDate)}</Text>
                     </View>
                   </View>
                 )}
@@ -544,7 +545,7 @@ export default function SavedScreen() {
                   style={{ backgroundColor: canGetAdvance ? colors.primary : colors.border, borderRadius: 12, paddingVertical: 16, alignItems: 'center', marginBottom: 12 }}
                 >
                   <Text style={{ fontSize: 16, fontWeight: '700', color: canGetAdvance ? '#FFFFFF' : colors.textSecondary }}>
-                    {canGetAdvance ? `Get $${advanceState.selectedAmount} Advance` : 'Select an amount'}
+                    {canGetAdvance ? `Get $${selectedAmount} Advance` : 'Select an amount'}
                   </Text>
                 </Pressable>
 
@@ -552,7 +553,6 @@ export default function SavedScreen() {
                   By proceeding, you agree to the Cash Advance terms.
                 </Text>
               </View>
-            )}
           </View>
         )}
       </View>

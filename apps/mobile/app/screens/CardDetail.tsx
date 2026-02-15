@@ -8,6 +8,7 @@ import { View, Text, ScrollView, TouchableOpacity } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../../utils/ThemeContext';
+import { useDateRange } from '../../utils/DateRangeContext';
 import { Card, CreditCard, MerchantLogo } from '../../components';
 import {
   demoFundingInstruments,
@@ -17,34 +18,31 @@ import {
 } from '../../utils/demoData';
 import {
   calculateDrain,
-  getDateRange,
   formatDollars,
   formatCents,
   getMonthlyEquivalent,
-  getConfidenceLevel,
 } from '../../utils/calculations';
 import type { MerchantChargeGroup, BillingInterval } from '../../types';
 
 export default function CardDetailScreen() {
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
-  const params = useLocalSearchParams<{ cardId: string; dateRangeType: string }>();
+  const { dateRange } = useDateRange();
+  const params = useLocalSearchParams<{ cardId: string }>();
 
   const cardId = params.cardId || '1';
-  const dateRangeType = (params.dateRangeType || 'last30') as 'last30' | 'thisMonth' | 'last90';
-
   const card = demoFundingInstruments.find((c) => c.id === cardId) || demoFundingInstruments[0];
-  const dateRange = getDateRange(dateRangeType);
+  const { start, end } = dateRange;
 
-  // Get charges for this card within date range
+  // Get charges for this card within date range (same as Wallet)
   const cardCharges = useMemo(() => {
     return demoCharges.filter(
       (c) =>
         c.fundingInstrumentId === card.id &&
-        new Date(c.chargeTimestamp) >= dateRange.start &&
-        new Date(c.chargeTimestamp) <= dateRange.end
+        new Date(c.chargeTimestamp) >= start &&
+        new Date(c.chargeTimestamp) <= end
     );
-  }, [card.id, dateRange]);
+  }, [card.id, start, end]);
 
   // Total drain
   const totalDrain = useMemo(() => {
@@ -174,7 +172,7 @@ export default function CardDetailScreen() {
                     marginBottom: 12,
                   }}
                 >
-                  <MerchantLogo merchantName={group.merchantName} merchantColor={group.merchant.merchantColor} size={48} />
+                  <MerchantLogo merchantName={group.merchantName} merchantColor={(group.merchant as { merchantColor?: string }).merchantColor} size={48} />
 
                   <View style={{ flex: 1, marginLeft: 12 }}>
                     <Text style={{ fontSize: 16, fontWeight: '600', color: colors.text, marginBottom: 2 }}>

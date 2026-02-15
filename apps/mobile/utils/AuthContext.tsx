@@ -20,8 +20,9 @@ interface AuthContextType {
   isLoading: boolean;
   isAuthenticated: boolean;
   hasCompletedOnboarding: boolean;
-  login: (email: string, password: string) => Promise<boolean>;
+  login: (email: string, password: string) => Promise<{ success: boolean; hasCompletedOnboarding: boolean }>;
   signup: (email: string, password: string, name: string) => Promise<boolean>;
+  loginWithProvider: (provider: 'google' | 'apple' | 'microsoft') => Promise<boolean>;
   logout: () => Promise<void>;
   updateUser: (updates: Partial<User>) => Promise<void>;
   completeOnboarding: () => Promise<void>;
@@ -59,15 +60,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const login = async (email: string, password: string): Promise<boolean> => {
+  const login = async (email: string, password: string): Promise<{ success: boolean; hasCompletedOnboarding: boolean }> => {
     try {
       // Demo login - in production, call your API
-      // Simulate API delay
       await new Promise(resolve => setTimeout(resolve, 1000));
 
-      // Demo validation
       if (!email.includes('@') || password.length < 6) {
-        return false;
+        return { success: false, hasCompletedOnboarding: false };
       }
 
       const newUser: User = {
@@ -79,9 +78,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       await AsyncStorage.setItem(USER_STORAGE_KEY, JSON.stringify(newUser));
       setUser(newUser);
-      return true;
+      const onboardingComplete = await AsyncStorage.getItem(ONBOARDING_KEY);
+      return { success: true, hasCompletedOnboarding: onboardingComplete === 'true' };
     } catch (error) {
       console.log('Login error:', error);
+      return { success: false, hasCompletedOnboarding: false };
+    }
+  };
+
+  const loginWithProvider = async (provider: 'google' | 'apple' | 'microsoft'): Promise<boolean> => {
+    try {
+      // Demo OAuth - in production, use provider SDK then exchange token with your API
+      await new Promise(resolve => setTimeout(resolve, 500));
+
+      const newUser: User = {
+        id: 'user_' + Date.now(),
+        email: `oauth_${provider}_${Date.now()}@demo.ezer.app`,
+        name: provider.charAt(0).toUpperCase() + provider.slice(1) + ' User',
+        createdAt: new Date().toISOString(),
+      };
+
+      await AsyncStorage.setItem(USER_STORAGE_KEY, JSON.stringify(newUser));
+      setUser(newUser);
+      const onboardingComplete = await AsyncStorage.getItem(ONBOARDING_KEY);
+      return onboardingComplete === 'true';
+    } catch (error) {
+      console.log('OAuth login error:', error);
       return false;
     }
   };
@@ -115,6 +137,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       await AsyncStorage.removeItem(USER_STORAGE_KEY);
       setUser(null);
+      // Keep ONBOARDING_KEY so returning users skip onboarding
     } catch (error) {
       console.log('Logout error:', error);
     }
@@ -150,6 +173,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         hasCompletedOnboarding,
         login,
         signup,
+        loginWithProvider,
         logout,
         updateUser,
         completeOnboarding,

@@ -48,7 +48,8 @@
             "usesCleartextTraffic": true
           }
         }
-      ]
+      ],
+      "react-native-purchases"
     ],
     "runtimeVersion": {
       "policy": "appVersion"

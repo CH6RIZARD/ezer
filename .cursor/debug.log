@@ -1,0 +1,7 @@
+{"location":"ThemeContext.tsx:ThemeProvider","message":"theme state","data":{"isLoaded":false,"isDark":false,"background":"#F6F1E9"},"timestamp":1771131248870,"hypothesisId":"H1"}
+{"location":"AuthContext.tsx:loadUserData","message":"auth hydrated","data":{"authLoaded":true,"hadUser":true,"onboardingComplete":true},"timestamp":1771131249151,"hypothesisId":"H3"}
+{"location":"ThemeContext.tsx:ThemeProvider","message":"theme state","data":{"isLoaded":true,"isDark":true,"background":"#0F0F0F"},"timestamp":1771131249184,"hypothesisId":"H1"}
+{"location":"ThemeContext.tsx:ThemeProvider","message":"theme state","data":{"isLoaded":true,"isDark":true,"background":"#0F0F0F"},"timestamp":1771131292056,"hypothesisId":"H1"}
+{"location":"ThemeContext.tsx:ThemeProvider","message":"theme state","data":{"isLoaded":false,"isDark":false,"background":"#0F0F0F"},"timestamp":1771131361609,"hypothesisId":"H1"}
+{"location":"AuthContext.tsx:loadUserData","message":"auth hydrated","data":{"authLoaded":true,"hadUser":true,"onboardingComplete":true},"timestamp":1771131361775,"hypothesisId":"H3"}
+{"location":"ThemeContext.tsx:ThemeProvider","message":"theme state","data":{"isLoaded":true,"isDark":true,"background":"#0F0F0F"},"timestamp":1771131361782,"hypothesisId":"H1"}
