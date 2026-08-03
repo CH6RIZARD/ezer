@@ -37,13 +37,25 @@ EZER uses **native** Google Sign-In for Samsung/Android and iPhone — not the o
 
 ### Android SHA-1
 
-Debug:
+Debug (this cloud environment’s debug keystore — also in `docs/android-debug-sha1.txt`):
+
+```
+70:F2:45:F4:77:A4:A6:7E:5E:93:7F:EB:87:69:FB:03:DF:E7:C9:F7
+```
 
 ```bash
 keytool -list -v -keystore ~/.android/debug.keystore -alias androiddebugkey -storepass android -keypass android
 ```
 
 EAS / Play: use the SHA-1 from the keystore that signs the install you are testing.
+
+### Automate after `gcloud auth login`
+
+```bash
+./scripts/setup-google-oauth-clients.sh ezer-app
+# or paste IDs manually:
+./scripts/write-google-env.sh --web WEB_ID --ios IOS_ID --android ANDROID_ID --secret WEB_SECRET
+```
 
 ## 6. App env
 
