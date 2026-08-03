@@ -1,0 +1,7 @@
+# Android debug keystore SHA-1 for this cloud agent environment
+# Package: com.ezer.app
+# Keystore: ~/.android/debug.keystore (android/android)
+
+SHA1=70:F2:45:F4:77:A4:A6:7E:5E:93:7F:EB:87:69:FB:03:DF:E7:C9:F7
+SHA1_NO_COLONS=70f245f477a4a67e5e937feb8769fb03dfe7c9f7
+SHA256=61:9B:0D:9C:05:3B:77:76:F3:50:8E:9A:14:BC:F8:2C:2B:E6:17:E9:BB:D7:63:8F:B4:B3:E8:FE:DF:C9:4E:E3

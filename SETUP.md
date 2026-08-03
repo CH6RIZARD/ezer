@@ -95,25 +95,7 @@ Populate the database with demo data:
 pnpm db:seed
 ```
 
-You should see:
-```
-🌱 Starting seed...
-✅ Created user: demo@ezer.app
-✅ Created funding instruments
-✅ Created merchants
-✅ Created subscriptions
-✅ Created trials
-✅ Created subscription charges and price history
-🎉 Seed completed successfully!
-```
-
-The seed creates:
-- 1 demo user (`demo@ezer.app`)
-- 4 funding instruments (3 cards + 1 unknown)
-- 8 merchants (Netflix, Spotify, Adobe, NY Times, Gym, ChatGPT, Hulu, Amazon)
-- 8 subscriptions (5 active + 3 trials)
-- 6 months of charge history
-- 2 price creep examples (Netflix, Adobe)
+The seed creates sample subscription/wallet data under `seed@ezer.app` for local DB exploration. It is **not** a login account — use real Google / Apple / Microsoft / email auth in the app.
 
 ### 5. Start Development Servers
 
@@ -167,18 +149,16 @@ Wait for Expo to start and display a QR code.
 
 ## Using the App
 
-### 1. Login (Dev Mode)
+### 1. Login (real providers)
 
-On the onboarding screen, select any provider:
-- **Continue with Google**
-- **Continue with Apple**
-- **Continue with Microsoft**
+On the welcome screen, sign in with a real account:
+- **Continue with Google** (iOS + Android — requires Google Auth Platform clients; see `docs/google-auth-platform.md`)
+- **Continue with Apple** (iOS only)
+- **Continue with Microsoft** (requires Entra app + `EXPO_PUBLIC_MICROSOFT_CLIENT_ID`)
+- **Log in / Sign up with email** (creates a real API user with a password)
 
-Since `DEV_OAUTH_BYPASS=true`, this will:
-1. Create/use demo user (`demo@ezer.app`)
-2. Generate a session token
-3. Create mock inbox with sample subscription receipts
-4. Redirect to Home screen
+There is no demo OAuth bypass in the app. Keep `DEV_OAUTH_BYPASS=false`.
+Native Google Sign-In requires a **dev client / EAS build** (not Expo Go).
 
 ### 2. Explore Features
 
@@ -225,37 +205,22 @@ Should return:
 {"status":"ok","timestamp":"2024-01-..."}
 ```
 
-### Test Simulator Login
+### Test Email Signup + Session
 
 ```bash
-curl -X POST http://localhost:3001/simulator/dev-login \
+curl -X POST http://localhost:3001/auth/signup \
   -H "Content-Type: application/json" \
-  -d '{"provider":"google"}'
+  -d '{"email":"you@example.com","password":"password123","name":"You"}'
 ```
 
-Should return:
-```json
-{
-  "success": true,
-  "data": {
-    "token": "eyJhbGc...",
-    "userId": "...",
-    "email": "demo@ezer.app",
-    "provider": "google"
-  }
-}
-```
-
-### Test Home Summary
-
-Use the token from above:
+Should return a JWT. Then:
 
 ```bash
-curl http://localhost:3001/home/summary \
+curl -X POST http://localhost:3001/auth/session \
   -H "Authorization: Bearer YOUR_TOKEN_HERE"
 ```
 
-Should return summary with burn rate, risk, etc.
+Google / Apple / Microsoft complete endpoints expect real provider ID tokens from the mobile SDKs — they will reject fabricated tokens.
 
 ## Troubleshooting
 

@@ -1,137 +1,198 @@
 import { FastifyInstance } from 'fastify';
+import bcrypt from 'bcryptjs';
 import { prisma } from '@ezer/db';
+import {
+  appleCompleteSchema,
+  emailLoginSchema,
+  emailSignupSchema,
+  googleCompleteSchema,
+  microsoftCompleteSchema,
+} from '@ezer/shared';
+import { authMiddleware } from '../middleware/auth';
 import { signJwt } from '../utils/jwt';
-import { authProviderSchema } from '@ezer/shared';
+import { upsertOAuthUser } from '../utils/oauthUser';
+import { verifyAppleIdentityToken } from '../utils/verifyApple';
+import { verifyGoogleIdToken } from '../utils/verifyGoogle';
+import { verifyMicrosoftIdToken } from '../utils/verifyMicrosoft';
+
+function formatZodError(error: { issues: { message: string }[] }): string {
+  return error.issues.map((issue) => issue.message).join('; ');
+}
 
 export async function authRoutes(server: FastifyInstance) {
-  // POST /auth/oauth/google/start
-  server.post('/oauth/google/start', async (request, reply) => {
-    // In production, this would redirect to Google OAuth consent screen
-    // For dev mode with DEV_OAUTH_BYPASS, we return a mock URL
-    if (process.env.DEV_OAUTH_BYPASS === 'true') {
-      return {
-        success: true,
-        message: 'DEV_OAUTH_BYPASS enabled. Use /simulator/dev-login instead.',
-      };
-    }
-
-    // Production implementation would generate OAuth URL
-    const redirectUri = process.env.GOOGLE_REDIRECT_URI;
-    const clientId = process.env.GOOGLE_CLIENT_ID;
-
-    if (!clientId || !redirectUri) {
-      return reply.status(500).send({
+  // POST /auth/signup
+  server.post<{ Body: unknown }>('/signup', async (request, reply) => {
+    const parsed = emailSignupSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.status(400).send({
         success: false,
-        error: 'Google OAuth not configured. Set GOOGLE_CLIENT_ID and GOOGLE_REDIRECT_URI.',
+        error: formatZodError(parsed.error),
       });
     }
 
-    const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${clientId}&redirect_uri=${encodeURIComponent(
-      redirectUri
-    )}&response_type=code&scope=openid%20email%20profile&access_type=offline`;
-
-    return { success: true, authUrl };
-  });
-
-  // POST /auth/oauth/google/callback
-  server.post<{ Body: { code: string } }>('/oauth/google/callback', async (request, reply) => {
-    const { code } = request.body;
-
-    if (!code) {
-      return reply.status(400).send({ success: false, error: 'Missing code' });
-    }
-
-    // In production, exchange code for tokens, get user info, create/update user
-    // For now, return error if not in dev mode
-    if (process.env.DEV_OAUTH_BYPASS !== 'true') {
-      return reply.status(501).send({
+    const email = parsed.data.email.toLowerCase().trim();
+    const existing = await prisma.user.findUnique({ where: { email } });
+    if (existing) {
+      return reply.status(409).send({
         success: false,
-        error: 'OAuth callback not fully implemented. Use DEV_OAUTH_BYPASS=true for local dev.',
+        error: 'An account with this email already exists. Sign in instead.',
       });
     }
 
-    return reply.status(400).send({
-      success: false,
-      error: 'Use /simulator/dev-login in dev mode',
+    const passwordHash = await bcrypt.hash(parsed.data.password, 12);
+    const user = await prisma.user.create({
+      data: {
+        email,
+        name: parsed.data.name.trim(),
+        passwordHash,
+      },
     });
+
+    const token = signJwt({ userId: user.id, email: user.email });
+    return {
+      success: true,
+      data: {
+        token,
+        userId: user.id,
+        email: user.email,
+        name: user.name,
+        provider: 'email' as const,
+      },
+    };
   });
 
-  // POST /auth/oauth/apple/complete
-  server.post<{ Body: { identityToken: string; user?: any } }>(
-    '/oauth/apple/complete',
-    async (request, reply) => {
-      const { identityToken, user } = request.body;
+  // POST /auth/login
+  server.post<{ Body: unknown }>('/login', async (request, reply) => {
+    const parsed = emailLoginSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.status(400).send({
+        success: false,
+        error: formatZodError(parsed.error),
+      });
+    }
 
-      if (!identityToken) {
-        return reply.status(400).send({ success: false, error: 'Missing identityToken' });
-      }
+    const email = parsed.data.email.toLowerCase().trim();
+    const user = await prisma.user.findUnique({ where: { email } });
+    if (!user?.passwordHash) {
+      return reply.status(401).send({
+        success: false,
+        error: 'Invalid email or password',
+      });
+    }
 
-      // In production, verify Apple identity token and create/update user
-      if (process.env.DEV_OAUTH_BYPASS !== 'true') {
-        return reply.status(501).send({
+    const valid = await bcrypt.compare(parsed.data.password, user.passwordHash);
+    if (!valid) {
+      return reply.status(401).send({
+        success: false,
+        error: 'Invalid email or password',
+      });
+    }
+
+    const token = signJwt({ userId: user.id, email: user.email });
+    return {
+      success: true,
+      data: {
+        token,
+        userId: user.id,
+        email: user.email,
+        name: user.name,
+        provider: 'email' as const,
+      },
+    };
+  });
+
+  // POST /auth/oauth/google/complete — native Google ID token
+  server.post<{ Body: unknown }>('/oauth/google/complete', async (request, reply) => {
+    const parsed = googleCompleteSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.status(400).send({
+        success: false,
+        error: formatZodError(parsed.error),
+      });
+    }
+
+    try {
+      const identity = await verifyGoogleIdToken(parsed.data.idToken);
+      const session = await upsertOAuthUser({
+        provider: 'google',
+        providerUserId: identity.providerUserId,
+        email: identity.email,
+        name: identity.name,
+      });
+      return { success: true, data: session };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Google sign-in failed';
+      return reply.status(401).send({ success: false, error: message });
+    }
+  });
+
+  // POST /auth/oauth/apple/complete — native Apple identity token
+  server.post<{ Body: unknown }>('/oauth/apple/complete', async (request, reply) => {
+    const parsed = appleCompleteSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.status(400).send({
+        success: false,
+        error: formatZodError(parsed.error),
+      });
+    }
+
+    try {
+      const identity = await verifyAppleIdentityToken(parsed.data.identityToken);
+      const fullName = [parsed.data.fullName?.givenName, parsed.data.fullName?.familyName]
+        .filter(Boolean)
+        .join(' ')
+        .trim();
+
+      const email = identity.email || parsed.data.email;
+      if (!email) {
+        return reply.status(400).send({
           success: false,
-          error: 'Apple Sign-In not fully implemented. Use DEV_OAUTH_BYPASS=true for local dev.',
+          error:
+            'Apple did not return an email for this account. Sign in once with email sharing enabled, or use another provider.',
         });
       }
 
+      const session = await upsertOAuthUser({
+        provider: 'apple',
+        providerUserId: identity.providerUserId,
+        email,
+        name: fullName || null,
+      });
+      return { success: true, data: session };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Apple sign-in failed';
+      return reply.status(401).send({ success: false, error: message });
+    }
+  });
+
+  // POST /auth/oauth/microsoft/complete — Microsoft ID token from auth session
+  server.post<{ Body: unknown }>('/oauth/microsoft/complete', async (request, reply) => {
+    const parsed = microsoftCompleteSchema.safeParse(request.body);
+    if (!parsed.success) {
       return reply.status(400).send({
         success: false,
-        error: 'Use /simulator/dev-login in dev mode',
-      });
-    }
-  );
-
-  // POST /auth/oauth/microsoft/start
-  server.post('/oauth/microsoft/start', async (request, reply) => {
-    if (process.env.DEV_OAUTH_BYPASS === 'true') {
-      return {
-        success: true,
-        message: 'DEV_OAUTH_BYPASS enabled. Use /simulator/dev-login instead.',
-      };
-    }
-
-    const redirectUri = process.env.MICROSOFT_REDIRECT_URI;
-    const clientId = process.env.MICROSOFT_CLIENT_ID;
-
-    if (!clientId || !redirectUri) {
-      return reply.status(500).send({
-        success: false,
-        error:
-          'Microsoft OAuth not configured. Set MICROSOFT_CLIENT_ID and MICROSOFT_REDIRECT_URI.',
+        error: formatZodError(parsed.error),
       });
     }
 
-    const authUrl = `https://login.microsoftonline.com/common/oauth2/v2.0/authorize?client_id=${clientId}&response_type=code&redirect_uri=${encodeURIComponent(
-      redirectUri
-    )}&scope=openid%20email%20profile&response_mode=query`;
-
-    return { success: true, authUrl };
+    try {
+      const identity = await verifyMicrosoftIdToken(parsed.data.idToken);
+      const session = await upsertOAuthUser({
+        provider: 'microsoft',
+        providerUserId: identity.providerUserId,
+        email: identity.email,
+        name: identity.name,
+      });
+      return { success: true, data: session };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Microsoft sign-in failed';
+      return reply.status(401).send({ success: false, error: message });
+    }
   });
 
-  // POST /auth/oauth/microsoft/callback
-  server.post<{ Body: { code: string } }>('/oauth/microsoft/callback', async (request, reply) => {
-    const { code } = request.body;
-
-    if (!code) {
-      return reply.status(400).send({ success: false, error: 'Missing code' });
-    }
-
-    if (process.env.DEV_OAUTH_BYPASS !== 'true') {
-      return reply.status(501).send({
-        success: false,
-        error: 'OAuth callback not fully implemented. Use DEV_OAUTH_BYPASS=true for local dev.',
-      });
-    }
-
-    return reply.status(400).send({
-      success: false,
-      error: 'Use /simulator/dev-login in dev mode',
-    });
-  });
-
-  // POST /auth/session - Verify current session
-  server.post('/session', { preHandler: require('../middleware/auth').authMiddleware }, async (request, reply) => {
-    const userId = (request as any).userId;
+  // POST /auth/session — verify current JWT session
+  server.post('/session', { preHandler: authMiddleware }, async (request, reply) => {
+    const userId = (request as { userId?: string }).userId;
 
     const user = await prisma.user.findUnique({
       where: { id: userId },
@@ -149,7 +210,9 @@ export async function authRoutes(server: FastifyInstance) {
       data: {
         userId: user.id,
         email: user.email,
-        authProviders: user.authAccounts.map((a) => a.provider),
+        name: user.name,
+        authProviders: user.authAccounts.map((account) => account.provider),
+        hasPassword: Boolean(user.passwordHash),
       },
     };
   });

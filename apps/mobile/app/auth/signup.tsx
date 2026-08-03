@@ -24,13 +24,14 @@ import { useTheme } from '../../utils/ThemeContext';
 export default function SignupScreen() {
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
-  const { signup } = useAuth();
+  const { signup, loginWithProvider } = useAuth();
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [oauthLoading, setOauthLoading] = useState<'google' | 'apple' | null>(null);
   const [acceptedTerms, setAcceptedTerms] = useState(false);
 
   const handleSignup = async () => {
@@ -44,8 +45,8 @@ export default function SignupScreen() {
       return;
     }
 
-    if (password.length < 6) {
-      Alert.alert('Error', 'Password must be at least 6 characters');
+    if (password.length < 8) {
+      Alert.alert('Error', 'Password must be at least 8 characters');
       return;
     }
 
@@ -55,14 +56,30 @@ export default function SignupScreen() {
     }
 
     setIsLoading(true);
-    const success = await signup(email, password, name);
+    const result = await signup(email, password, name);
     setIsLoading(false);
 
-    if (success) {
+    if (result.success) {
       router.replace('/onboarding');
     } else {
-      Alert.alert('Signup Failed', 'An error occurred. Please try again.');
+      Alert.alert('Signup Failed', result.error || 'An error occurred. Please try again.');
     }
+  };
+
+  const handleProvider = async (provider: 'google' | 'apple') => {
+    if (!acceptedTerms) {
+      Alert.alert('Error', 'Please accept the Terms of Service and Privacy Policy');
+      return;
+    }
+    setOauthLoading(provider);
+    const result = await loginWithProvider(provider);
+    setOauthLoading(null);
+    if (result.cancelled) return;
+    if (!result.success) {
+      Alert.alert('Sign-in failed', result.error || 'Could not complete sign-in.');
+      return;
+    }
+    router.replace(result.hasCompletedOnboarding ? '/(tabs)/home' : '/onboarding');
   };
 
   const inputStyle = {
@@ -231,11 +248,29 @@ export default function SignupScreen() {
 
           {/* Social Signup */}
           <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 16 }}>
-            <Pressable style={{ width: 56, height: 56, borderRadius: 12, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, justifyContent: 'center', alignItems: 'center' }}>
-              <Ionicons name="logo-apple" size={24} color={colors.text} />
-            </Pressable>
-            <Pressable style={{ width: 56, height: 56, borderRadius: 12, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, justifyContent: 'center', alignItems: 'center' }}>
-              <Ionicons name="logo-google" size={24} color={colors.text} />
+            {Platform.OS === 'ios' && (
+              <Pressable
+                onPress={() => handleProvider('apple')}
+                disabled={isLoading || oauthLoading !== null}
+                style={{ width: 56, height: 56, borderRadius: 12, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, justifyContent: 'center', alignItems: 'center', opacity: oauthLoading ? 0.6 : 1 }}
+              >
+                {oauthLoading === 'apple' ? (
+                  <ActivityIndicator color={colors.text} />
+                ) : (
+                  <Ionicons name="logo-apple" size={24} color={colors.text} />
+                )}
+              </Pressable>
+            )}
+            <Pressable
+              onPress={() => handleProvider('google')}
+              disabled={isLoading || oauthLoading !== null}
+              style={{ width: 56, height: 56, borderRadius: 12, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, justifyContent: 'center', alignItems: 'center', opacity: oauthLoading ? 0.6 : 1 }}
+            >
+              {oauthLoading === 'google' ? (
+                <ActivityIndicator color={colors.text} />
+              ) : (
+                <Ionicons name="logo-google" size={24} color={colors.text} />
+              )}
             </Pressable>
           </View>
         </View>
