@@ -57,10 +57,15 @@ async function start() {
     await server.register(cancelRoutes);
     await server.register(ingestRoutes, { prefix: '/ingest' });
     await server.register(jobRoutes, { prefix: '/jobs' });
-    await server.register(simulatorRoutes, { prefix: '/simulator' });
+
+    // Simulator / demo login is never exposed unless explicitly enabled.
+    if (process.env.DEV_OAUTH_BYPASS === 'true') {
+      await server.register(simulatorRoutes, { prefix: '/simulator' });
+      server.log.warn('DEV_OAUTH_BYPASS=true — simulator routes are enabled. Do not use in production.');
+    }
 
     // Start server
-    await server.listen({ port: PORT, host: HOST });
+    await server.listen({ port: PORT, host: '0.0.0.0' });
     console.log(`🚀 EZER API running at http://${HOST}:${PORT}`);
   } catch (err) {
     server.log.error(err);

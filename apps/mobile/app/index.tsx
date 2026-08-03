@@ -4,7 +4,7 @@
 // =============================================================================
 
 import React, { useState, useEffect } from 'react';
-import { View, Text, Pressable, ActivityIndicator } from 'react-native';
+import { View, Text, Pressable, ActivityIndicator, Alert, Platform } from 'react-native';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../utils/ThemeContext';
@@ -33,15 +33,29 @@ export default function IndexScreen() {
   const handleProviderSelect = async (provider: 'google' | 'apple' | 'microsoft') => {
     setLoading(provider);
     try {
-      const goToHome = await loginWithProvider(provider);
+      const result = await loginWithProvider(provider);
       setLoading(null);
-      if (goToHome) {
+
+      if (result.cancelled) {
+        return;
+      }
+
+      if (!result.success) {
+        Alert.alert('Sign-in failed', result.error || 'Could not complete sign-in. Please try again.');
+        return;
+      }
+
+      if (result.hasCompletedOnboarding) {
         router.replace('/(tabs)/home');
       } else {
         router.replace('/onboarding');
       }
-    } catch {
+    } catch (error) {
       setLoading(null);
+      Alert.alert(
+        'Sign-in failed',
+        error instanceof Error ? error.message : 'Could not complete sign-in. Please try again.'
+      );
     }
   };
 
@@ -81,28 +95,30 @@ export default function IndexScreen() {
             onPress={() => handleProviderSelect('google')}
           />
 
-          <Pressable
-            style={{
-              paddingVertical: 16,
-              paddingHorizontal: 24,
-              borderRadius: 12,
-              alignItems: 'center',
-              justifyContent: 'center',
-              borderWidth: 1,
-              borderColor: colors.text,
-              backgroundColor: 'transparent',
-              minHeight: 52,
-              opacity: loading !== null ? 0.5 : 1,
-            }}
-            onPress={() => handleProviderSelect('apple')}
-            disabled={loading !== null}
-          >
-            {loading === 'apple' ? (
-              <ActivityIndicator color={colors.text} />
-            ) : (
-              <Text style={{ color: colors.text, fontSize: 16, fontWeight: '600' }}>Continue with Apple</Text>
-            )}
-          </Pressable>
+          {Platform.OS === 'ios' && (
+            <Pressable
+              style={{
+                paddingVertical: 16,
+                paddingHorizontal: 24,
+                borderRadius: 12,
+                alignItems: 'center',
+                justifyContent: 'center',
+                borderWidth: 1,
+                borderColor: colors.text,
+                backgroundColor: 'transparent',
+                minHeight: 52,
+                opacity: loading !== null ? 0.5 : 1,
+              }}
+              onPress={() => handleProviderSelect('apple')}
+              disabled={loading !== null}
+            >
+              {loading === 'apple' ? (
+                <ActivityIndicator color={colors.text} />
+              ) : (
+                <Text style={{ color: colors.text, fontSize: 16, fontWeight: '600' }}>Continue with Apple</Text>
+              )}
+            </Pressable>
+          )}
 
           <Pressable
             style={{
@@ -128,7 +144,7 @@ export default function IndexScreen() {
           </Pressable>
         </View>
 
-        {/* Email auth links - minimal, below OAuth */}
+        {/* Email auth links */}
         <View style={{ marginTop: 24, alignItems: 'center', gap: 12 }}>
           <Pressable onPress={() => router.push('/auth/login')} style={{ paddingVertical: 8, paddingHorizontal: 16 }}>
             <Text style={{ fontSize: 14, color: colors.primary, fontWeight: '600' }}>Log in with email</Text>
@@ -138,13 +154,6 @@ export default function IndexScreen() {
           </Pressable>
         </View>
       </View>
-
-      {/* Dev Mode Indicator - only in development */}
-      {__DEV__ && (
-        <View style={{ paddingBottom: 32, alignItems: 'center' }}>
-          <Text style={{ fontSize: 12, color: colors.textSecondary }}>DEV MODE: OAuth bypassed</Text>
-        </View>
-      )}
     </View>
   );
 }

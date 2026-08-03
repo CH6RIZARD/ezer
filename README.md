@@ -19,12 +19,13 @@ Turn subscriptions into explicit decisions. EZER is a production-ready subscript
 - .eml file upload support
 
 ### OAuth & Security
-- Google OAuth (Sign-in + Gmail API)
-- Microsoft OAuth (Sign-in + Outlook Graph API)
-- Apple Sign-In (with Gmail/Outlook/IMAP connector)
-- AES-256-GCM encryption for stored tokens
-- JWT-based authentication
-- DEV_OAUTH_BYPASS mode for local development
+- Native Google Sign-In (iOS + Android) via Google Auth Platform
+- Apple Sign-In (iOS) with server-side identity token verification
+- Microsoft Entra sign-in (iOS + Android) via system browser
+- Email/password signup + login (bcrypt)
+- AES-256-GCM encryption for stored mailbox tokens
+- JWT-based sessions (no demo / bypass login in the app)
+- Optional `DEV_OAUTH_BYPASS` only enables `/simulator/*` for local tooling — off by default
 
 ## Architecture
 
@@ -76,24 +77,25 @@ Copy the environment file:
 cp .env.example .env
 ```
 
-The default `.env` file is pre-configured for local development with `DEV_OAUTH_BYPASS=true`.
+Copy `.env.example` → `.env`. Keep `DEV_OAUTH_BYPASS=false` for real sign-in.
 
-**For production OAuth** (optional), add your credentials:
+**Google (required for Continue with Google):** see [`docs/google-auth-platform.md`](docs/google-auth-platform.md).
 
 ```env
-# Google OAuth
-GOOGLE_CLIENT_ID="your-client-id"
-GOOGLE_CLIENT_SECRET="your-client-secret"
+# Google Auth Platform — Web + iOS + Android client IDs
+GOOGLE_CLIENT_ID="web-client-id"
+GOOGLE_WEB_CLIENT_ID="web-client-id"
+GOOGLE_IOS_CLIENT_ID="ios-client-id.apps.googleusercontent.com"
+GOOGLE_ANDROID_CLIENT_ID="android-client-id.apps.googleusercontent.com"
+EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID="web-client-id"
+EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID="ios-client-id.apps.googleusercontent.com"
 
-# Microsoft OAuth
-MICROSOFT_CLIENT_ID="your-client-id"
-MICROSOFT_CLIENT_SECRET="your-client-secret"
+# Microsoft Entra (mobile redirect: ezer://auth/microsoft)
+MICROSOFT_CLIENT_ID="..."
+EXPO_PUBLIC_MICROSOFT_CLIENT_ID="..."
 
-# Apple OAuth
-APPLE_CLIENT_ID="your-client-id"
-APPLE_TEAM_ID="your-team-id"
-APPLE_KEY_ID="your-key-id"
-APPLE_PRIVATE_KEY="your-private-key"
+# Apple (bundle / services id)
+APPLE_CLIENT_ID="com.ezer.app"
 ```
 
 ### 3. Start Infrastructure
@@ -121,37 +123,20 @@ This starts:
 - **Worker**: Background job processor
 - **Mobile**: Expo dev server (scan QR code with Expo Go app)
 
-## Demo Mode (Local Development)
+## Authentication (deploy-ready)
 
-EZER includes a **simulator mode** for local development without real OAuth credentials.
+The mobile app **does not** invent users locally. Every sign-in hits the API:
 
-### Login Flow
+| Method | Mobile → API |
+|--------|----------------|
+| Google | Native SDK ID token → `POST /auth/oauth/google/complete` |
+| Apple (iOS) | `expo-apple-authentication` → `POST /auth/oauth/apple/complete` |
+| Microsoft | Auth Session + PKCE → `POST /auth/oauth/microsoft/complete` |
+| Email | `POST /auth/signup` / `POST /auth/login` |
 
-1. Open the mobile app in Expo Go
-2. On the onboarding screen, choose any provider (Google/Apple/Microsoft)
-3. The app automatically:
-   - Creates a demo user (`demo@ezer.app`)
-   - Generates a JWT token
-   - Connects mock inbox with sample subscription receipts
-   - Redirects to the home screen
+Setup for Google: [`docs/google-auth-platform.md`](docs/google-auth-platform.md).
 
-### Simulator Endpoints
-
-```bash
-# Create demo login session
-POST /simulator/dev-login
-Body: { "provider": "google" | "apple" | "microsoft" }
-
-# Create mock inbox with sample messages
-POST /simulator/mock-inbox
-Body: { "provider": "gmail" | "outlook" }
-
-# Simulate auto-cancel of trial
-POST /simulator/auto-cancel/:trialId
-
-# Mark subscription as canceled
-POST /simulator/mark-canceled/:subscriptionId
-```
+`DEV_OAUTH_BYPASS=true` only mounts `/simulator/*` for local tooling. Leave it `false` for real builds.
 
 ## Database Schema
 
@@ -168,12 +153,12 @@ See [packages/db/prisma/schema.prisma](packages/db/prisma/schema.prisma) for ful
 ## API Endpoints
 
 ### Auth
-- `POST /auth/oauth/google/start`
-- `POST /auth/oauth/google/callback`
-- `POST /auth/oauth/apple/complete`
-- `POST /auth/oauth/microsoft/start`
-- `POST /auth/oauth/microsoft/callback`
-- `POST /auth/session`
+- `POST /auth/signup` — email/password signup
+- `POST /auth/login` — email/password login
+- `POST /auth/oauth/google/complete` — Google ID token → JWT
+- `POST /auth/oauth/apple/complete` — Apple identity token → JWT
+- `POST /auth/oauth/microsoft/complete` — Microsoft ID token → JWT
+- `POST /auth/session` — validate JWT
 
 ### Inbox Connections
 - `POST /connect/gmail/start`
@@ -213,9 +198,7 @@ See [packages/db/prisma/schema.prisma](packages/db/prisma/schema.prisma) for ful
 ### Jobs
 - `POST /jobs/run-analysis`
 
-### Simulator (Dev Only)
-- `POST /simulator/seed`
-- `POST /simulator/dev-login`
+### Simulator (only if `DEV_OAUTH_BYPASS=true`)
 - `POST /simulator/mock-inbox`
 - `POST /simulator/auto-cancel/:trialId`
 - `POST /simulator/mark-canceled/:subscriptionId`
@@ -288,13 +271,17 @@ DEV_OAUTH_BYPASS=false
 JWT_SECRET=<secure-random-string>
 ENCRYPTION_KEY=<64-char-hex-string>
 
-# Real OAuth credentials
+# Google Auth Platform client IDs (Web + iOS + Android)
 GOOGLE_CLIENT_ID=...
-GOOGLE_CLIENT_SECRET=...
+GOOGLE_WEB_CLIENT_ID=...
+GOOGLE_IOS_CLIENT_ID=...
+GOOGLE_ANDROID_CLIENT_ID=...
+EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID=...
+EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID=...
+
 MICROSOFT_CLIENT_ID=...
-MICROSOFT_CLIENT_SECRET=...
-APPLE_CLIENT_ID=...
-# ... etc
+EXPO_PUBLIC_MICROSOFT_CLIENT_ID=...
+APPLE_CLIENT_ID=com.ezer.app
 ```
 
 ### Database

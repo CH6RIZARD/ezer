@@ -24,10 +24,12 @@ async function main() {
   await prisma.userFeatureFlag.deleteMany();
   await prisma.user.deleteMany();
 
-  // Create demo user
+  // Seed sample subscription data under a non-login fixture user.
+  // Real app login requires Google / Apple / Microsoft / email auth — not this account.
   const user = await prisma.user.create({
     data: {
-      email: 'demo@ezer.app',
+      email: 'seed@ezer.app',
+      name: 'Seed User',
     },
   });
 

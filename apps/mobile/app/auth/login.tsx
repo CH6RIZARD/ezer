@@ -23,11 +23,12 @@ import { useTheme } from '../../utils/ThemeContext';
 export default function LoginScreen() {
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
-  const { login } = useAuth();
+  const { login, loginWithProvider } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [oauthLoading, setOauthLoading] = useState<'google' | 'apple' | null>(null);
 
   const handleLogin = async () => {
     if (!email || !password) {
@@ -36,18 +37,30 @@ export default function LoginScreen() {
     }
 
     setIsLoading(true);
-    const { success, hasCompletedOnboarding } = await login(email, password);
+    const result = await login(email, password);
     setIsLoading(false);
 
-    if (success) {
-      if (hasCompletedOnboarding) {
+    if (result.success) {
+      if (result.hasCompletedOnboarding) {
         router.replace('/(tabs)/home');
       } else {
         router.replace('/onboarding');
       }
     } else {
-      Alert.alert('Login Failed', 'Invalid email or password. Please try again.');
+      Alert.alert('Login Failed', result.error || 'Invalid email or password. Please try again.');
     }
+  };
+
+  const handleProvider = async (provider: 'google' | 'apple') => {
+    setOauthLoading(provider);
+    const result = await loginWithProvider(provider);
+    setOauthLoading(null);
+    if (result.cancelled) return;
+    if (!result.success) {
+      Alert.alert('Sign-in failed', result.error || 'Could not complete sign-in.');
+      return;
+    }
+    router.replace(result.hasCompletedOnboarding ? '/(tabs)/home' : '/onboarding');
   };
 
   return (
@@ -136,11 +149,29 @@ export default function LoginScreen() {
 
           {/* Social Login */}
           <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 16 }}>
-            <Pressable style={{ width: 56, height: 56, borderRadius: 12, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, justifyContent: 'center', alignItems: 'center' }}>
-              <Ionicons name="logo-apple" size={24} color={colors.text} />
-            </Pressable>
-            <Pressable style={{ width: 56, height: 56, borderRadius: 12, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, justifyContent: 'center', alignItems: 'center' }}>
-              <Ionicons name="logo-google" size={24} color={colors.text} />
+            {Platform.OS === 'ios' && (
+              <Pressable
+                onPress={() => handleProvider('apple')}
+                disabled={isLoading || oauthLoading !== null}
+                style={{ width: 56, height: 56, borderRadius: 12, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, justifyContent: 'center', alignItems: 'center', opacity: oauthLoading ? 0.6 : 1 }}
+              >
+                {oauthLoading === 'apple' ? (
+                  <ActivityIndicator color={colors.text} />
+                ) : (
+                  <Ionicons name="logo-apple" size={24} color={colors.text} />
+                )}
+              </Pressable>
+            )}
+            <Pressable
+              onPress={() => handleProvider('google')}
+              disabled={isLoading || oauthLoading !== null}
+              style={{ width: 56, height: 56, borderRadius: 12, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, justifyContent: 'center', alignItems: 'center', opacity: oauthLoading ? 0.6 : 1 }}
+            >
+              {oauthLoading === 'google' ? (
+                <ActivityIndicator color={colors.text} />
+              ) : (
+                <Ionicons name="logo-google" size={24} color={colors.text} />
+              )}
             </Pressable>
           </View>
         </View>
