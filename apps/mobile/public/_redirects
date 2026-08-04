@@ -1,0 +1,5 @@
+# SPA fallback. web.output is "single", so every route is served by the one
+# index.html and expo-router resolves it client-side. Without this, a deep link
+# or a refresh on /savings, /settings, /screens/* returns a Cloudflare 404.
+# 200 (rewrite), not 301/302 — the URL must stay put for the router to read it.
+/*  /index.html  200

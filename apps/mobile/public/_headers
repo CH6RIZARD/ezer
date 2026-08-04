@@ -1,0 +1,21 @@
+# Cloudflare Pages headers.
+#
+# Reconstructed from the response headers of the live deploy after the original
+# file was lost — if a stricter version exists in your Pages project settings or
+# elsewhere, prefer that one.
+
+/*
+  Referrer-Policy: strict-origin-when-cross-origin
+  X-Content-Type-Options: nosniff
+
+# The shell must never be cached: it carries the hashed bundle filename, so a
+# stale copy pins users to an old build forever.
+/index.html
+  Cache-Control: no-store, no-cache, must-revalidate
+
+/
+  Cache-Control: no-store, no-cache, must-revalidate
+
+# Bundle and assets are content-hashed, so they are safe to cache immutably.
+/_expo/static/*
+  Cache-Control: public, max-age=31536000, immutable

@@ -1,0 +1,37 @@
+# NOTE: when this file exists, EAS uses it INSTEAD of .gitignore for the build
+# archive — so everything we want excluded must be listed here explicitly.
+
+# Deps: the build server installs these itself
+node_modules/
+**/node_modules/
+
+# The big one: a stray standalone Expo scratch app nested under apps/mobile.
+# 234 MB, nothing in the mobile app imports it. Was 100% of the upload.
+apps/mobile/savings-app/
+
+# The API app is not part of the Android build
+apps/api/
+
+# Local caches / build output
+.expo/
+**/.expo/
+dist/
+**/dist/
+web-build/
+.turbo/
+android/
+ios/
+
+# Repo junk with no place in a native build
+uploads/
+poisoned-delta/
+test123/
+docs/
+.cursor/
+.claude/
+.vscode/
+*.zip
+*.log
+*.apk
+*.aab
+*.tsbuildinfo

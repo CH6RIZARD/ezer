@@ -1,9 +1,82 @@
 import { FastifyInstance } from 'fastify';
 import { prisma } from '@ezer/db';
+import bcrypt from 'bcryptjs';
 import { signJwt } from '../utils/jwt';
-import { authProviderSchema } from '@ezer/shared';
+import {
+  authProviderSchema,
+  appleCompleteSchema,
+  emailSignupSchema,
+  googleCompleteSchema,
+  microsoftCompleteSchema,
+} from '@ezer/shared';
+import { upsertOAuthUser } from '../utils/oauthUser';
+import { verifyAppleIdentityToken } from '../utils/verifyApple';
+import { verifyGoogleIdToken } from '../utils/verifyGoogle';
+import { verifyMicrosoftIdToken } from '../utils/verifyMicrosoft';
+
+function formatZodError(error: { issues: { message: string }[] }): string {
+  return error.issues.map(issue => issue.message).join('; ');
+}
 
 export async function authRoutes(server: FastifyInstance) {
+  // POST /auth/signup
+  server.post<{ Body: { email: string; password: string; name: string } }>(
+    '/signup',
+    async (request, reply) => {
+      const { email, password, name } = request.body;
+
+      if (!email || !password || !name) {
+        return reply.status(400).send({ success: false, error: 'email, password and name are required' });
+      }
+      if (password.length < 6) {
+        return reply.status(400).send({ success: false, error: 'Password must be at least 6 characters' });
+      }
+
+      // Normalised, because the unique index is case-SENSITIVE: signing up as
+      // "Daniel@x.com" then logging in as "daniel@x.com" created one account
+      // and then failed to find it.
+      const normalisedEmail = email.toLowerCase().trim();
+
+      const existing = await prisma.user.findUnique({ where: { email: normalisedEmail } });
+      if (existing) {
+        return reply.status(400).send({ success: false, error: 'Email already registered' });
+      }
+
+      const passwordHash = await bcrypt.hash(password, 10);
+      const user = await prisma.user.create({
+        data: { email: normalisedEmail, name: name.trim(), passwordHash },
+      });
+      const token = signJwt({ userId: user.id, email: user.email });
+
+      return { success: true, data: { token, userId: user.id, email: user.email, name: user.name } };
+    }
+  );
+
+  // POST /auth/login
+  server.post<{ Body: { email: string; password: string } }>(
+    '/login',
+    async (request, reply) => {
+      const { email, password } = request.body;
+
+      if (!email || !password) {
+        return reply.status(400).send({ success: false, error: 'email and password are required' });
+      }
+
+      const user = await prisma.user.findUnique({ where: { email: email.toLowerCase().trim() } });
+      if (!user || !user.passwordHash) {
+        return reply.status(401).send({ success: false, error: 'Invalid credentials' });
+      }
+
+      const valid = await bcrypt.compare(password, user.passwordHash);
+      if (!valid) {
+        return reply.status(401).send({ success: false, error: 'Invalid credentials' });
+      }
+
+      const token = signJwt({ userId: user.id, email: user.email });
+      return { success: true, data: { token, userId: user.id, email: user.email, name: user.name } };
+    }
+  );
+
   // POST /auth/oauth/google/start
   server.post('/oauth/google/start', async (request, reply) => {
     // In production, this would redirect to Google OAuth consent screen
@@ -57,29 +130,11 @@ export async function authRoutes(server: FastifyInstance) {
   });
 
   // POST /auth/oauth/apple/complete
-  server.post<{ Body: { identityToken: string; user?: any } }>(
-    '/oauth/apple/complete',
-    async (request, reply) => {
-      const { identityToken, user } = request.body;
-
-      if (!identityToken) {
-        return reply.status(400).send({ success: false, error: 'Missing identityToken' });
-      }
-
-      // In production, verify Apple identity token and create/update user
-      if (process.env.DEV_OAUTH_BYPASS !== 'true') {
-        return reply.status(501).send({
-          success: false,
-          error: 'Apple Sign-In not fully implemented. Use DEV_OAUTH_BYPASS=true for local dev.',
-        });
-      }
-
-      return reply.status(400).send({
-        success: false,
-        error: 'Use /simulator/dev-login in dev mode',
-      });
-    }
-  );
+  // NOTE: the previous /oauth/apple/complete stub lived here. It never verified
+  // the identity token — it 501'd outside dev and pointed at the dev-login
+  // bypass inside it. The real implementation below verifies against Apple's
+  // public keys. Two handlers on one path also made Fastify refuse to boot
+  // (FST_ERR_DUPLICATED_ROUTE), so the stub had to go, not just be ignored.
 
   // POST /auth/oauth/microsoft/start
   server.post('/oauth/microsoft/start', async (request, reply) => {
@@ -127,6 +182,103 @@ export async function authRoutes(server: FastifyInstance) {
       success: false,
       error: 'Use /simulator/dev-login in dev mode',
     });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Native provider sign-in (merged from the standalone ezer repo)
+  //
+  // The device performs the provider flow and sends the resulting ID token; the
+  // server verifies it against the provider's own keys before minting a JWT.
+  // These replace nothing — the /oauth/*/start routes above remain, because
+  // they exist for a different purpose (Gmail / Outlook mailbox ingest).
+  // ---------------------------------------------------------------------------
+
+  server.post<{ Body: unknown }>('/oauth/google/complete', async (request, reply) => {
+    const parsed = googleCompleteSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.status(400).send({
+        success: false,
+        error: formatZodError(parsed.error),
+      });
+    }
+
+    try {
+      const identity = await verifyGoogleIdToken(parsed.data.idToken);
+      const session = await upsertOAuthUser({
+        provider: 'google',
+        providerUserId: identity.providerUserId,
+        email: identity.email,
+        name: identity.name,
+      });
+      return { success: true, data: session };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Google sign-in failed';
+      return reply.status(401).send({ success: false, error: message });
+    }
+  });
+
+  // POST /auth/oauth/apple/complete â€” native Apple identity token
+  server.post<{ Body: unknown }>('/oauth/apple/complete', async (request, reply) => {
+    const parsed = appleCompleteSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.status(400).send({
+        success: false,
+        error: formatZodError(parsed.error),
+      });
+    }
+
+    try {
+      const identity = await verifyAppleIdentityToken(parsed.data.identityToken);
+      const fullName = [parsed.data.fullName?.givenName, parsed.data.fullName?.familyName]
+        .filter(Boolean)
+        .join(' ')
+        .trim();
+
+      const email = identity.email || parsed.data.email;
+      if (!email) {
+        return reply.status(400).send({
+          success: false,
+          error:
+            'Apple did not return an email for this account. Sign in once with email sharing enabled, or use another provider.',
+        });
+      }
+
+      const session = await upsertOAuthUser({
+        provider: 'apple',
+        providerUserId: identity.providerUserId,
+        email,
+        name: fullName || null,
+      });
+      return { success: true, data: session };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Apple sign-in failed';
+      return reply.status(401).send({ success: false, error: message });
+    }
+  });
+
+  // POST /auth/oauth/microsoft/complete â€” Microsoft ID token from auth session
+  server.post<{ Body: unknown }>('/oauth/microsoft/complete', async (request, reply) => {
+    const parsed = microsoftCompleteSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.status(400).send({
+        success: false,
+        error: formatZodError(parsed.error),
+      });
+    }
+
+    try {
+      const identity = await verifyMicrosoftIdToken(parsed.data.idToken);
+      const session = await upsertOAuthUser({
+        provider: 'microsoft',
+        providerUserId: identity.providerUserId,
+        email: identity.email,
+        name: identity.name,
+      });
+      return { success: true, data: session };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Microsoft sign-in failed';
+      return reply.status(401).send({ success: false, error: message });
+    }
   });
 
   // POST /auth/session - Verify current session

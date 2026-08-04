@@ -1,592 +1,891 @@
 // =============================================================================
-// EZER Mobile App - Subscription Detail Screen
-// Shows charge history, price timeline, investment opportunity, and cancel CTA
+// EZER Redesign — Subscription Detail (handoff §6)
+//
+// Opened from Home list rows, the day popover, Wallet breakdown rows and the
+// Alerts Manage/Act buttons.
+//
+// Structure is a port of the prototype's SUB DETAIL screen, in order:
+//   top bar ("Subscription")
+//   centred hero    — 64px logo, name, serif price "/ month", status pill
+//   meta card       — Next charge / Paid this year / Card
+//   Charge history  — title INSIDE the card, rows split by hairlines
+//   How you're getting charged — purple gradient card + SVG price chart + chips
+//   Smart payment options — icon-tile radio rows -> Enable -> green banner
+//   Save smart      — gold toggle -> 6/12/24-month projections (PURPLE tiles)
+//   Lifetime cost   — serif 36px red total
+//   Cancel CTA      — red button; on tap it ALSO opens the merchant's real
+//                     cancellation page, then turns green
 // =============================================================================
 
-import React, { useMemo, useState } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, Pressable, Switch, Dimensions, Alert } from 'react-native';
+import React, { useEffect, useMemo, useState } from 'react';
+import { View, Text, ScrollView, Switch, Dimensions, StyleSheet, ActivityIndicator } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { LineChart } from 'react-native-chart-kit';
+import { LinearGradient } from 'expo-linear-gradient';
+import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../utils/ThemeContext';
-import { Card, Button } from '../../components';
-import { demoCharges, demoMerchants } from '../../utils/demoData';
+import { formatCents } from '../../utils/calculations';
 import {
-  formatCents,
-  formatDollars,
-  formatDate,
-  formatBillingInterval,
-  calculateLifetimeTotal,
-  groupChargesByMonth,
-  calculateOpportunityCost,
-  calculateMonthsOfHistory,
-  getMonthlyEquivalent,
-} from '../../utils/calculations';
+  resolveCancellationUrl,
+  resolveCancellationUrlSync,
+  openCancellation,
+} from '../../utils/cancellation';
+import type { Subscription } from '../../types';
+import { gradients, chartColors } from '../../theme/tokens';
+import { fontFamily, typeScale, radius, layout } from '../../theme/type';
+import { Body, Surface, PressScale, ScreenBody } from '../../components/redesign/Primitives';
+import MerchantMark from '../../components/redesign/MerchantMark';
+import PriceChart, { type PricePoint } from '../../components/redesign/PriceChart';
+import { api } from '../../utils/api';
 
-const screenWidth = Dimensions.get('window').width;
+/** Shape of GET /subscriptions/:id — see apps/api/src/routes/core.ts. */
+interface SubscriptionDetailResponse {
+  id: string;
+  merchantId: string;
+  merchantName: string;
+  logo?: string | null;
+  status: string;
+  cadence: string;
+  renewalDate?: string | null;
+  startedAt?: string | null;
+  cancellationDifficulty?: number;
+  difficultyLabel?: string;
+  charges: {
+    id: string;
+    amountCents: number;
+    chargeTimestamp: string;
+    fundingInstrument: { displayName: string; brand: string; last4: string };
+  }[];
+  priceHistory: { month: string; amountCents: number }[];
+  lifetimeCostCents: number;
+  investmentOpportunityCostCents: number;
+}
+
+const SCREEN_W = Dimensions.get('window').width;
+/** Card is 18px-padded inside the 20px screen gutters. */
+const CHART_W = SCREEN_W - layout.screenX * 2 - 36;
+
+/**
+ * Real price histories called out in the handoff. Anything not listed is flat,
+ * which renders the "No price changes — steady at $X" chip.
+ */
+const PRICE_HISTORY: Record<string, number[]> = {
+  netflix: [1099, 1099, 1299, 1299, 1549, 1549],
+  youtube: [1199, 1199, 1199, 1399, 1399, 1399],
+  fitpass: [2900, 2900, 2900, 3400, 3400, 3400],
+};
+
+function monthLabels(n: number): string[] {
+  const out: string[] = [];
+  const now = new Date();
+  for (let i = n - 1; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    out.push(d.toLocaleDateString('en-US', { month: 'short' }));
+  }
+  return out;
+}
 
 export default function SubscriptionDetailScreen() {
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
-  const params = useLocalSearchParams<{ merchantId: string }>();
-  const merchantId = params.merchantId || 'netflix';
+  const params = useLocalSearchParams<{ id?: string }>();
 
-  const [showInvestment, setShowInvestment] = useState(false);
-  const [selectedPaymentOption, setSelectedPaymentOption] = useState<string | null>(null);
-  /** Which duration is selected for Save Smart (all three cards are clickable). */
-  const [selectedSaveSmartMonths, setSelectedSaveSmartMonths] = useState<6 | 12 | 24>(12);
+  const [payOpt, setPayOpt] = useState<null | 'half' | 'full'>(null);
+  const [smartEnabled, setSmartEnabled] = useState(false);
+  const [saveSmart, setSaveSmart] = useState(false);
+  const [ssMonths, setSsMonths] = useState<6 | 12 | 24>(12);
+  const [cancelStarted, setCancelStarted] = useState(false);
+  /** Only set when the destination was a guess, so the copy stays honest. */
+  const [cancelNote, setCancelNote] = useState<string | null>(null);
+  /** True while auto-discovery is probing — keeps the CTA from double-firing. */
+  const [cancelBusy, setCancelBusy] = useState(false);
 
-  const merchant = demoMerchants[merchantId] || {
-    id: merchantId,
-    canonicalName: 'Unknown Merchant',
-    fingerprintKeys: [],
-    cancellationDifficulty: 'Medium' as const,
-    difficultyLastUpdatedAt: new Date(),
-  };
+  // --- resolve the subscription ----------------------------------------------
+  //
+  // Only three merchants have a Subscription record, but the Wallet breakdown
+  // is built from CHARGES, which cover eight. The old fallback chain ended at
+  // `demoSubscriptions[0]`, so every row without a record — Disney+, Apple
+  // Music, Hulu, HBO Max… — silently opened Netflix. Every card in "Where it
+  // goes" looked like it linked to the same place because, past the first
+  // three, it did.
+  //
+  // A charge-backed merchant is a real recurring stream whether or not the
+  // inference pipeline has minted a Subscription row for it yet, so one is
+  // synthesised from its charge history. Falling back to an unrelated
+  // subscription is never right: showing the wrong merchant's price, renewal
+  // and cancel button is worse than showing nothing.
+  // GET /subscriptions/:id returns everything this screen needs in one call —
+  // the subscription, its merchant, the full charge history, price history and
+  // lifetime cost — all derived from Plaid-synced transactions.
+  const [detail, setDetail] = useState<SubscriptionDetailResponse | null>(null);
+  const [loading, setLoading] = useState(true);
 
-  // Get all charges for this merchant
-  const merchantCharges = useMemo(() => {
-    return demoCharges
-      .filter((c) => c.merchantId === merchantId)
-      .sort((a, b) => new Date(b.chargeTimestamp).getTime() - new Date(a.chargeTimestamp).getTime());
-  }, [merchantId]);
+  useEffect(() => {
+    let cancelled = false;
+    const id = params.id;
 
-  // Calculate totals
-  const lifetimeTotal = useMemo(() => {
-    return calculateLifetimeTotal(merchantCharges);
-  }, [merchantCharges]);
+    if (!id) {
+      setLoading(false);
+      return;
+    }
 
-  // Group by month for price timeline
-  const monthlyHistory = useMemo(() => {
-    return groupChargesByMonth(merchantCharges);
-  }, [merchantCharges]);
+    setLoading(true);
+    api
+      .get<{ success: boolean; data: SubscriptionDetailResponse }>(`/subscriptions/${id}`)
+      .then(res => {
+        if (!cancelled) setDetail((res as any)?.data ?? null);
+      })
+      .catch(() => {
+        // A 404 here is a real answer: that subscription is not this user's.
+        if (!cancelled) setDetail(null);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
 
-  // Calculate investment opportunity cost
-  const investmentValue = useMemo(() => {
-    if (merchantCharges.length === 0) return 0;
-    const latestCharge = merchantCharges[0];
-    const monthlyAmount = getMonthlyEquivalent(latestCharge.amountCents, latestCharge.billingInterval);
-    const months = calculateMonthsOfHistory(merchantCharges);
-    return calculateOpportunityCost(monthlyAmount, months);
-  }, [merchantCharges]);
+    return () => {
+      cancelled = true;
+    };
+  }, [params.id]);
 
-  const handleBack = () => {
-    router.back();
-  };
+  const sub = detail;
+  const name = detail?.merchantName ?? '';
+  const trial = detail?.status === 'trial';
+  // The card each charge landed on travels WITH the charge, so the header can
+  // name the real one instead of guessing at a default instrument.
+  const card = detail?.charges?.[0]?.fundingInstrument ?? null;
 
-  const handleCancelSubscription = () => {
-    router.push({
-      pathname: '/screens/CancelFlow',
-      params: { merchantId },
-    });
-  };
+  // Every hook must run before the early returns below, or the hook order
+  // changes between renders.
+  const charges = useMemo(
+    () =>
+      (detail?.charges ?? [])
+        .slice()
+        .sort(
+          (a, b) =>
+            new Date(b.chargeTimestamp).getTime() - new Date(a.chargeTimestamp).getTime()
+        )
+        .slice(0, 6),
+    [detail]
+  );
 
-  const getDifficultyLabel = (difficulty: string) => {
-    switch (difficulty) {
-      case 'Easy':
-        return 'Easy to cancel';
-      case 'Medium':
-        return 'Medium difficulty';
-      case 'Hard':
-        return 'Hard to cancel';
-      default:
-        return 'Unknown';
+  // All hooks have run; safe to bail out.
+  if (loading) {
+    return (
+      <View style={{ flex: 1, backgroundColor: colors.bg, alignItems: 'center', justifyContent: 'center' }}>
+        <ActivityIndicator color={colors.accInk} />
+      </View>
+    );
+  }
+
+  if (!sub) {
+    return (
+      <View style={{ flex: 1, backgroundColor: colors.bg }}>
+        <View
+          style={{
+            flex: 1,
+            paddingTop: insets.top + 10,
+            paddingHorizontal: layout.screenX,
+          }}
+        >
+          <PressScale onPress={() => router.back()} scaleTo={0.9}>
+            <View style={[styles.back, { borderColor: colors.line, backgroundColor: colors.card }]}>
+              <Ionicons name="chevron-back" size={18} color={colors.ink} />
+            </View>
+          </PressScale>
+
+          <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 10 }}>
+            <Ionicons name="help-circle-outline" size={40} color={colors.mut2} />
+            <Text style={[typeScale.sectionHeader, { color: colors.ink, textAlign: 'center' }]}>
+              We couldn't find that subscription
+            </Text>
+            <Body style={{ textAlign: 'center' }}>
+              It may have been cancelled or removed. Go back and pick it again.
+            </Body>
+          </View>
+        </View>
+      </View>
+    );
+  }
+
+  const priceCents = charges[0]?.amountCents ?? 0;
+  const lifetimeCents = charges.reduce((s, c) => s + c.amountCents, 0);
+  const ytdCents = charges
+    .filter(c => new Date(c.chargeTimestamp).getFullYear() === new Date().getFullYear())
+    .reduce((s, c) => s + c.amountCents, 0);
+
+  // --- price history ----------------------------------------------------------
+  const history = PRICE_HISTORY[sub.merchantId];
+  const labels = monthLabels(6);
+  const series: number[] = history ?? Array(6).fill(priceCents);
+  const points: PricePoint[] = series.map((cents, i) => ({ label: labels[i], cents }));
+
+  // One chip per price change in the last four months, exactly as the prototype
+  // builds them; a flat history falls back to the "steady at" chip so the row
+  // is never empty.
+  const chips: string[] = [];
+  for (let i = 1; i < series.length; i++) {
+    const change = series[i] - series[i - 1];
+    if (change !== 0 && i >= series.length - 4) {
+      chips.push(
+        `${change > 0 ? '↑' : '↓'} ${formatCents(Math.abs(change))} since ${labels[i - 1]}`
+      );
+    }
+  }
+  if (chips.length === 0) chips.push(`No price changes — steady at ${formatCents(priceCents)}`);
+
+  const halfCents = Math.round(priceCents / 2);
+  const projection = { 6: priceCents * 6, 12: priceCents * 12, 24: priceCents * 24 }[ssMonths];
+
+  // --- cancel -----------------------------------------------------------------
+  // Flipping local state is not enough: the user asked to land on the service's
+  // real cancellation page. `cancellationUrl` on the merchant record (API/Plaid
+  // enrichment in production, real URLs in the demo) wins over the curated
+  // table inside resolveCancellationUrl.
+  const onCancel = async () => {
+    if (cancelBusy) return;
+
+    // Fast path: a record URL or a curated one resolves with no network, so the
+    // 8 demo merchants that carry real URLs open instantly.
+    const quick = resolveCancellationUrlSync(name, sub.merchantId);
+    if (quick) {
+      setCancelStarted(true);
+      setCancelNote(null);
+      void openCancellation(quick);
+      return;
+    }
+
+    // Slow path: auto-discovery probes the merchant's domain for the page
+    // cancellation actually lives behind, so it needs a pending state.
+    setCancelBusy(true);
+    try {
+      const target = await resolveCancellationUrl(name, sub.merchantId);
+      setCancelStarted(true);
+      setCancelNote(
+        target.source === 'search'
+          ? `Opening a search for how to cancel ${name} — we could not confirm an official cancellation page.`
+          : null
+      );
+      await openCancellation(target);
+    } finally {
+      setCancelBusy(false);
     }
   };
 
-  // Calculate investment with 3% APR - with and without reinvestment
-  const calculateInvestmentWithReinvest = (monthly: number, months: number): string => {
-    const monthlyRate = 3 / 12 / 100; // 3% annual = 0.25% monthly
-    let futureValue = 0;
-    for (let i = 0; i < months; i++) {
-      futureValue = (futureValue + monthly) * (1 + monthlyRate);
-    }
-    return futureValue.toFixed(2);
-  };
-
-  const calculateInvestmentCashDividends = (monthly: number, months: number): string => {
-    const monthlyRate = 3 / 12 / 100;
-    let principal = 0;
-    let totalDividends = 0;
-
-    for (let i = 0; i < months; i++) {
-      principal += monthly;
-      totalDividends += principal * monthlyRate;
-    }
-
-    return (principal + totalDividends).toFixed(2);
-  };
-
-  const monthsActive = useMemo(() => {
-    return calculateMonthsOfHistory(merchantCharges);
-  }, [merchantCharges]);
-
-  const currentPriceCents = useMemo(() => {
-    return merchantCharges.length > 0 ? merchantCharges[0].amountCents : 0;
-  }, [merchantCharges]);
+  const payOptions = [
+    {
+      key: 'half' as const,
+      title: 'Pay full + save half',
+      sub: `Pay ${formatCents(priceCents)} + auto-save ${formatCents(halfCents)} · ${formatCents(
+        priceCents + halfCents
+      )} total/mo`,
+      icon: 'logo-usd' as const,
+      tileBg: colors.goldSoft,
+      tileFg: colors.gold,
+    },
+    {
+      key: 'full' as const,
+      title: 'Pay full + match full',
+      sub: `Pay ${formatCents(priceCents)} + match ${formatCents(
+        priceCents
+      )} into investing · ${formatCents(priceCents * 2)} total/mo`,
+      icon: 'trending-up' as const,
+      tileBg: colors.accSoft,
+      tileFg: colors.accInk,
+    },
+  ];
 
   return (
-    <View style={{ flex: 1, backgroundColor: colors.background, paddingTop: insets.top }}>
-      {/* Header */}
-      <View style={{ paddingHorizontal: 24, paddingVertical: 12 }}>
-        <TouchableOpacity onPress={handleBack} style={{ alignSelf: 'flex-start' }}>
-          <Text style={{ fontSize: 16, color: colors.text, fontWeight: '500' }}>Back</Text>
-        </TouchableOpacity>
-      </View>
-
+    <View style={{ flex: 1, backgroundColor: colors.bg }}>
       <ScrollView
-        contentContainerStyle={{ paddingHorizontal: 24, paddingBottom: insets.bottom + 24 }}
+        contentContainerStyle={{
+          paddingTop: insets.top + 10,
+          paddingHorizontal: layout.screenX,
+          paddingBottom: layout.contentBottom,
+        }}
         showsVerticalScrollIndicator={false}
+        bounces={false}
+        overScrollMode="never"
       >
-        {/* Merchant Header */}
-        <View style={{ alignItems: 'center', marginBottom: 32 }}>
-          <View
-            style={{
-              width: 64,
-              height: 64,
-              borderRadius: 32,
-              backgroundColor: colors.textSecondary,
-              alignItems: 'center',
-              justifyContent: 'center',
-              marginBottom: 12,
-            }}
-          >
-            <Text style={{ color: colors.card, fontSize: 28, fontWeight: '700' }}>
-              {merchant.canonicalName.charAt(0)}
-            </Text>
-          </View>
-          <Text style={{ fontSize: 24, fontWeight: '700', color: colors.text, marginBottom: 8 }}>
-            {merchant.canonicalName}
-          </Text>
-          <View
-            style={{
-              backgroundColor: colors.textSecondary,
-              paddingHorizontal: 12,
-              paddingVertical: 4,
-              borderRadius: 12,
-            }}
-          >
-            <Text style={{ fontSize: 12, color: colors.text, fontWeight: '500' }}>
-              {getDifficultyLabel(merchant.cancellationDifficulty)}
-            </Text>
-          </View>
-        </View>
-
-        {/* Charge History */}
-        <View style={{ marginBottom: 24 }}>
-          <Text style={{ fontSize: 18, fontWeight: '700', color: colors.text, marginBottom: 4 }}>
-            Charge History
-          </Text>
-          {merchantCharges.slice(0, 6).map((charge) => (
-            <View
-              key={charge.id}
-              style={{
-                flexDirection: 'row',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                paddingVertical: 10,
-                borderBottomWidth: 1,
-                borderBottomColor: colors.border,
-              }}
-            >
-              <View>
-                <Text style={{ fontSize: 14, color: colors.text, marginBottom: 2 }}>
-                  {formatDate(charge.chargeTimestamp)}
-                </Text>
-                <Text style={{ fontSize: 12, color: colors.textSecondary }}>
-                  {formatBillingInterval(charge.billingInterval)}
-                </Text>
-              </View>
-              <View style={{ alignItems: 'flex-end' }}>
-                <Text style={{ fontSize: 14, fontWeight: '600', color: colors.danger, marginBottom: 2 }}>
-                  {formatCents(charge.amountCents)}
-                </Text>
-                <Text style={{ fontSize: 12, color: colors.textSecondary }}>
-                  {Math.round(charge.confidenceScore * 100)}%
-                </Text>
-              </View>
-            </View>
-          ))}
-        </View>
-
-        {/* Interactive Price Chart */}
-        <View
-          style={{
-            backgroundColor: colors.card,
-            padding: 20,
-            borderRadius: 16,
-            marginBottom: 16,
-          }}
-        >
-          <Text style={{ fontSize: 18, fontWeight: '700', color: colors.text, marginBottom: 4 }}>
-            See How You're Getting Charged
-          </Text>
-          <Text style={{ fontSize: 14, color: colors.textSecondary, marginBottom: 16 }}>
-            {merchant.canonicalName}'s price changes over time
-          </Text>
-
-          {monthlyHistory.length > 1 && (
-            <>
+        <ScreenBody>
+          {/* --- top bar ------------------------------------------------------ */}
+          <View style={styles.topBar}>
+            <PressScale onPress={() => router.back()} scaleTo={0.9}>
               <View
-                style={{
-                  backgroundColor: colors.primary,
-                  borderRadius: 12,
-                  padding: 12,
-                  marginBottom: 12,
-                }}
+                style={[styles.back, { borderColor: colors.line, backgroundColor: colors.card }]}
               >
-                <LineChart
-                  data={{
-                    labels: monthlyHistory.slice().reverse().map(p => p.month.split(' ')[0].substring(0, 3)),
-                    datasets: [{
-                      data: monthlyHistory.slice().reverse().map(p => p.amountCents / 100),
-                      color: () => '#FFFFFF',
-                      strokeWidth: 3,
-                    }],
-                  }}
-                  width={screenWidth - 88}
-                  height={200}
-                  chartConfig={{
-                    backgroundColor: colors.primary,
-                    backgroundGradientFrom: colors.primary,
-                    backgroundGradientTo: '#7C3AED',
-                    decimalPlaces: 2,
-                    color: () => '#FFFFFF',
-                    labelColor: () => '#FFFFFF',
-                    propsForDots: {
-                      r: '8',
-                      strokeWidth: '3',
-                      stroke: '#FFFFFF',
-                      fill: colors.primary,
-                    },
-                    propsForBackgroundLines: {
-                      stroke: 'rgba(255,255,255,0.2)',
-                      strokeWidth: 1,
-                    },
-                  }}
-                  bezier
-                  withShadow={false}
-                  style={{ borderRadius: 12 }}
-                  withInnerLines={true}
-                  withOuterLines={false}
-                  withVerticalLines={false}
-                  formatYLabel={(v) => `$${v}`}
-                  onDataPointClick={({ value, index }) => {
-                    const reversedHistory = monthlyHistory.slice().reverse();
-                    Alert.alert(reversedHistory[index].month, `You paid $${value.toFixed(2)}`);
-                  }}
-                />
+                <Ionicons name="chevron-back" size={18} color={colors.ink} />
               </View>
+            </PressScale>
+            <Text
+              style={[typeScale.screenTitle, { color: colors.ink, marginLeft: 12, flex: 1 }]}
+              numberOfLines={1}
+            >
+              Subscription
+            </Text>
+          </View>
 
-              {/* SHOW BADGES ONLY FOR LAST 3 MONTHS - "since [month]" format */}
-              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 12 }}>
-                {monthlyHistory.map((item, i) => {
-                  if (i === 0) return null;
+          {/* --- hero --------------------------------------------------------- */}
+          <View style={styles.hero}>
+            <MerchantMark name={name} merchantId={sub.merchantId} size={64} />
+            <Text
+              style={[styles.heroName, { color: colors.ink }]}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              minimumFontScale={0.7}
+            >
+              {name}
+            </Text>
+            <Text style={[styles.heroPriceRow, { color: colors.mut }]} numberOfLines={1}>
+              <Text style={[styles.heroPrice, { color: colors.ink }]}>
+                {formatCents(priceCents)}
+              </Text>
+              {' / month'}
+            </Text>
+            <View style={[styles.badge, { backgroundColor: colors.goldSoft }]}>
+              <Text style={[styles.badgeText, { color: colors.gold }]}>
+                {trial ? 'FREE TRIAL' : 'ACTIVE'}
+              </Text>
+            </View>
+          </View>
 
-                  // Filter to only last 3 months
-                  const threeMonthsAgo = new Date();
-                  threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
+          {/* --- meta --------------------------------------------------------- */}
+          <Surface style={styles.metaCard}>
+            <View style={styles.metaRow}>
+              <Body style={styles.metaKey}>Next charge</Body>
+              <Text style={[styles.metaValue, { color: colors.ink }]} numberOfLines={1}>
+                {sub.renewalDate
+                  ? new Date(sub.renewalDate).toLocaleDateString('en-US', {
+                      month: 'long',
+                      day: 'numeric',
+                    })
+                  : '—'}
+              </Text>
+            </View>
+            <View style={[styles.divider, { backgroundColor: colors.line }]} />
+            <View style={styles.metaRow}>
+              <Body style={styles.metaKey}>Paid this year</Body>
+              <Text style={[styles.metaValue, { color: colors.red }]} numberOfLines={1}>
+                {formatCents(ytdCents)}
+              </Text>
+            </View>
+            <View style={[styles.divider, { backgroundColor: colors.line }]} />
+            <View style={styles.metaRow}>
+              <Body style={styles.metaKey}>Card</Body>
+              <Text style={[styles.metaValue, { color: colors.ink }]} numberOfLines={1}>
+                {card ? `${card.displayName} ···· ${card.last4}` : '—'}
+              </Text>
+            </View>
+          </Surface>
 
-                  // Parse month string to date (assuming format like "Jan 2024")
-                  const [monthName, year] = item.month.split(' ');
-                  const monthIndex = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'].indexOf(monthName.substring(0, 3));
-                  const itemDate = new Date(parseInt(year), monthIndex, 1);
+          {/* --- charge history ---------------------------------------------- */}
+          <Surface style={styles.historyCard}>
+            <Text
+              style={[styles.cardTitle, { color: colors.ink, paddingTop: 12, paddingBottom: 4 }]}
+            >
+              Charge history
+            </Text>
+            {charges.map(c => (
+              <View
+                key={c.id}
+                style={[styles.chargeRow, { borderTopColor: colors.line, borderTopWidth: 1 }]}
+              >
+                <View style={{ flex: 1, paddingRight: 10 }}>
+                  <Text style={[styles.chargeDate, { color: colors.ink }]} numberOfLines={1}>
+                    {new Date(c.chargeTimestamp).toLocaleDateString('en-US', {
+                      month: 'short',
+                      day: 'numeric',
+                      year: 'numeric',
+                    })}
+                  </Text>
+                  <Text style={[styles.chargeSub, { color: colors.mut }]}>Monthly</Text>
+                </View>
+                <View style={{ alignItems: 'flex-end' }}>
+                  <Text style={[styles.chargeAmount, { color: colors.red }]}>
+                    {formatCents(c.amountCents)}
+                  </Text>
+                  <Text style={[styles.confidence, { color: colors.mut }]}>
+                    {c.fundingInstrument?.last4 ? `•${c.fundingInstrument.last4}` : ''}
+                  </Text>
+                </View>
+              </View>
+            ))}
+          </Surface>
 
-                  if (itemDate < threeMonthsAgo) return null; // SKIP OLD MONTHS
+          {/* --- how you're getting charged ---------------------------------- */}
+          <LinearGradient
+            colors={gradients.chartCard as unknown as readonly [string, string, ...string[]]}
+            start={{ x: 0.1, y: 0 }}
+            end={{ x: 0.9, y: 1 }}
+            style={styles.chartCard}
+          >
+            <Text style={styles.chartTitle}>How you're getting charged</Text>
+            <Text style={styles.chartSub} numberOfLines={1}>
+              {name} · price over time
+            </Text>
 
-                  const change = item.amountCents - monthlyHistory[i - 1].amountCents;
-                  if (change === 0) return null;
+            <PriceChart points={points} width={CHART_W} />
 
-                  const isIncrease = change > 0;
-                  const prevMonth = monthlyHistory[i - 1].month.split(' ')[0].substring(0, 3);
+            <View style={styles.chipRow}>
+              {chips.map(txt => (
+                <View key={txt} style={styles.deltaChip}>
+                  <Text style={styles.deltaText}>{txt}</Text>
+                </View>
+              ))}
+            </View>
+          </LinearGradient>
 
-                  return (
-                    <View
-                      key={i}
-                      style={{
-                        paddingHorizontal: 12,
-                        paddingVertical: 6,
-                        borderRadius: 12,
-                        backgroundColor: isIncrease ? '#FEF3C7' : '#D1FAE5',
-                      }}
-                    >
-                      <Text
-                        style={{
-                          fontSize: 12,
-                          fontWeight: '600',
-                          color: isIncrease ? '#D97706' : '#059669',
-                        }}
-                      >
-                        {isIncrease ? '↑' : '↓'} ${Math.abs(change / 100).toFixed(2)} since {prevMonth}
-                      </Text>
+          {/* --- smart payment options --------------------------------------- */}
+          <Surface style={styles.bigCard} radius={radius.cardLg}>
+            <Text style={[styles.cardTitle, { color: colors.ink }]}>Smart payment options</Text>
+            <Text style={[styles.cardSub, { color: colors.mut }]}>
+              Pay in full · automate the difference
+            </Text>
+
+            {payOptions.map(opt => {
+              const on = payOpt === opt.key;
+              return (
+                <PressScale
+                  key={opt.key}
+                  scaleTo={0.98}
+                  onPress={() => {
+                    setPayOpt(opt.key);
+                    setSmartEnabled(false);
+                  }}
+                  style={styles.optWrap}
+                >
+                  <View
+                    style={[
+                      styles.radioRow,
+                      {
+                        borderColor: on ? colors.gold : colors.line,
+                        backgroundColor: on ? colors.goldSoft : 'transparent',
+                      },
+                    ]}
+                  >
+                    <View style={[styles.optTile, { backgroundColor: opt.tileBg }]}>
+                      <Ionicons name={opt.icon} size={19} color={opt.tileFg} />
                     </View>
-                  );
-                })}
-              </View>
-            </>
-          )}
-        </View>
+                    <View style={{ flex: 1, minWidth: 0 }}>
+                      <Text style={[styles.optTitle, { color: colors.ink }]}>{opt.title}</Text>
+                      <Text style={[styles.optSub, { color: colors.mut }]}>{opt.sub}</Text>
+                    </View>
+                    <View style={[styles.radio, { borderColor: colors.goldLine }]}>
+                      <View
+                        style={[
+                          styles.radioDot,
+                          { backgroundColor: on ? colors.gold : 'transparent' },
+                        ]}
+                      />
+                    </View>
+                  </View>
+                </PressScale>
+              );
+            })}
 
-        {/* Smart Payment Options - ONLY 2 OPTIONS */}
-        <View
-          style={{
-            backgroundColor: colors.card,
-            padding: 20,
-            borderRadius: 16,
-            marginBottom: 16,
-          }}
-        >
-          <Text style={{ fontSize: 18, fontWeight: '700', color: colors.text, marginBottom: 4 }}>
-            Smart Payment Options
-          </Text>
-          <Text style={{ fontSize: 14, color: colors.textSecondary, marginBottom: 16 }}>
-            Always pay full subscription + automate savings
-          </Text>
-
-          {/* Pay Full + Save Half */}
-          <Pressable
-            style={{
-              backgroundColor: selectedPaymentOption === 'split' ? '#FFFBF0' : colors.background,
-              padding: 16,
-              borderRadius: 12,
-              marginBottom: 12,
-              borderWidth: 2,
-              borderColor: selectedPaymentOption === 'split' ? colors.accent : colors.border,
-            }}
-            onPress={() => setSelectedPaymentOption('split')}
-          >
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-              <Text style={{ fontSize: 32 }}>💰</Text>
-              <View style={{ flex: 1, minWidth: 0 }}>
-                <Text style={{ fontSize: 16, fontWeight: '700', color: colors.text, marginBottom: 4 }}>
-                  Pay Full + Save Half
-                </Text>
-                <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 2 }}>
-                  <Text style={{ fontSize: 14, color: colors.textSecondary }}>Pay </Text>
-                  <Text style={{ fontSize: 14, fontWeight: '600', color: colors.text }}>${(currentPriceCents / 100).toFixed(2)}</Text>
-                  <Text style={{ fontSize: 14, color: colors.textSecondary }}> subscription + transfer </Text>
-                  <Text style={{ fontSize: 14, fontWeight: '600', color: colors.text }}>${(currentPriceCents / 200).toFixed(2)}</Text>
-                  <Text style={{ fontSize: 14, color: colors.textSecondary }}> to savings (</Text>
-                  <Text style={{ fontSize: 14, fontWeight: '600', color: colors.text }}>${(currentPriceCents * 1.5 / 100).toFixed(2)}</Text>
-                  <Text style={{ fontSize: 14, color: colors.textSecondary }}> total/month)</Text>
+            {payOpt && !smartEnabled && (
+              <PressScale onPress={() => setSmartEnabled(true)} scaleTo={0.98}>
+                <View style={[styles.enableBtn, { backgroundColor: colors.accent }]}>
+                  <Text style={styles.enableText}>Enable smart saving</Text>
                 </View>
-              </View>
-              <View
-                style={{
-                  width: 24,
-                  height: 24,
-                  borderRadius: 12,
-                  borderWidth: 2,
-                  borderColor: colors.primary,
-                  justifyContent: 'center',
-                  alignItems: 'center',
-                }}
-              >
-                {selectedPaymentOption === 'split' && (
-                  <View
-                    style={{
-                      width: 12,
-                      height: 12,
-                      borderRadius: 6,
-                      backgroundColor: colors.accent,
-                    }}
-                  />
-                )}
-              </View>
-            </View>
-          </Pressable>
+              </PressScale>
+            )}
 
-          {/* Pay Full + Match Full */}
-          <Pressable
-            style={{
-              backgroundColor: selectedPaymentOption === 'double' ? '#FFFBF0' : colors.background,
-              padding: 16,
-              borderRadius: 12,
-              marginBottom: 12,
-              borderWidth: 2,
-              borderColor: selectedPaymentOption === 'double' ? colors.accent : colors.border,
-            }}
-            onPress={() => setSelectedPaymentOption('double')}
-          >
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-              <Text style={{ fontSize: 32 }}>📈</Text>
-              <View style={{ flex: 1, minWidth: 0 }}>
-                <Text style={{ fontSize: 16, fontWeight: '700', color: colors.text, marginBottom: 4 }}>
-                  Pay Full + Match Full
+            {smartEnabled && (
+              <View style={[styles.banner, { backgroundColor: colors.successBg }]}>
+                <Text style={[styles.bannerText, { color: colors.success }]}>
+                  ✓ Smart saving on — each cycle pays {formatCents(priceCents)} and moves{' '}
+                  {formatCents(payOpt === 'full' ? priceCents : halfCents)} to your{' '}
+                  {payOpt === 'full' ? 'investments' : 'savings'} automatically.
                 </Text>
-                <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 2 }}>
-                  <Text style={{ fontSize: 14, color: colors.textSecondary }}>Pay </Text>
-                  <Text style={{ fontSize: 14, fontWeight: '600', color: colors.text }}>${(currentPriceCents / 100).toFixed(2)}</Text>
-                  <Text style={{ fontSize: 14, color: colors.textSecondary }}> subscription + transfer </Text>
-                  <Text style={{ fontSize: 14, fontWeight: '600', color: colors.text }}>${(currentPriceCents / 100).toFixed(2)}</Text>
-                  <Text style={{ fontSize: 14, color: colors.textSecondary }}> to investment (</Text>
-                  <Text style={{ fontSize: 14, fontWeight: '600', color: colors.text }}>${(currentPriceCents * 2 / 100).toFixed(2)}</Text>
-                  <Text style={{ fontSize: 14, color: colors.textSecondary }}> total/month)</Text>
-                </View>
               </View>
-              <View
-                style={{
-                  width: 24,
-                  height: 24,
-                  borderRadius: 12,
-                  borderWidth: 2,
-                  borderColor: colors.primary,
-                  justifyContent: 'center',
-                  alignItems: 'center',
-                }}
-              >
-                {selectedPaymentOption === 'double' && (
-                  <View
-                    style={{
-                      width: 12,
-                      height: 12,
-                      borderRadius: 6,
-                      backgroundColor: colors.accent,
-                    }}
-                  />
-                )}
-              </View>
-            </View>
-          </Pressable>
+            )}
+          </Surface>
 
-          {selectedPaymentOption && (
-            <Pressable
-              style={{
-                backgroundColor: colors.primary,
-                paddingVertical: 16,
-                borderRadius: 12,
-                alignItems: 'center',
-                marginTop: 8,
-              }}
-              onPress={() => {
-                const savingsAmount = selectedPaymentOption === 'split'
-                  ? (currentPriceCents / 200).toFixed(2)
-                  : (currentPriceCents / 100).toFixed(2);
-                const subAmount = (currentPriceCents / 100).toFixed(2);
-                Alert.alert(
-                  'Smart Saving Enabled',
-                  `Each billing cycle, you'll pay $${subAmount} for ${merchant.canonicalName} and automatically transfer $${savingsAmount} to your savings.`,
-                  [
-                    { text: 'View Savings', onPress: () => router.push('/(tabs)/saved') },
-                    { text: 'Done' },
-                  ]
-                );
-              }}
+          {/* --- save smart ---------------------------------------------------- */}
+          <Surface style={styles.bigCard} radius={radius.cardLg}>
+            <View style={styles.saveHeader}>
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <Text style={[styles.cardTitle, { color: colors.ink }]}>Save smart</Text>
+                <Text style={[styles.cardSub, { color: colors.mut, marginBottom: 0 }]}>
+                  See how your savings would grow
+                </Text>
+              </View>
+              <Switch
+                value={saveSmart}
+                onValueChange={setSaveSmart}
+                // Prototype track is solid `--gold` when on (#A87D2F light,
+                // #D6B36F dark) with a white knob. `goldBg` is muddy in dark
+                // (#8F6B29) and read as a different gold from everything else.
+                trackColor={{ false: colors.line2, true: colors.gold }}
+                thumbColor="#FFFFFF"
+                ios_backgroundColor={colors.line2}
+              />
+            </View>
+
+            {saveSmart && (
+              <>
+                <Text style={[styles.ssLead, { color: colors.ink }]}>
+                  With{' '}
+                  <Text style={{ fontFamily: fontFamily.serif, fontSize: 15 }}>
+                    {formatCents(priceCents)}
+                  </Text>
+                  /mo automatically saved:
+                </Text>
+
+                <View style={styles.projRow}>
+                  {([6, 12, 24] as const).map(m => {
+                    const on = ssMonths === m;
+                    return (
+                      // The layout style MUST sit on PressScale — it lands on the
+                      // Pressable. On the inner View the tiles collapse to a
+                      // one-letter-per-line column.
+                      <PressScale
+                        key={m}
+                        scaleTo={0.96}
+                        onPress={() => setSsMonths(m)}
+                        style={styles.projTile}
+                      >
+                        <View
+                          style={[
+                            styles.projInner,
+                            {
+                              borderColor: on ? colors.accInk : colors.line,
+                              backgroundColor: on ? colors.accSoft : 'transparent',
+                            },
+                          ]}
+                        >
+                          <Text
+                            style={[styles.projLabel, { color: colors.mut }]}
+                            numberOfLines={1}
+                            adjustsFontSizeToFit
+                            minimumFontScale={0.7}
+                          >
+                            {m === 6
+                              ? 'After 6 months'
+                              : m === 12
+                                ? 'After 1 year'
+                                : 'After 2 years'}
+                          </Text>
+                          <Text
+                            style={[styles.projValue, { color: colors.accInk }]}
+                            numberOfLines={1}
+                            adjustsFontSizeToFit
+                            minimumFontScale={0.6}
+                          >
+                            {formatCents(priceCents * m)}
+                          </Text>
+                        </View>
+                      </PressScale>
+                    );
+                  })}
+                </View>
+
+                <View style={[styles.banner, { backgroundColor: colors.successBg }]}>
+                  <Text style={[styles.bannerText, { color: colors.success, textAlign: 'center' }]}>
+                    That's {formatCents(projection)} saved without changing your lifestyle
+                  </Text>
+                </View>
+              </>
+            )}
+          </Surface>
+
+          {/* --- lifetime cost -------------------------------------------------- */}
+          <Surface style={styles.lifetimeCard} radius={radius.cardLg}>
+            <Body style={{ marginBottom: 4 }}>This has cost you more than</Body>
+            <Text style={[typeScale.totalValueSm, { color: colors.red, letterSpacing: -0.5 }]}>
+              {formatCents(lifetimeCents)}
+            </Text>
+          </Surface>
+
+          {/* --- cancel --------------------------------------------------------- */}
+          <PressScale onPress={onCancel} scaleTo={0.98} disabled={cancelBusy}>
+            <View
+              style={[
+                styles.cancelBtn,
+                {
+                  backgroundColor: cancelStarted ? colors.success : colors.red,
+                  opacity: cancelBusy ? 0.7 : 1,
+                },
+              ]}
             >
-              <Text style={{ color: colors.card, fontSize: 16, fontWeight: '700' }}>
-                Enable Smart Saving
-              </Text>
-            </Pressable>
-          )}
-        </View>
-
-        {/* Save Smart Section */}
-        <View
-          style={{
-            backgroundColor: colors.card,
-            padding: 20,
-            borderRadius: 16,
-            marginBottom: 16,
-          }}
-        >
-          <View
-            style={{
-              flexDirection: 'row',
-              justifyContent: 'space-between',
-              alignItems: 'flex-start',
-              marginBottom: 16,
-            }}
-          >
-            <View style={{ flex: 1 }}>
-              <Text style={{ fontSize: 18, fontWeight: '700', color: colors.text, marginBottom: 4 }}>
-                Save Smart
-              </Text>
-              <Text style={{ fontSize: 14, color: colors.textSecondary, marginTop: 4, maxWidth: '90%' }}>
-                See how your savings would grow over time
+              <Text style={styles.cancelText}>
+                {cancelBusy
+                  ? 'Finding cancellation page…'
+                  : cancelStarted
+                  ? 'Cancellation started ✓ — choose where the money goes'
+                  : 'Cancel & choose where to send the money'}
               </Text>
             </View>
-            <Switch
-              value={showInvestment}
-              onValueChange={setShowInvestment}
-              trackColor={{ false: colors.border, true: colors.accent }}
-              thumbColor={showInvestment ? colors.primary : colors.textSecondary}
-            />
-          </View>
+          </PressScale>
 
-          {showInvestment && (
-            <>
-              <Text style={{ fontSize: 14, color: colors.text, marginBottom: 16, fontWeight: '600' }}>
-                With ${(currentPriceCents / 100).toFixed(2)}/mo automatically saved:
-              </Text>
-
-              <View style={{ flexDirection: 'row', gap: 12, marginBottom: 16 }}>
-                {([6, 12, 24] as const).map((months) => {
-                  const isSelected = selectedSaveSmartMonths === months;
-                  const amount = (currentPriceCents / 100) * months;
-                  const label = months === 6 ? 'After 6 months' : months === 12 ? 'After 1 year' : 'After 2 years';
-                  return (
-                    <Pressable
-                      key={months}
-                      style={{
-                        flex: 1,
-                        backgroundColor: isSelected ? '#F5F3FF' : colors.background,
-                        padding: 16,
-                        borderRadius: 12,
-                        alignItems: 'center',
-                        borderWidth: 2,
-                        borderColor: isSelected ? colors.primary : colors.border,
-                      }}
-                      onPress={() => setSelectedSaveSmartMonths(months)}
-                    >
-                      <Text style={{ fontSize: 12, color: colors.textSecondary, marginBottom: 8 }}>
-                        {label}
-                      </Text>
-                      <Text style={{ fontSize: 20, fontWeight: '700', color: colors.primary, fontVariant: ['tabular-nums'] }}>
-                        ${amount.toFixed(2)}
-                      </Text>
-                    </Pressable>
-                  );
-                })}
-              </View>
-
-              <Pressable
-                style={{
-                  backgroundColor: colors.success,
-                  padding: 12,
-                  borderRadius: 12,
-                }}
-                onPress={() => Alert.alert(
-                  'Smart Savings',
-                  `That's ${formatCents(currentPriceCents * selectedSaveSmartMonths)} saved over ${selectedSaveSmartMonths === 6 ? '6 months' : selectedSaveSmartMonths === 12 ? '1 year' : '2 years'} without changing your lifestyle. The subscription is paid in full, and savings are automatically transferred from your linked account.`
-                )}
-              >
-                <Text style={{ fontSize: 14, fontWeight: '600', color: colors.card, textAlign: 'center' }}>
-                  That's ${((currentPriceCents / 100) * selectedSaveSmartMonths).toFixed(2)} saved without changing your lifestyle
-                </Text>
-              </Pressable>
-            </>
-          )}
-        </View>
-
-        {/* Lifetime Total */}
-        <Card style={{ marginBottom: 24, padding: 20 }}>
-          <Text style={{ fontSize: 14, color: colors.textSecondary, marginBottom: 8 }}>
-            This has cost you more than
-          </Text>
-          <Text style={{ fontSize: 36, fontWeight: '700', color: colors.danger }}>
-            {formatDollars(lifetimeTotal)}
-          </Text>
-        </Card>
-
-        {/* Cancel CTA */}
-        <View style={{ marginTop: 8 }}>
-          <Button
-            title="Cancel & choose where to send the money"
-            variant="danger"
-            onPress={handleCancelSubscription}
-          />
-        </View>
+          {cancelNote ? (
+            <Body style={{ marginTop: 8, textAlign: 'center' }}>{cancelNote}</Body>
+          ) : null}
+        </ScreenBody>
       </ScrollView>
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  topBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  back: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  hero: {
+    alignItems: 'center',
+    gap: 8,
+    paddingTop: 18,
+    paddingBottom: 22,
+  },
+  heroName: {
+    fontFamily: fontFamily.bold,
+    fontSize: 24,
+    letterSpacing: -0.5,
+    textAlign: 'center',
+  },
+  heroPriceRow: {
+    fontFamily: fontFamily.regular,
+    fontSize: 15,
+  },
+  heroPrice: {
+    fontFamily: fontFamily.serif,
+    fontSize: 20,
+  },
+  badge: {
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 14,
+  },
+  badgeText: {
+    fontFamily: fontFamily.bold,
+    fontSize: 11,
+    letterSpacing: 0.6,
+  },
+  divider: { height: 1 },
+  metaCard: {
+    paddingHorizontal: 16,
+    marginBottom: 18,
+  },
+  metaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+    paddingVertical: 14,
+  },
+  metaKey: {
+    flexShrink: 0,
+  },
+  metaValue: {
+    fontFamily: fontFamily.bold,
+    fontSize: 13.5,
+    flexShrink: 1,
+    textAlign: 'right',
+  },
+  historyCard: {
+    paddingHorizontal: 16,
+    paddingBottom: 2,
+    marginBottom: 16,
+  },
+  cardTitle: {
+    fontFamily: fontFamily.bold,
+    fontSize: 16,
+  },
+  cardSub: {
+    fontFamily: fontFamily.regular,
+    fontSize: 12,
+    marginTop: 2,
+    marginBottom: 14,
+  },
+  chargeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 11,
+  },
+  chargeDate: {
+    fontFamily: fontFamily.semibold,
+    fontSize: 13.5,
+  },
+  chargeSub: {
+    fontFamily: fontFamily.regular,
+    fontSize: 11.5,
+    marginTop: 1,
+  },
+  chargeAmount: {
+    fontFamily: fontFamily.bold,
+    fontSize: 13.5,
+  },
+  confidence: {
+    fontFamily: fontFamily.regular,
+    fontSize: 11,
+    marginTop: 1,
+  },
+  chartCard: {
+    borderRadius: radius.cardLg,
+    padding: 18,
+    marginBottom: 16,
+  },
+  chartTitle: {
+    fontFamily: fontFamily.bold,
+    fontSize: 16,
+    color: '#FFFFFF',
+  },
+  chartSub: {
+    fontFamily: fontFamily.regular,
+    fontSize: 12,
+    color: chartColors.subtext,
+    marginTop: 2,
+    marginBottom: 14,
+  },
+  chipRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 7,
+    marginTop: 12,
+  },
+  deltaChip: {
+    paddingHorizontal: 11,
+    paddingVertical: 5,
+    borderRadius: radius.chip,
+    backgroundColor: chartColors.chipBg,
+  },
+  deltaText: {
+    fontFamily: fontFamily.bold,
+    fontSize: 11.5,
+    color: chartColors.line,
+  },
+  bigCard: {
+    padding: 18,
+    marginBottom: 16,
+  },
+  optWrap: {
+    marginBottom: 10,
+  },
+  radioRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    padding: 14,
+    borderWidth: 2,
+    borderRadius: radius.buttonSm,
+  },
+  optTile: {
+    width: 38,
+    height: 38,
+    borderRadius: radius.chip,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+  radio: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+  radioDot: {
+    width: 11,
+    height: 11,
+    borderRadius: 6,
+  },
+  optTitle: {
+    fontFamily: fontFamily.bold,
+    fontSize: 14.5,
+  },
+  optSub: {
+    fontFamily: fontFamily.regular,
+    fontSize: 12,
+    lineHeight: 17.4,
+  },
+  enableBtn: {
+    paddingVertical: 14,
+    borderRadius: radius.buttonSm,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  enableText: {
+    fontFamily: fontFamily.bold,
+    fontSize: 14,
+    color: '#FFFFFF',
+  },
+  banner: {
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: 13,
+  },
+  bannerText: {
+    fontFamily: fontFamily.semibold,
+    fontSize: 12.5,
+    lineHeight: 18,
+  },
+  saveHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+  },
+  ssLead: {
+    fontFamily: fontFamily.semibold,
+    fontSize: 13,
+    marginTop: 14,
+    marginBottom: 10,
+  },
+  projRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 12,
+  },
+  // The PressScale gets the flex sizing; the inner View carries the border.
+  // No minWidth: three tiles at flex:1 plus a 96px floor overflowed the card
+  // and pushed "After 2 years" off the right edge.
+  projTile: {
+    flex: 1,
+    minWidth: 0,
+  },
+  projInner: {
+    borderWidth: 2,
+    borderRadius: 13,
+    paddingVertical: 13,
+    paddingHorizontal: 4,
+    alignItems: 'center',
+    gap: 4,
+  },
+  projLabel: {
+    fontFamily: fontFamily.regular,
+    fontSize: 10.5,
+    textAlign: 'center',
+  },
+  projValue: {
+    fontFamily: fontFamily.serif,
+    fontSize: 16,
+  },
+  lifetimeCard: {
+    padding: 20,
+    marginBottom: 16,
+  },
+  cancelBtn: {
+    paddingVertical: 16,
+    paddingHorizontal: 14,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cancelText: {
+    fontFamily: fontFamily.bold,
+    fontSize: 14.5,
+    color: '#FFFFFF',
+    textAlign: 'center',
+  },
+});

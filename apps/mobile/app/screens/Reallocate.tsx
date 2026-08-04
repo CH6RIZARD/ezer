@@ -32,7 +32,7 @@ const BUCKET_OPTIONS: BucketOption[] = [
 export default function ReallocateScreen() {
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
-  const { goals, addToGoal } = useSavingsGoals();
+  const { goals, depositToGoal } = useSavingsGoals();
   const params = useLocalSearchParams<{
     merchantId: string;
     amountCents: string;
@@ -52,34 +52,46 @@ export default function ReallocateScreen() {
     router.replace({ pathname: '/(tabs)/saved', params: { openCreate: '1' } });
   };
 
-  const handleAssign = () => {
+  const handleAssign = async () => {
     if (!selected) {
       Alert.alert('Select an option', 'Please choose where to allocate your freed money.');
       return;
     }
 
-    let targetLabel: string;
-    if (selected.type === 'goal') {
-      const goal = goals.find((g) => g.id === selected.goalId);
-      targetLabel = goal?.name ?? 'Goal';
-      addToGoal(selected.goalId, amountCents);
-    } else {
-      targetLabel = BUCKET_OPTIONS.find((o) => o.value === selected.value)?.label ?? selected.value;
-    }
-
     const amountStr = formatCents(amountCents);
 
+    // A goal allocation is a REAL transfer now, not a local note. It can fail
+    // — insufficient balance, bank disconnected — so the success alert only
+    // fires once the server has actually taken it. Announcing "Saved!" before
+    // the money moved was harmless when this was device-local state; against a
+    // real ledger it would be a lie.
+    if (selected.type === 'goal') {
+      const goal = goals.find(g => g.id === selected.goalId);
+      const res = await depositToGoal(selected.goalId, amountCents / 100);
+
+      if (!res.ok) {
+        Alert.alert('Could not move that money', res.error);
+        return;
+      }
+
+      Alert.alert(
+        'On its way',
+        `${amountStr} → ${goal?.name ?? 'your goal'}. It will show as available once it clears.`,
+        [{ text: 'OK', onPress: () => router.replace('/(tabs)/savings') }]
+      );
+      return;
+    }
+
+    // The other buckets (debt, investing, another subscription) are guidance,
+    // not transfers — there is nowhere to send the money. Say so plainly
+    // rather than implying something moved.
+    const targetLabel =
+      BUCKET_OPTIONS.find(o => o.value === selected.value)?.label ?? selected.value;
+
     Alert.alert(
-      'Saved!',
-      `${amountStr}/${billingInterval === 'yearly' ? 'yr' : 'mo'} → ${targetLabel}`,
-      [
-        {
-          text: 'OK',
-          onPress: () => {
-            router.replace(selected.type === 'goal' ? '/(tabs)/saved' : '/(tabs)/wallet');
-          },
-        },
-      ]
+      'Noted',
+      `${amountStr}/${billingInterval === 'yearly' ? 'yr' : 'mo'} earmarked for ${targetLabel}.`,
+      [{ text: 'OK', onPress: () => router.replace('/(tabs)/wallet') }]
     );
   };
 

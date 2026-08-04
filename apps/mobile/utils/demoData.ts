@@ -146,7 +146,10 @@ function generateCharges(): SubscriptionCharge[] {
     });
   }
 
-  // Spotify - $10.99/mo on Chase
+  // Spotify - $10.99/mo on Amex
+  // Deliberately on card 2 so the Wallet carousel shows a different merchant
+  // mix per card (card 1: Netflix + Disney+ + Apple Music, card 2: Adobe +
+  // Spotify, card 3: YouTube Premium).
   for (let i = 0; i < 6; i++) {
     const date = new Date(now);
     date.setMonth(date.getMonth() - i);
@@ -159,7 +162,7 @@ function generateCharges(): SubscriptionCharge[] {
       currency: 'USD',
       billingInterval: 'monthly',
       chargeTimestamp: date,
-      fundingInstrumentId: '1',
+      fundingInstrumentId: '2',
       inferenceSource: 'transaction',
       confidenceScore: 0.92,
     });
@@ -222,7 +225,7 @@ function generateCharges(): SubscriptionCharge[] {
     });
   }
 
-  // Apple Music - $10.99/mo (was $9.99 3 months ago)
+  // Apple Music - $10.99/mo on Chase (was $9.99 3 months ago)
   for (let i = 0; i < 6; i++) {
     const date = new Date(now);
     date.setMonth(date.getMonth() - i);
@@ -304,6 +307,66 @@ export const demoSubscriptions: Subscription[] = [
     renewalDate: new Date(Date.now() + 22 * 24 * 60 * 60 * 1000), // 22 days
     startedAt: new Date('2023-08-20'),
   },
+  // ---------------------------------------------------------------------------
+  // The five below were MISSING, and their absence was a routing bug, not just
+  // thin data.
+  //
+  // demoMerchants and demoCharges both cover all eight merchants, and
+  // demoTrials points at 'sub-hulu' and 'sub-hbomax' — subscriptions that did
+  // not exist. Every screen that navigated with one of those ids (Alerts
+  // "Manage" on a trial, the calendar day popover, Wallet's breakdown rows)
+  // reached SubscriptionDetail, failed to match, and silently fell back to
+  // demoSubscriptions[0] — so tapping Hulu opened Netflix.
+  //
+  // Ids follow `sub-<merchantId>` so a merchantId can always be resolved to its
+  // subscription and back.
+  // ---------------------------------------------------------------------------
+  {
+    id: 'sub-youtube',
+    userId: 'user-1',
+    merchantId: 'youtube',
+    status: 'active',
+    cadence: 'monthly',
+    renewalDate: new Date(Date.now() + 9 * 24 * 60 * 60 * 1000), // 9 days
+    startedAt: new Date('2023-03-11'),
+  },
+  {
+    id: 'sub-apple',
+    userId: 'user-1',
+    merchantId: 'apple',
+    status: 'active',
+    cadence: 'monthly',
+    renewalDate: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000), // 2 days
+    startedAt: new Date('2021-11-05'),
+  },
+  {
+    id: 'sub-disney',
+    userId: 'user-1',
+    merchantId: 'disney',
+    status: 'active',
+    cadence: 'monthly',
+    renewalDate: new Date(Date.now() + 18 * 24 * 60 * 60 * 1000), // 18 days
+    startedAt: new Date('2024-02-14'),
+  },
+  // These two are the trial-backed ones demoTrials references by id.
+  {
+    id: 'sub-hulu',
+    userId: 'user-1',
+    merchantId: 'hulu',
+    status: 'trial',
+    cadence: 'monthly',
+    renewalDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // matches trial-1
+    startedAt: new Date(Date.now() - 23 * 24 * 60 * 60 * 1000),
+  },
+  {
+    id: 'sub-hbomax',
+    userId: 'user-1',
+    merchantId: 'hbomax',
+    status: 'trial',
+    cadence: 'monthly',
+    renewalDate: new Date(Date.now() + 12 * 24 * 60 * 60 * 1000), // matches trial-2
+    startedAt: new Date(Date.now() - 18 * 24 * 60 * 60 * 1000),
+  },
 ];
 
 // =============================================================================
@@ -370,8 +433,16 @@ export function getComputedHomeSummary(): HomeSummary {
   }, 0);
 
   // 30-Day Risk: renewals in 0–30 days + trials ending in 0–30 days (same logic as RiskDetail)
+  //
+  // Subscriptions still in trial are excluded from the renewal side: their
+  // conversion is already counted by riskFromTrials below, on the same date.
+  // Counting both would double the exposure for every trialling merchant, and
+  // put it on the calendar twice. Must stay in step with demoApiRisks().
+  const trialSubscriptionIds = new Set(demoTrials.map((t) => t.subscriptionId));
+
   const riskFromRenewals = demoSubscriptions
     .filter((sub) => {
+      if (sub.status === 'trial' || trialSubscriptionIds.has(sub.id)) return false;
       const days = daysUntil(sub.renewalDate);
       return days >= 0 && days <= 30;
     })

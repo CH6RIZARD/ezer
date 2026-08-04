@@ -5,10 +5,12 @@
 
 import { Platform } from 'react-native';
 
+const TEST_API_KEY = 'test_nrzcZxjPNPsxyhgMCxbtSMbLygr';
+
 export const REVENUECAT_API_KEY =
   Platform.OS === 'ios'
-    ? (process.env.EXPO_PUBLIC_RC_IOS_KEY ?? '')
-    : (process.env.EXPO_PUBLIC_RC_ANDROID_KEY ?? '');
+    ? (process.env.EXPO_PUBLIC_RC_IOS_KEY ?? TEST_API_KEY)
+    : (process.env.EXPO_PUBLIC_RC_ANDROID_KEY ?? TEST_API_KEY);
 
 export const ENTITLEMENT_ID = 'premium';
 export const PRODUCT_ID = 'ezer_premium_lifetime';

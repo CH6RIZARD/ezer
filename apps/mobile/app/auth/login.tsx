@@ -36,17 +36,19 @@ export default function LoginScreen() {
     }
 
     setIsLoading(true);
-    const { success, hasCompletedOnboarding } = await login(email, password);
+    const result = await login(email, password);
     setIsLoading(false);
 
-    if (success) {
-      if (hasCompletedOnboarding) {
+    if (result.ok) {
+      if (result.ok && result.hasCompletedOnboarding) {
         router.replace('/(tabs)/home');
       } else {
         router.replace('/onboarding');
       }
     } else {
-      Alert.alert('Login Failed', 'Invalid email or password. Please try again.');
+      // The server's actual reason — "invalid email or password" was shown
+      // even when the API was unreachable.
+      Alert.alert('Login failed', result.ok ? '' : result.error);
     }
   };
 

@@ -1,18 +1,11 @@
-// =============================================================================
-// EZER Mobile App - Plaid Integration Hook
-// Manages Plaid Link flow for connecting bank accounts
-// =============================================================================
-
 import { useState, useCallback } from 'react';
-import { Alert, Linking, Platform } from 'react-native';
-
-// Types for Plaid integration
-export type PlaidLinkToken = string;
+import { Alert, Platform } from 'react-native';
+import { api } from './api';
 
 export type PlaidAccount = {
   id: string;
   name: string;
-  mask: string; // last 4 digits
+  mask: string;
   type: 'checking' | 'savings' | 'credit' | 'investment' | 'other';
   subtype: string;
   institutionId: string;
@@ -27,205 +20,138 @@ export type PlaidLinkSuccess = {
 };
 
 export type PlaidLinkExit = {
-  error?: {
-    errorCode: string;
-    errorMessage: string;
-  };
+  error?: { errorCode: string; errorMessage: string };
 };
 
 type PlaidState = {
   isLoading: boolean;
-  isLinkOpen: boolean;
-  linkToken: PlaidLinkToken | null;
   linkedAccounts: PlaidAccount[];
   error: string | null;
 };
 
-const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3001';
-
-// Mock accounts for demo when Plaid is not configured
-const MOCK_ACCOUNTS: PlaidAccount[] = [
-  {
-    id: 'mock_chase_1',
-    name: 'Chase Checking',
-    mask: '4521',
-    type: 'checking',
-    subtype: 'checking',
-    institutionId: 'ins_3',
-    institutionName: 'Chase',
-  },
-  {
-    id: 'mock_bofa_1',
-    name: 'Bank of America Savings',
-    mask: '8832',
-    type: 'savings',
-    subtype: 'savings',
-    institutionId: 'ins_4',
-    institutionName: 'Bank of America',
-  },
-];
+// Dynamic import so Expo Go doesn't crash (PlaidLink is a native module)
+let PlaidLink: any = null;
+try {
+  PlaidLink = require('react-native-plaid-link-sdk');
+} catch {}
 
 export function usePlaid() {
   const [state, setState] = useState<PlaidState>({
     isLoading: false,
-    isLinkOpen: false,
-    linkToken: null,
-    linkedAccounts: MOCK_ACCOUNTS, // Start with mock data for demo
+    linkedAccounts: [],
     error: null,
   });
 
-  // Fetch a link token from the backend
-  const fetchLinkToken = useCallback(async (): Promise<string | null> => {
-    setState(prev => ({ ...prev, isLoading: true, error: null }));
+  const openPlaidLink = useCallback(
+    async (
+      onSuccess?: (result: PlaidLinkSuccess) => void,
+      onExit?: (result: PlaidLinkExit) => void
+    ) => {
+      setState(prev => ({ ...prev, isLoading: true, error: null }));
 
-    try {
-      const response = await fetch(`${API_URL}/api/plaid/create-link-token`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          platform: Platform.OS,
-        }),
-      });
+      try {
+        const res: any = await api.post('/plaid/create-link-token');
+        const linkToken: string = res.data.linkToken;
 
-      if (!response.ok) {
-        throw new Error('Failed to create link token');
+        if (!PlaidLink || !PlaidLink.open) {
+          // Running in Expo Go — can't open native Plaid Link
+          Alert.alert(
+            'Bank Linking',
+            'Bank linking requires a development build (not Expo Go). Run `eas build --profile development` to enable it.',
+            [{ text: 'OK' }]
+          );
+          setState(prev => ({ ...prev, isLoading: false }));
+          return;
+        }
+
+        PlaidLink.open({
+          tokenConfig: {
+            token: linkToken,
+            noLoadingState: false,
+          },
+          onSuccess: async (success: any) => {
+            const accounts: PlaidAccount[] = (success.metadata?.accounts || []).map((a: any) => ({
+              id: a.id,
+              name: a.name,
+              mask: a.mask,
+              type: a.type,
+              subtype: a.subtype,
+              institutionId: success.metadata?.institution?.id || '',
+              institutionName: success.metadata?.institution?.name || '',
+            }));
+
+            try {
+              await api.post('/plaid/exchange-public-token', {
+                publicToken: success.publicToken,
+                institutionId: success.metadata?.institution?.id || '',
+                institutionName: success.metadata?.institution?.name || '',
+                accounts,
+              });
+
+              setState(prev => ({
+                ...prev,
+                isLoading: false,
+                linkedAccounts: [...prev.linkedAccounts, ...accounts],
+              }));
+
+              onSuccess?.({
+                publicToken: success.publicToken,
+                accounts,
+                institutionId: success.metadata?.institution?.id || '',
+                institutionName: success.metadata?.institution?.name || '',
+              });
+            } catch (err: any) {
+              setState(prev => ({ ...prev, isLoading: false, error: err.message }));
+            }
+          },
+          onExit: (exit: any) => {
+            setState(prev => ({ ...prev, isLoading: false }));
+            onExit?.(exit);
+          },
+        });
+      } catch (err: any) {
+        console.log('[usePlaid] error:', err.message);
+        setState(prev => ({ ...prev, isLoading: false, error: err.message }));
       }
+    },
+    []
+  );
 
-      const data = await response.json();
-      setState(prev => ({ ...prev, linkToken: data.linkToken, isLoading: false }));
-      return data.linkToken;
-    } catch (error) {
-      console.log('[usePlaid] Plaid not configured, using demo mode');
-      setState(prev => ({
-        ...prev,
-        isLoading: false,
-        error: 'Plaid integration not configured',
-      }));
-      return null;
+  const syncAccounts = useCallback(async () => {
+    try {
+      await api.post('/plaid/sync');
+    } catch (err: any) {
+      console.log('[usePlaid] sync error:', err.message);
     }
   }, []);
 
-  // Exchange public token for access token (called after successful link)
-  const exchangePublicToken = useCallback(async (publicToken: string, accounts: PlaidAccount[]): Promise<boolean> => {
-    setState(prev => ({ ...prev, isLoading: true }));
-
+  const fetchLinkedAccounts = useCallback(async () => {
     try {
-      const response = await fetch(`${API_URL}/api/plaid/exchange-token`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          publicToken,
-          accounts,
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to exchange token');
-      }
-
-      setState(prev => ({
-        ...prev,
-        isLoading: false,
-        linkedAccounts: [...prev.linkedAccounts, ...accounts],
-      }));
-
-      return true;
-    } catch (error) {
-      setState(prev => ({
-        ...prev,
-        isLoading: false,
-        error: 'Failed to link account',
-      }));
-      return false;
-    }
-  }, []);
-
-  // Open Plaid Link (for react-native-plaid-link-sdk integration)
-  const openPlaidLink = useCallback(async (onSuccess?: (result: PlaidLinkSuccess) => void, onExit?: (result: PlaidLinkExit) => void) => {
-    // First try to fetch a link token
-    const linkToken = await fetchLinkToken();
-
-    if (!linkToken) {
-      // Plaid not configured - show demo alert
-      Alert.alert(
-        'Plaid Integration',
-        'To connect real bank accounts:\n\n' +
-        '1. Install react-native-plaid-link-sdk\n' +
-        '2. Add PLAID_CLIENT_ID and PLAID_SECRET to .env\n' +
-        '3. Set FEATURE_PLAID=true\n' +
-        '4. Implement /api/plaid endpoints\n\n' +
-        'For now, demo accounts are pre-connected.',
-        [
-          {
-            text: 'Learn More',
-            onPress: () => Linking.openURL('https://plaid.com/docs/link/react-native/'),
-          },
-          {
-            text: 'Use Demo',
-            style: 'default',
-            onPress: () => {
-              // Simulate successful connection with demo account
-              if (onSuccess) {
-                onSuccess({
-                  publicToken: 'demo_public_token',
-                  accounts: MOCK_ACCOUNTS,
-                  institutionId: 'ins_demo',
-                  institutionName: 'Demo Bank',
-                });
-              }
-            },
-          },
-        ]
+      const res: any = await api.get('/plaid/accounts');
+      const accounts: PlaidAccount[] = (res.data || []).flatMap((item: any) =>
+        (item.accounts || []).map((a: any) => ({
+          id: a.account_id || a.id,
+          name: a.name,
+          mask: a.mask,
+          type: a.type,
+          subtype: a.subtype,
+          institutionId: item.institutionId || '',
+          institutionName: item.institutionName || '',
+        }))
       );
-      return;
+      setState(prev => ({ ...prev, linkedAccounts: accounts }));
+    } catch (err: any) {
+      console.log('[usePlaid] fetch accounts error:', err.message);
     }
-
-    // In a real implementation with react-native-plaid-link-sdk:
-    // PlaidLink.open({
-    //   tokenConfig: { token: linkToken },
-    //   onSuccess: (result) => {
-    //     exchangePublicToken(result.publicToken, result.accounts);
-    //     onSuccess?.(result);
-    //   },
-    //   onExit: (exit) => {
-    //     onExit?.(exit);
-    //   },
-    // });
-
-    setState(prev => ({ ...prev, isLinkOpen: true }));
-  }, [fetchLinkToken]);
-
-  // Add a mock account (for demo purposes)
-  const addMockAccount = useCallback((account: PlaidAccount) => {
-    setState(prev => ({
-      ...prev,
-      linkedAccounts: [...prev.linkedAccounts, account],
-    }));
   }, []);
 
-  // Remove an account
-  const removeAccount = useCallback((accountId: string) => {
-    setState(prev => ({
-      ...prev,
-      linkedAccounts: prev.linkedAccounts.filter(acc => acc.id !== accountId),
-    }));
-  }, []);
-
-  // Clear error
-  const clearError = useCallback(() => {
-    setState(prev => ({ ...prev, error: null }));
-  }, []);
+  const clearError = useCallback(() => setState(prev => ({ ...prev, error: null })), []);
 
   return {
     ...state,
     openPlaidLink,
-    exchangePublicToken,
-    addMockAccount,
-    removeAccount,
+    syncAccounts,
+    fetchLinkedAccounts,
     clearError,
   };
 }

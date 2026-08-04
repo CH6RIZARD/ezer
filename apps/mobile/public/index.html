@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<!--
+  =============================================================================
+  EZER — web / PWA shell
+
+  Expo's `web.output` is "single" (an SPA), and in that mode the CLI does NOT
+  use `app/+html.tsx` — it reads this file if it exists and falls back to its
+  own bundled template otherwise (see @expo/cli webTemplate.ts →
+  getTemplateIndexHtmlAsync). Overriding here is therefore the only way to add
+  head tags to the exported page.
+
+  WHY: added to the home screen on iOS, the app rendered with a white band
+  across the top. In standalone mode Safari paints the status-bar area from the
+  page background, and the stock template ships no `theme-color`, no
+  apple-mobile-web-app meta, and an unpainted `<body>` — so that band stayed
+  white whatever colour the React root was. Three things fix it together:
+
+    1. `theme-color`, one per colour scheme, so the browser tints its own
+       chrome to match instead of defaulting to white.
+    2. `apple-mobile-web-app-status-bar-style: black-translucent`, which lets
+       the app draw UNDER the iOS status bar rather than beside it.
+    3. `viewport-fit=cover` plus painted html/body/#root, so the area it now
+       draws into is the app's own background. Insets are then handled by
+       react-native-safe-area-context exactly as on native.
+
+  DO NOT write any of the CLI's substitution tokens into this comment, or into
+  any comment in this file. The CLI substitutes the lang and title placeholders
+  and injects the bundle script tag with plain first-match string replaces — so
+  a token mentioned up here is consumed HERE, inside a comment, and the real
+  one below is left untouched. That ships an SPA whose script tag lives in a
+  comment: painted background, empty root, blank page. It has happened once.
+
+  The three the CLI looks for are: the lang placeholder on the html element,
+  the title placeholder in the title element, and the closing body tag. All
+  three must appear exactly once each, below, and nowhere else. The root div
+  must survive too.
+
+  The two background hexes are lightTokens.bg / darkTokens.bg from
+  theme/tokens.ts — static HTML cannot import them, so they are duplicated
+  here. Change them together.
+  =============================================================================
+-->
+<html lang="%LANG_ISO_CODE%">
+  <head>
+    <meta charset="utf-8" />
+    <meta httpEquiv="X-UA-Compatible" content="IE=edge" />
+
+    <!-- viewport-fit=cover is what allows the app to extend into the status
+         bar / notch area once black-translucent is set. Without it the browser
+         keeps a reserved band there. -->
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, maximum-scale=1, shrink-to-fit=no, viewport-fit=cover"
+    />
+
+    <title>%WEB_TITLE%</title>
+
+    <!-- Standalone home-screen app, not a browser tab with chrome. -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="EZER" />
+    <meta name="application-name" content="EZER" />
+
+    <!-- One per scheme: a single theme-color would tint the chrome wrong in
+         whichever mode it was not written for. The CLI also appends the
+         app.json `web.themeColor` as an unscoped fallback for browsers that
+         ignore the media attribute. -->
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#F7F3EA" />
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#151021" />
+
+    <!-- The `react-native-web` recommended style reset, plus the painted
+         background that removes the white band. -->
+    <style id="expo-reset">
+      /* These styles make the body full-height */
+      html,
+      body {
+        height: 100%;
+      }
+      /* These styles disable body scrolling if you are using <ScrollView> */
+      body {
+        overflow: hidden;
+      }
+      /* These styles make the root element full-height */
+      #root {
+        display: flex;
+        height: 100%;
+        flex: 1;
+      }
+
+      /* Paint the document itself, including the area behind the translucent
+         status bar. Without this the band is whatever the UA default is. */
+      html,
+      body,
+      #root {
+        background-color: #f7f3ea;
+      }
+      body {
+        margin: 0;
+        /* Stops the rubber-band overscroll that flashes a white gap at the top
+           of the page on iOS even once the background is painted. */
+        overscroll-behavior-y: none;
+        -webkit-tap-highlight-color: transparent;
+      }
+      @media (prefers-color-scheme: dark) {
+        html,
+        body,
+        #root {
+          background-color: #151021;
+        }
+      }
+    </style>
+  </head>
+
+  <body>
+    <!-- Use static rendering with Expo Router to support running without JavaScript. -->
+    <noscript>
+      You need to enable JavaScript to run this app.
+    </noscript>
+    <!-- The root element for your Expo app. -->
+    <div id="root"></div>
+  </body>
+</html>

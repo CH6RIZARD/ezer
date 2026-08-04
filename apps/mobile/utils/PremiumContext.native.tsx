@@ -5,7 +5,16 @@
 
 import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import Purchases, { CustomerInfo, PurchasesPackage } from 'react-native-purchases';
+// Dynamic import so the app doesn't crash in Expo Go (native module unavailable)
+let Purchases: any = null;
+let LOG_LEVEL: any = { VERBOSE: 'VERBOSE' };
+try {
+  const rc = require('react-native-purchases');
+  Purchases = rc.default;
+  LOG_LEVEL = rc.LOG_LEVEL;
+} catch {}
+type CustomerInfo = any;
+type PurchasesPackage = any;
 import { useAuth } from './AuthContext';
 import {
   REVENUECAT_API_KEY,
@@ -22,6 +31,8 @@ interface PremiumContextType {
   trialEndDate: Date | null;
   daysRemaining: number;
   isLoading: boolean;
+  /** True when RevenueCat native SDK is configured (not Expo Go JS-only fallback). */
+  isPurchaseNativeAvailable: boolean;
   isPremium: () => boolean;
   isTrialActive: () => boolean;
   canAccessFeature: () => boolean;
@@ -44,14 +55,15 @@ export function PremiumProvider({ children }: { children: ReactNode }) {
 
   // Initialize RevenueCat once
   useEffect(() => {
-    if (!REVENUECAT_API_KEY) {
-      console.log('[Premium] No RevenueCat API key, using local trial only');
+    if (!Purchases || !REVENUECAT_API_KEY) {
+      console.log('[Premium] RevenueCat unavailable (Expo Go?) — using local trial');
       loadTrialState(null);
       return;
     }
 
     const configure = async () => {
       try {
+        if (__DEV__) Purchases.setLogLevel(LOG_LEVEL.VERBOSE);
         Purchases.configure({ apiKey: REVENUECAT_API_KEY });
         setRcConfigured(true);
         const customerInfo = await Purchases.getCustomerInfo();
@@ -139,6 +151,7 @@ export function PremiumProvider({ children }: { children: ReactNode }) {
   }, [status]);
 
   const purchasePremium = async (): Promise<boolean> => {
+    if (!Purchases || !rcConfigured) return false;
     try {
       const offerings = await Purchases.getOfferings();
       const currentOffering = offerings.current;
@@ -170,6 +183,7 @@ export function PremiumProvider({ children }: { children: ReactNode }) {
   };
 
   const restorePurchases = async (): Promise<boolean> => {
+    if (!Purchases || !rcConfigured) return false;
     try {
       const customerInfo = await Purchases.restorePurchases();
       if (customerInfo.entitlements.active[ENTITLEMENT_ID]) {
@@ -200,6 +214,7 @@ export function PremiumProvider({ children }: { children: ReactNode }) {
         trialEndDate,
         daysRemaining,
         isLoading,
+        isPurchaseNativeAvailable: !!Purchases && rcConfigured,
         isPremium,
         isTrialActive,
         canAccessFeature,

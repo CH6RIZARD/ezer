@@ -55,13 +55,16 @@ export default function SignupScreen() {
     }
 
     setIsLoading(true);
-    const success = await signup(email, password, name);
+    const result = await signup(email, password, name);
     setIsLoading(false);
 
-    if (success) {
+    if (result.ok) {
       router.replace('/onboarding');
     } else {
-      Alert.alert('Signup Failed', 'An error occurred. Please try again.');
+      // Was a generic "An error occurred", so "Email already registered" and
+      // "cannot reach the server" looked identical — and an account that was
+      // never created looked the same as one that was.
+      Alert.alert('Could not create account', result.ok ? '' : result.error);
     }
   };
 

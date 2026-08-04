@@ -126,3 +126,37 @@ export const pullOutlookSchema = z.object({
   maxResults: z.number().optional().default(100),
   afterDate: z.string().optional(),
 });
+
+// ---------------------------------------------------------------------------
+// Provider sign-in payloads (merged from the standalone ezer repo's OAuth work)
+// ---------------------------------------------------------------------------
+
+export const googleCompleteSchema = z.object({
+  idToken: z.string().min(1),
+});
+
+export const appleCompleteSchema = z.object({
+  identityToken: z.string().min(1),
+  fullName: z
+    .object({
+      givenName: z.string().optional(),
+      familyName: z.string().optional(),
+    })
+    .optional(),
+  email: z.string().email().optional(),
+});
+
+export const microsoftCompleteSchema = z.object({
+  idToken: z.string().min(1),
+});
+
+export const emailSignupSchema = z.object({
+  email: z.string().email(),
+  password: z.string().min(8),
+  name: z.string().min(1).max(120),
+});
+
+export const emailLoginSchema = z.object({
+  email: z.string().email(),
+  password: z.string().min(1),
+});

@@ -1,0 +1,25 @@
+# Railway uploads the CWD, so keep the API deploy to what the API actually needs.
+# apps/mobile alone is hundreds of MB and is not part of the server build.
+
+apps/mobile/
+BNPL app card design updates/
+BNPL app card design updates.zip
+uploads/
+poisoned-delta/
+test123/
+docs/
+web-preview/
+.tunnel/
+savings-app/
+
+node_modules/
+**/node_modules/
+**/dist/
+**/.turbo/
+**/.expo/
+
+*.log
+*.apk
+*.aab
+*.zip
+*.png

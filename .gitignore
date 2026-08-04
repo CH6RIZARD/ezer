@@ -53,3 +53,10 @@ uploads/**
 
 # OS
 Thumbs.db
+
+# Local web export used for phone testing — build output, never source
+dist-live/
+# Ephemeral cloudflared/ngrok state: pids, urls, logs
+.tunnel/
+# Throwaway export dirs from verification runs
+.tmp-*/

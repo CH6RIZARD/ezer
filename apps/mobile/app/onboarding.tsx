@@ -7,7 +7,7 @@ import React, { useState, useRef } from 'react';
 import {
   View,
   Text,
-  Dimensions,
+  useWindowDimensions,
   Pressable,
   FlatList,
   Animated,
@@ -18,8 +18,6 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useAuth } from '../utils/AuthContext';
 import { useTheme } from '../utils/ThemeContext';
-
-const { width } = Dimensions.get('window');
 
 const onboardingData = [
   {
@@ -60,6 +58,13 @@ export default function OnboardingScreen() {
   const flatListRef = useRef<FlatList>(null);
   const scrollX = useRef(new Animated.Value(0)).current;
 
+  // Live width, not a module-level Dimensions.get('window') snapshot. That
+  // snapshot is taken once at import: on web it is whatever the window was when
+  // the bundle loaded, and it never updates on resize or rotation. Every page
+  // offset is a multiple of this number, so a stale value puts the slides and
+  // the paging maths permanently out of step.
+  const { width } = useWindowDimensions();
+
   const getColor = (colorKey: string) => {
     switch (colorKey) {
       case 'primary': return colors.primary;
@@ -71,12 +76,26 @@ export default function OnboardingScreen() {
   };
 
   const handleNext = () => {
-    if (currentIndex < onboardingData.length - 1) {
-      flatListRef.current?.scrollToIndex({ index: currentIndex + 1 });
-      setCurrentIndex(currentIndex + 1);
-    } else {
+    if (currentIndex >= onboardingData.length - 1) {
       handleComplete();
+      return;
     }
+
+    const next = currentIndex + 1;
+
+    // scrollToOffset, NOT scrollToIndex.
+    //
+    // scrollToIndex needs the target item to have been measured. On a
+    // virtualized list without getItemLayout, an off-screen slide has no
+    // measurement, so the call fails — and with no onScrollToIndexFailed
+    // handler it fails SILENTLY. The list stayed on slide 1 while
+    // setCurrentIndex kept counting, so four taps on "Next" walked the counter
+    // to the end and dropped the user on Home having seen one card.
+    //
+    // Every page here is exactly `width` wide, so the offset is known without
+    // measuring anything.
+    flatListRef.current?.scrollToOffset({ offset: next * width, animated: true });
+    setCurrentIndex(next);
   };
 
   const handleSkip = () => {
@@ -154,10 +173,22 @@ export default function OnboardingScreen() {
         keyExtractor={(item) => item.id}
         horizontal
         pagingEnabled
+        // Without flex:1 the list sizes to its content inside the flex parent,
+        // which lets the slides push the dots and the Next button off-screen on
+        // shorter devices.
+        style={{ flex: 1 }}
         showsHorizontalScrollIndicator={false}
+        // Deterministic offsets: also lets FlatList place slides without
+        // measuring them, which is what scrollToIndex needed and never had.
+        getItemLayout={(_, index) => ({ length: width, offset: width * index, index })}
+        // All four slides are cheap; rendering them up front removes
+        // virtualization from the equation entirely for a 4-page intro.
+        initialNumToRender={onboardingData.length}
         onMomentumScrollEnd={(e) => {
           const newIndex = Math.round(e.nativeEvent.contentOffset.x / width);
-          setCurrentIndex(newIndex);
+          // Clamp: a rubber-band overscroll past the last page can round to an
+          // index that does not exist, which would enable "Get Started" early.
+          setCurrentIndex(Math.max(0, Math.min(newIndex, onboardingData.length - 1)));
         }}
         onScroll={Animated.event(
           [{ nativeEvent: { contentOffset: { x: scrollX } } }],

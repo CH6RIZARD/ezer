@@ -5,10 +5,15 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-"splash": {
+    "userInterfaceStyle": "automatic",
+    "splash": {
       "image": "./assets/splash.png",
       "resizeMode": "contain",
-      "backgroundColor": "#F7F7F5"
+      "backgroundColor": "#F7F3EA",
+      "dark": {
+        "image": "./assets/splash.png",
+        "backgroundColor": "#151021"
+      }
     },
     "assetBundlePatterns": [
       "**/*"
@@ -23,16 +28,22 @@
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#F7F7F5"
+        "backgroundColor": "#F7F3EA"
       },
       "package": "com.ezer.app",
+      "versionCode": 1,
       "permissions": [
         "android.permission.RECORD_AUDIO"
       ]
     },
     "web": {
       "favicon": "./assets/favicon.png",
-      "bundler": "metro"
+      "bundler": "metro",
+      "name": "EZER",
+      "shortName": "EZER",
+      "display": "standalone",
+      "themeColor": "#F7F3EA",
+      "backgroundColor": "#F7F3EA"
     },
     "scheme": "ezer",
     "plugins": [
@@ -51,9 +62,6 @@
       ],
       "react-native-purchases"
     ],
-    "runtimeVersion": {
-      "policy": "appVersion"
-    },
     "extra": {
       "router": {
         "origin": false

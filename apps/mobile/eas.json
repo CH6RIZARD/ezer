@@ -17,6 +17,11 @@
       },
       "android": {
         "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://ezer-api-production-fca5.up.railway.app",
+        "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "762737066469-e61id3vocajiutp7v8npjfjojnsqsg8p.apps.googleusercontent.com",
+        "EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID": "762737066469-bj1106o45bhlvsbiv17lsdnd5qkikqkv.apps.googleusercontent.com"
       }
     },
     "development-simulator": {
@@ -25,14 +30,33 @@
       "distribution": "internal",
       "ios": {
         "simulator": true
+      },
+      "android": {
+        "buildType": "apk"
       }
     },
     "preview": {
       "extends": "base",
-      "distribution": "internal"
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://ezer-api-production-fca5.up.railway.app",
+        "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "762737066469-e61id3vocajiutp7v8npjfjojnsqsg8p.apps.googleusercontent.com",
+        "EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID": "762737066469-bj1106o45bhlvsbiv17lsdnd5qkikqkv.apps.googleusercontent.com"
+      }
     },
     "production": {
-      "extends": "base"
+      "extends": "base",
+      "android": {
+        "buildType": "app-bundle"
+      },
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://ezer-api-production-fca5.up.railway.app",
+        "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "762737066469-e61id3vocajiutp7v8npjfjojnsqsg8p.apps.googleusercontent.com",
+        "EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID": "762737066469-bj1106o45bhlvsbiv17lsdnd5qkikqkv.apps.googleusercontent.com"
+      }
     }
   },
   "submit": {

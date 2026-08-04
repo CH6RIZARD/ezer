@@ -15,21 +15,32 @@ datasource db {
 // ============================================================================
 
 model User {
-  id        String   @id @default(cuid())
-  email     String   @unique
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String?
+  passwordHash String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
-  authAccounts     AuthAccount[]
-  oauthTokens      OAuthToken[]
-  dataSources      DataSource[]
-  fundingInstruments FundingInstrument[]
-  subscriptions    Subscription[]
+  authAccounts        AuthAccount[]
+  oauthTokens         OAuthToken[]
+  dataSources         DataSource[]
+  fundingInstruments  FundingInstrument[]
+  subscriptions       Subscription[]
   subscriptionCharges SubscriptionCharge[]
-  transactions     Transaction[]
-  allocationPlans  AllocationPlan[]
-  ledgerEntries    LedgerEntry[]
-  featureFlags     UserFeatureFlag[]
+  transactions        Transaction[]
+  allocationPlans     AllocationPlan[]
+  ledgerEntries       LedgerEntry[]
+  featureFlags        UserFeatureFlag[]
+  plaidItems          PlaidItem[]
+
+  // Automated goal savings engine
+  fundingSources      FundingSource[]
+  savingsGoals        SavingsGoal[]
+  savingsSettings     SavingsSettings?
+  internalAccounts    InternalAccount[]
+  transfers           Transfer[]
+  sweepRuns           SweepRun[]
 
   @@index([email])
 }
@@ -436,4 +447,266 @@ model UserFeatureFlag {
 
   @@unique([userId, flagKey])
   @@index([userId])
+}
+
+// ============================================================================
+// Plaid Integration
+// ============================================================================
+
+model PlaidItem {
+  id              String    @id @default(cuid())
+  userId          String
+  plaidItemId     String    @unique
+  accessTokenEnc  String    @db.Text
+  institutionId   String?
+  institutionName String?
+  accounts        Json      // Array of Plaid account objects
+  lastSyncAt      DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+// ============================================================================
+// Automated Goal Savings Engine
+//
+// Digit/Oportun-style: forecast the checking low point, sweep only the surplus
+// above the user's buffer, hold funds through the ACH return window, and only
+// then credit the goal.
+//
+// NAMING: the models below are deliberately NOT called LedgerEntry,
+// FundingInstrument or AllocationPlan. Those names are already taken in this
+// schema and mean something different — LedgerEntry is a monthly
+// reclaimed/allocated summary, FundingInstrument is a display card with no ACH
+// credentials, AllocationPlan is a monthly reallocation note. Reusing them
+// would silently conflate two systems.
+//
+// MONEY: cents as Int, matching the rest of this schema. The source design
+// specified BIGINT; Int caps at ~$21.4M per row, which is far above any
+// consumer savings goal, and switching would make every amount a JS BigInt —
+// which Fastify cannot JSON-serialise without a custom replacer. Revisit only
+// if EZER ever handles business balances.
+// ============================================================================
+
+enum FundingSourceStatus {
+  ACTIVE
+  LOGIN_REQUIRED // Plaid item needs Link update-mode re-auth
+  REVOKED
+}
+
+/// A real bank account we can ACH debit/credit. Distinct from FundingInstrument,
+/// which is only a card for display.
+model FundingSource {
+  id             String              @id @default(cuid())
+  userId         String
+  plaidItemId    String
+  plaidAccountId String
+  /// KMS/Vault reference — NEVER the access token itself.
+  accessTokenRef String
+  /// Processor token (Dwolla/Increase/Column). Null until processor linkage.
+  processorToken String?
+  mask           String?
+  subtype        String? // checking | savings
+  status         FundingSourceStatus @default(ACTIVE)
+  isPrimary      Boolean             @default(false)
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, plaidAccountId])
+  @@index([userId, isPrimary])
+}
+
+enum SavingsGoalStatus {
+  ACTIVE
+  PAUSED
+  COMPLETE
+  CLOSED
+}
+
+model SavingsGoal {
+  id          String            @id @default(cuid())
+  userId      String
+  name        String
+  targetCents Int
+  /// NULL = no deadline, so the goal never forces a required rate.
+  targetDate  DateTime?
+  /// Lower is funded first.
+  priority    Int               @default(100)
+  status      SavingsGoalStatus @default(ACTIVE)
+  createdAt   DateTime          @default(now())
+  completedAt DateTime?
+
+  user             User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  rule             GoalAllocationRule?
+  internalAccounts InternalAccount[]
+  transfers        Transfer[]
+
+  @@index([userId, status])
+}
+
+enum AllocationMode {
+  FIXED
+  ADAPTIVE
+}
+
+enum AllocationCadence {
+  DAILY
+  WEEKLY
+  BIWEEKLY
+  MONTHLY
+  PAYDAY
+}
+
+model GoalAllocationRule {
+  goalId           String            @id
+  mode             AllocationMode    @default(ADAPTIVE)
+  cadence          AllocationCadence @default(WEEKLY)
+  /// FIXED mode only.
+  fixedAmountCents Int?
+  /// Hard ceiling for a single run.
+  maxPeriodCents   Int?
+  /// ADAPTIVE: share of forecast surplus to take. 0.25 timid … 0.75 aggressive.
+  aggressiveness   Decimal           @default(0.50) @db.Decimal(3, 2)
+
+  goal SavingsGoal @relation(fields: [goalId], references: [id], onDelete: Cascade)
+}
+
+/// Per-user safety rails. These are the difference between saving someone money
+/// and overdrafting them.
+model SavingsSettings {
+  userId              String    @id
+  /// Never sweep the checking balance below this.
+  minCheckingCents    Int       @default(10000)
+  maxWeeklyCents      Int       @default(50000)
+  pausedUntil         DateTime?
+  consecutiveFailures Int       @default(0)
+  updatedAt           DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+enum InternalAccountKind {
+  AVAILABLE
+  GOAL
+  IN_TRANSIT
+  FBO_CASH
+}
+
+/// One bucket per (user, kind[, goal]) in the double-entry ledger.
+model InternalAccount {
+  id     String              @id @default(cuid())
+  userId String
+  kind   InternalAccountKind
+  goalId String?
+
+  user    User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  goal    SavingsGoal?         @relation(fields: [goalId], references: [id], onDelete: Cascade)
+  entries SavingsLedgerEntry[]
+
+  @@unique([userId, kind, goalId])
+  @@index([userId])
+}
+
+enum TransferDirection {
+  DEBIT // bank -> us
+  CREDIT // us -> bank
+}
+
+enum TransferStatus {
+  PENDING
+  SUBMITTED
+  POSTED
+  SETTLED
+  FAILED
+  RETURNED
+  CANCELED
+}
+
+model Transfer {
+  id          String            @id @default(cuid())
+  userId      String
+  goalId      String?
+  direction   TransferDirection
+  amountCents Int
+  status      TransferStatus    @default(PENDING)
+  /// hash(user, goal, periodKey) — the processor-level idempotency lock.
+  idempotencyKey String         @unique
+  /// Processor's transfer id, known only after origination.
+  externalId  String?           @unique
+  /// R01 NSF, R02 account closed, R08 stop payment…
+  returnCode  String?
+  /// When funds clear the ACH return window and become withdrawable.
+  settlesAt   DateTime?
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  user    User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  goal    SavingsGoal?         @relation(fields: [goalId], references: [id], onDelete: SetNull)
+  entries SavingsLedgerEntry[]
+
+  @@index([userId, status])
+  @@index([goalId])
+}
+
+/// Double-entry line. INVARIANT: SUM(amountCents) per transferId == 0.
+/// Balances are DERIVED from these rows — there is no mutable balance column
+/// anywhere in this subsystem, on purpose.
+model SavingsLedgerEntry {
+  id          BigInt   @id @default(autoincrement())
+  transferId  String
+  accountId   String
+  /// Signed: + credits the bucket, - debits it.
+  amountCents Int
+  postedAt    DateTime @default(now())
+
+  transfer Transfer        @relation(fields: [transferId], references: [id], onDelete: Cascade)
+  account  InternalAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([accountId])
+  @@index([transferId])
+}
+
+/// One row per user per period. The UNIQUE constraint is the real idempotency
+/// lock that stops a retried cron run from double-charging someone.
+model SweepRun {
+  id        String   @id @default(cuid())
+  userId    String
+  /// e.g. '2026-W31' or '2026-07-31'
+  periodKey String
+  /// {goalId: cents} plus reason codes.
+  decided   Json
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, periodKey])
+  @@index([userId])
+}
+
+/// Processor webhook receipts.
+///
+/// Processors retry on ANY non-2xx and on timeouts, so the same event WILL
+/// arrive more than once. For a subsystem that moves money, double-processing a
+/// settlement is the failure that actually costs you — a missed webhook is
+/// recoverable by reconciliation, a double-credit is not.
+///
+/// The unique index on eventId is the lock: insert first, and if it collides,
+/// return 2xx immediately without re-running the handler.
+model ProcessorWebhookEvent {
+  id          String   @id @default(cuid())
+  /// The PROVIDER's event id, not ours.
+  eventId     String   @unique
+  provider    String
+  eventType   String
+  /// Raw body, retained for dispute/audit. Verified before it is parsed.
+  rawBody     String   @db.Text
+  receivedAt  DateTime @default(now())
+  processedAt DateTime?
+
+  @@index([receivedAt])
 }

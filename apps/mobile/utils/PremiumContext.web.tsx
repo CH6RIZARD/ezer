@@ -18,6 +18,7 @@ interface PremiumContextType {
   trialEndDate: Date | null;
   daysRemaining: number;
   isLoading: boolean;
+  isPurchaseNativeAvailable: boolean;
   isPremium: () => boolean;
   isTrialActive: () => boolean;
   canAccessFeature: () => boolean;
@@ -111,6 +112,7 @@ export function PremiumProvider({ children }: { children: ReactNode }) {
         trialEndDate,
         daysRemaining,
         isLoading,
+        isPurchaseNativeAvailable: false,
         isPremium,
         isTrialActive,
         canAccessFeature,

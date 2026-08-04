@@ -1,266 +1,345 @@
 // =============================================================================
-// EZER Mobile App - Settings Screen
-// Profile, preferences, and account management
+// EZER Redesign — Settings (handoff §7)
+//
+// Appearance segmented Light/Dark (active #4C1D95) — must re-theme every
+// screen, calendar, popover and the tab bar, which it does by driving
+// ThemeContext.setTheme. Then Account, Linked banks, three gold notification
+// toggles, and a red Sign out row.
 // =============================================================================
 
-import React from 'react';
-import { View, Text, ScrollView, Pressable, Switch, Alert, Linking, Share, Platform } from 'react-native';
+import React, { useState } from 'react';
+import { View, Text, ScrollView, Pressable, Switch, StyleSheet } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../utils/ThemeContext';
 import { useAuth } from '../utils/AuthContext';
-import { usePremium } from '../utils/PremiumContext';
+import { fontFamily, typeScale, radius, layout } from '../theme/type';
+import {
+  Body,
+  Label,
+  SectionHeader,
+  Surface,
+  PressScale,
+  ScreenBody,
+} from '../components/redesign/Primitives';
+import { useConnectBank } from '../utils/useConnectBank';
+import { useData } from '../contexts/DataContext';
+
+const NOTIFS = [
+  { key: 'renewals', title: 'Renewal alerts', sub: '3 days before' },
+  { key: 'trials', title: 'Trial warnings', sub: 'Before a trial converts' },
+  { key: 'digest', title: 'Weekly digest', sub: 'Sunday' },
+] as const;
 
 export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
-  const { isDark, toggleTheme, colors } = useTheme();
-  const { logout, user } = useAuth();
-  const { status, daysRemaining, restorePurchases } = usePremium();
-
-  const handleLogout = () => {
-    Alert.alert(
-      'Log Out',
-      'Are you sure you want to log out of EZER?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Log Out', style: 'destructive', onPress: async () => {
-          await logout();
-          router.replace('/auth/login');
-        }},
-      ]
-    );
+  const { colors, isDark, setTheme } = useTheme();
+  const auth = useAuth() as {
+    user?: { email?: string; createdAt?: string };
+    signOut?: () => void;
+    logout?: () => void;
   };
+  const connectBank = useConnectBank();
+  const { instruments } = useData();
 
-  const handleContactUs = () => {
-    Linking.openURL('mailto:support@ezer.app?subject=Contact Request');
-  };
+  const [notifs, setNotifs] = useState<Record<string, boolean>>({
+    renewals: true,
+    trials: true,
+    digest: false,
+  });
 
-  const handlePrivacyPolicy = () => {
-    Linking.openURL('https://ezer.app/privacy');
-  };
-
-  const handleTermsOfService = () => {
-    Linking.openURL('https://ezer.app/terms');
-  };
-
-  const handleDeleteAccount = () => {
-    Alert.alert(
-      'Delete Account',
-      'Are you sure you want to delete your account? This action cannot be undone and all your data will be permanently deleted.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Delete Account', style: 'destructive', onPress: async () => {
-          // In production, call API to delete account
-          await logout();
-          Alert.alert('Account Deleted', 'Your account has been deleted.');
-          router.replace('/auth/login');
-        }},
-      ]
-    );
-  };
-
-  const handleRateApp = () => {
-    const storeUrl = Platform.OS === 'ios'
-      ? 'https://apps.apple.com/app/ezer/id6504567890'
-      : 'https://play.google.com/store/apps/details?id=com.ezer.app';
-    Linking.openURL(storeUrl);
-  };
-
-  const handleShareApp = async () => {
-    try {
-      await Share.share({
-        message: 'Check out EZER — it tracks your subscriptions, catches hidden charges, and helps you save automatically. https://ezer.app/download',
-        title: 'EZER - Stop Subscription Drain',
-      });
-    } catch (_) {
-      // User dismissed share sheet
-    }
-  };
-
-  const itemStyle = {
-    flexDirection: 'row' as const,
-    alignItems: 'center' as const,
-    backgroundColor: colors.card,
-    padding: 16,
-    borderRadius: 12,
-    marginBottom: 8,
-    shadowColor: colors.shadow,
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 1,
+  const signOut = () => {
+    // The auth context has gone by both names across revisions; call whichever
+    // exists rather than crashing on a rename.
+    (auth.signOut ?? auth.logout)?.();
+    router.replace('/');
   };
 
   return (
-    <ScrollView style={{ flex: 1, backgroundColor: colors.background }}>
-      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 24, paddingTop: insets.top + 16 }}>
-        <Pressable onPress={() => router.back()} style={{
-          width: 44, height: 44, borderRadius: 22, backgroundColor: colors.card,
-          justifyContent: 'center', alignItems: 'center',
-          shadowColor: colors.shadow, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.08, shadowRadius: 8, elevation: 2,
-        }}>
-          <Ionicons name="arrow-back" size={24} color={colors.text} />
-        </Pressable>
-        <View style={{ flex: 1, alignItems: 'center' }}>
-          <Text style={{ fontSize: 24, fontWeight: '700', color: colors.text }}>Settings</Text>
-          <Text style={{ fontSize: 12, fontWeight: '600', color: colors.accent, letterSpacing: 2, marginTop: 2 }}>EZER</Text>
-        </View>
-        <View style={{ width: 44 }} />
-      </View>
-
-      {/* User Info Card */}
-      {user && (
-        <View style={{
-          flexDirection: 'row', alignItems: 'center', backgroundColor: colors.card,
-          marginHorizontal: 24, marginBottom: 24, padding: 16, borderRadius: 16,
-          shadowColor: colors.shadow, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 8, elevation: 3,
-        }}>
-          <View style={{
-            width: 56, height: 56, borderRadius: 28, backgroundColor: colors.primary,
-            justifyContent: 'center', alignItems: 'center', marginRight: 16,
-          }}>
-            <Text style={{ fontSize: 24, fontWeight: '700', color: '#FFFFFF' }}>{user.name?.charAt(0).toUpperCase() || 'U'}</Text>
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={{ fontSize: 18, fontWeight: '700', color: colors.text, marginBottom: 4 }}>{user.name || 'User'}</Text>
-            <Text style={{ fontSize: 14, color: colors.textSecondary }}>{user.email}</Text>
-          </View>
-          <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
-        </View>
-      )}
-
-      {/* Profile */}
-      <View style={{ marginHorizontal: 24, marginBottom: 24 }}>
-        <Text style={{ fontSize: 14, fontWeight: '700', color: colors.textSecondary, marginBottom: 12, textTransform: 'uppercase', letterSpacing: 0.5 }}>Profile</Text>
-        <Pressable style={itemStyle} onPress={() => router.push('/settings/account')}>
-          <Ionicons name="person-outline" size={24} color={colors.text} />
-          <Text style={{ flex: 1, fontSize: 16, fontWeight: '600', color: colors.text, marginLeft: 12 }}>Account Details</Text>
-          <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
-        </Pressable>
-      </View>
-
-      {/* Preferences */}
-      <View style={{ marginHorizontal: 24, marginBottom: 24 }}>
-        <Text style={{ fontSize: 14, fontWeight: '700', color: colors.textSecondary, marginBottom: 12, textTransform: 'uppercase', letterSpacing: 0.5 }}>Preferences</Text>
-
-        {/* Dark Mode Toggle */}
-        <View style={itemStyle}>
-          <Ionicons name={isDark ? 'moon' : 'moon-outline'} size={24} color={colors.text} />
-          <Text style={{ flex: 1, fontSize: 16, fontWeight: '600', color: colors.text, marginLeft: 12 }}>Dark Mode</Text>
-          <Switch
-            value={isDark}
-            onValueChange={toggleTheme}
-            trackColor={{ false: colors.border, true: colors.accent }}
-            thumbColor={'#FFFFFF'}
-          />
-        </View>
-
-        <Pressable style={itemStyle} onPress={() => router.push('/settings/notifications')}>
-          <Ionicons name="notifications-outline" size={24} color={colors.text} />
-          <Text style={{ flex: 1, fontSize: 16, fontWeight: '600', color: colors.text, marginLeft: 12 }}>Notifications</Text>
-          <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
-        </Pressable>
-
-        <Pressable style={itemStyle} onPress={() => router.push('/settings/connected-accounts')}>
-          <Ionicons name="wallet-outline" size={24} color={colors.text} />
-          <Text style={{ flex: 1, fontSize: 16, fontWeight: '600', color: colors.text, marginLeft: 12 }}>Connected Accounts</Text>
-          <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
-        </Pressable>
-      </View>
-
-      {/* Premium */}
-      <View style={{ marginHorizontal: 24, marginBottom: 24 }}>
-        <Text style={{ fontSize: 14, fontWeight: '700', color: colors.accent, marginBottom: 12, textTransform: 'uppercase', letterSpacing: 0.5 }}>Premium</Text>
-        {status === 'premium' ? (
-          <View style={itemStyle}>
-            <Ionicons name="diamond" size={24} color={colors.accent} />
-            <Text style={{ flex: 1, fontSize: 16, fontWeight: '600', color: colors.text, marginLeft: 12 }}>Premium Active</Text>
-            <Ionicons name="checkmark-circle" size={20} color={colors.accent} />
-          </View>
-        ) : (
-          <Pressable style={[itemStyle, { borderWidth: 1, borderColor: colors.accent + '30' }]} onPress={() => router.push('/screens/Paywall')}>
-            <Ionicons name="diamond-outline" size={24} color={colors.accent} />
-            <Text style={{ flex: 1, fontSize: 16, fontWeight: '600', color: colors.text, marginLeft: 12 }}>
-              {status === 'trial' ? `Upgrade to Premium (${daysRemaining}d left)` : 'Unlock Premium — $3'}
+    <View style={{ flex: 1, backgroundColor: colors.bg }}>
+      <ScrollView
+        contentContainerStyle={{
+          paddingTop: insets.top + 10,
+          paddingHorizontal: layout.screenX,
+          paddingBottom: layout.contentBottom,
+        }}
+        showsVerticalScrollIndicator={false}
+        bounces={false}
+        overScrollMode="never"
+      >
+        <ScreenBody>
+          <View style={styles.header}>
+            <PressScale onPress={() => router.back()} scaleTo={0.9}>
+              <View style={[styles.back, { borderColor: colors.line, backgroundColor: colors.card }]}>
+                <Ionicons name="chevron-back" size={18} color={colors.ink} />
+              </View>
+            </PressScale>
+            <Text style={[typeScale.screenTitle, { color: colors.ink, marginLeft: 12 }]}>
+              Settings
             </Text>
-            <Ionicons name="chevron-forward" size={20} color={colors.accent} />
-          </Pressable>
-        )}
-      </View>
+          </View>
 
-      {/* Support */}
-      <View style={{ marginHorizontal: 24, marginBottom: 24 }}>
-        <Text style={{ fontSize: 14, fontWeight: '700', color: colors.textSecondary, marginBottom: 12, textTransform: 'uppercase', letterSpacing: 0.5 }}>Support</Text>
-        <Pressable style={itemStyle} onPress={() => router.push('/settings/help')}>
-          <Ionicons name="help-circle-outline" size={24} color={colors.text} />
-          <Text style={{ flex: 1, fontSize: 16, fontWeight: '600', color: colors.text, marginLeft: 12 }}>Help Center</Text>
-          <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
-        </Pressable>
-        <Pressable style={itemStyle} onPress={handleContactUs}>
-          <Ionicons name="mail-outline" size={24} color={colors.text} />
-          <Text style={{ flex: 1, fontSize: 16, fontWeight: '600', color: colors.text, marginLeft: 12 }}>Contact Us</Text>
-          <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
-        </Pressable>
-        <Pressable style={itemStyle} onPress={handleRateApp}>
-          <Ionicons name="star-outline" size={24} color={colors.text} />
-          <Text style={{ flex: 1, fontSize: 16, fontWeight: '600', color: colors.text, marginLeft: 12 }}>Rate EZER</Text>
-          <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
-        </Pressable>
-        <Pressable style={itemStyle} onPress={handleShareApp}>
-          <Ionicons name="share-social-outline" size={24} color={colors.text} />
-          <Text style={{ flex: 1, fontSize: 16, fontWeight: '600', color: colors.text, marginLeft: 12 }}>Share with Friends</Text>
-          <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
-        </Pressable>
-        <Pressable style={itemStyle} onPress={async () => {
-          const restored = await restorePurchases();
-          if (restored) {
-            Alert.alert('Restored', 'Your premium access has been restored.');
-          } else {
-            Alert.alert('No Purchase Found', 'We couldn\'t find a previous purchase on this account.');
-          }
-        }}>
-          <Ionicons name="refresh-outline" size={24} color={colors.text} />
-          <Text style={{ flex: 1, fontSize: 16, fontWeight: '600', color: colors.text, marginLeft: 12 }}>Restore Purchases</Text>
-          <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
-        </Pressable>
-      </View>
+          {/* --- appearance --------------------------------------------------- */}
+          <SectionHeader style={styles.section}>Appearance</SectionHeader>
+          <View style={[styles.segment, { backgroundColor: colors.card, borderColor: colors.line }]}>
+            {([['Light', false], ['Dark', true]] as const).map(([label, dark]) => {
+              const active = isDark === dark;
+              return (
+                <Pressable
+                  key={label}
+                  onPress={() => setTheme(dark)}
+                  style={[styles.segmentItem, active && { backgroundColor: colors.accent }]}
+                >
+                  <Ionicons
+                    name={dark ? 'moon' : 'sunny'}
+                    size={15}
+                    color={active ? '#FFFFFF' : colors.mut}
+                  />
+                  <Text
+                    style={[styles.segmentLabel, { color: active ? '#FFFFFF' : colors.mut }]}
+                  >
+                    {label}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
 
-      {/* Legal */}
-      <View style={{ marginHorizontal: 24, marginBottom: 24 }}>
-        <Text style={{ fontSize: 14, fontWeight: '700', color: colors.textSecondary, marginBottom: 12, textTransform: 'uppercase', letterSpacing: 0.5 }}>Legal</Text>
-        <Pressable style={itemStyle} onPress={handlePrivacyPolicy}>
-          <Ionicons name="document-text-outline" size={24} color={colors.text} />
-          <Text style={{ flex: 1, fontSize: 16, fontWeight: '600', color: colors.text, marginLeft: 12 }}>Privacy Policy</Text>
-          <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
-        </Pressable>
-        <Pressable style={itemStyle} onPress={handleTermsOfService}>
-          <Ionicons name="document-outline" size={24} color={colors.text} />
-          <Text style={{ flex: 1, fontSize: 16, fontWeight: '600', color: colors.text, marginLeft: 12 }}>Terms of Service</Text>
-          <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
-        </Pressable>
-      </View>
+          {/* --- account ------------------------------------------------------ */}
+          <SectionHeader style={styles.section}>Account</SectionHeader>
+          <Surface style={styles.block}>
+            <View style={styles.kv}>
+              <Label>Email</Label>
+              <Text style={[styles.kvValue, { color: colors.ink }]} numberOfLines={1}>
+                {auth.user?.email ?? '—'}
+              </Text>
+            </View>
+            <View style={[styles.divider, { backgroundColor: colors.line }]} />
+            <View style={styles.kv}>
+              <Label>Member since</Label>
+              {/* Real signup date. This was hardcoded to "January 2023" for
+                  every user, on an account page — the one screen where a wrong
+                  fact is most obviously a lie. */}
+              <Text style={[styles.kvValue, { color: colors.ink }]}>
+                {auth.user?.createdAt
+                  ? new Date(auth.user.createdAt).toLocaleDateString('en-US', {
+                      month: 'long',
+                      year: 'numeric',
+                    })
+                  : '—'}
+              </Text>
+            </View>
+          </Surface>
 
-      {/* Danger Zone */}
-      <View style={{ marginHorizontal: 24, marginBottom: 24 }}>
-        <Text style={{ fontSize: 14, fontWeight: '700', color: colors.danger, marginBottom: 12, textTransform: 'uppercase', letterSpacing: 0.5 }}>Danger Zone</Text>
-        <Pressable style={[itemStyle, { backgroundColor: isDark ? '#2A1A1A' : '#FEF2F2', borderWidth: 1, borderColor: isDark ? '#4A2A2A' : '#FECACA' }]} onPress={handleDeleteAccount}>
-          <Ionicons name="trash-outline" size={24} color={colors.danger} />
-          <Text style={{ flex: 1, fontSize: 16, fontWeight: '600', color: colors.danger, marginLeft: 12 }}>Delete Account</Text>
-          <Ionicons name="chevron-forward" size={20} color={colors.danger} />
-        </Pressable>
-      </View>
+          {/* --- linked banks -------------------------------------------------- */}
+          {/*
+            Real Plaid instruments, not a hardcoded list.
+            This rendered demoFundingInstruments, so it showed Chase Sapphire,
+            Amex Gold and an "Unknown Card •****" — none of which the user had
+            linked, and the last of which is not a card at all. The cards listed
+            here must be the cards the charges are actually billed to.
+          */}
+          <SectionHeader style={styles.section}>Linked banks</SectionHeader>
+          {instruments.length === 0 ? (
+            <Surface style={{ padding: 16 }}>
+              <Body>
+                No accounts linked yet. Connect one below and your cards will appear here.
+              </Body>
+            </Surface>
+          ) : (
+            <Surface style={styles.block}>
+              {instruments.map((inst, i) => (
+                <View key={inst.id}>
+                  {i > 0 && <View style={[styles.divider, { backgroundColor: colors.line }]} />}
+                  <View style={styles.bankRow}>
+                    <Ionicons name="card-outline" size={19} color={colors.mut} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.kvValue, { color: colors.ink }]} numberOfLines={1}>
+                        {inst.displayName || 'Account'}
+                      </Text>
+                      <Body style={{ marginTop: 2 }}>
+                        {/* Only render the parts Plaid actually returned — a
+                            missing brand/mask produced "Unknown •****". */}
+                        {[inst.brand, inst.last4 ? `•${inst.last4}` : null]
+                          .filter(Boolean)
+                          .join(' ') || 'Linked account'}
+                      </Body>
+                    </View>
+                    {inst.isDefault && (
+                      <View style={[styles.defaultChip, { backgroundColor: colors.accSoft }]}>
+                        <Text style={[typeScale.labelSm, { color: colors.accInk }]}>DEFAULT</Text>
+                      </View>
+                    )}
+                  </View>
+                </View>
+              ))}
+            </Surface>
+          )}
 
-      <Pressable style={{
-        backgroundColor: colors.danger, marginHorizontal: 24, paddingVertical: 16, borderRadius: 12, alignItems: 'center',
-        shadowColor: colors.danger, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8, elevation: 4,
-        marginBottom: insets.bottom + 40,
-      }} onPress={handleLogout}>
-        <Text style={{ color: '#FFFFFF', fontSize: 16, fontWeight: '700' }}>Log Out</Text>
-      </Pressable>
+          {/* --- add a bank ----------------------------------------------------- */}
+          {/*
+            Same hook as the dashboard call-out, so linking behaves identically
+            wherever it starts: Link -> exchange -> sync -> refresh. Settings is
+            where people look to add a SECOND account, which the dashboard tile
+            is not a natural home for once the first one is connected.
+          */}
+          <SectionHeader style={styles.section}>Banks</SectionHeader>
+          <PressScale onPress={() => void connectBank.connect()} disabled={connectBank.busy}>
+            <Surface style={[styles.connectRow, connectBank.busy && { opacity: 0.7 }]}>
+              <View style={[styles.connectIcon, { backgroundColor: colors.accSoft }]}>
+                <Ionicons
+                  name={connectBank.busy ? 'sync-outline' : 'add-outline'}
+                  size={19}
+                  color={colors.accInk}
+                />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.kvValue, { color: colors.ink }]}>
+                  {connectBank.busy ? connectBank.label : 'Connect a bank account'}
+                </Text>
+                <Body style={{ marginTop: 2 }}>
+                  {connectBank.busy
+                    ? 'Keep the app open while this finishes'
+                    : 'Securely via Plaid — we never see your login'}
+                </Body>
+              </View>
+              {!connectBank.busy && (
+                <Ionicons name="chevron-forward" size={16} color={colors.mut2} />
+              )}
+            </Surface>
+          </PressScale>
 
-      {/* App Version */}
-      <Text style={{ textAlign: 'center', fontSize: 12, color: colors.textSecondary, marginBottom: 40, marginTop: 16 }}>EZER v1.0.0</Text>
-    </ScrollView>
+          {connectBank.error && (
+            <Body style={{ marginTop: 8, color: colors.red }}>{connectBank.error}</Body>
+          )}
+
+          {/* --- notifications -------------------------------------------------- */}
+          <SectionHeader style={styles.section}>Notifications</SectionHeader>
+          <Surface style={styles.block}>
+            {NOTIFS.map((n, i) => (
+              <View key={n.key}>
+                {i > 0 && <View style={[styles.divider, { backgroundColor: colors.line }]} />}
+                <View style={styles.notifRow}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.kvValue, { color: colors.ink }]}>{n.title}</Text>
+                    <Body style={{ marginTop: 2 }}>{n.sub}</Body>
+                  </View>
+                  <Switch
+                    value={notifs[n.key]}
+                    onValueChange={v => setNotifs(s => ({ ...s, [n.key]: v }))}
+                    trackColor={{ false: colors.line2, true: colors.goldBg }}
+                    thumbColor="#FFFFFF"
+                  />
+                </View>
+              </View>
+            ))}
+          </Surface>
+
+          {/* --- sign out ------------------------------------------------------- */}
+          <PressScale onPress={signOut} style={{ marginTop: 22 }}>
+            <Surface style={styles.signOut}>
+              <Ionicons name="log-out-outline" size={18} color={colors.red} />
+              <Text style={[styles.signOutText, { color: colors.red }]}>Sign out</Text>
+            </Surface>
+          </PressScale>
+        </ScreenBody>
+      </ScrollView>
+    </View>
   );
 }
+
+const styles = StyleSheet.create({
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  back: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  section: {
+    marginTop: 24,
+    marginBottom: 10,
+  },
+  segment: {
+    flexDirection: 'row',
+    borderRadius: radius.buttonSm,
+    borderWidth: 1,
+    padding: 4,
+    gap: 4,
+  },
+  segmentItem: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 10,
+    borderRadius: radius.chip,
+  },
+  segmentLabel: {
+    fontFamily: fontFamily.bold,
+    fontSize: 13,
+  },
+  block: {
+    paddingHorizontal: 14,
+  },
+  kv: {
+    paddingVertical: 13,
+    gap: 4,
+  },
+  kvValue: {
+    fontFamily: fontFamily.semibold,
+    fontSize: 14,
+  },
+  divider: {
+    height: 1,
+  },
+  bankRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 13,
+  },
+  defaultChip: {
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    borderRadius: radius.pill,
+  },
+  connectRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 14,
+  },
+  connectIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  notifRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 11,
+  },
+  signOut: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 9,
+    paddingVertical: 15,
+  },
+  signOutText: {
+    fontFamily: fontFamily.bold,
+    fontSize: 14.5,
+  },
+});

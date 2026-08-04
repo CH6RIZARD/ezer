@@ -10,6 +10,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { usePremium } from '../../utils/PremiumContext';
+import { isExpoGo, isLoosePreviewMode } from '../../utils/expoRuntime';
 
 const FEATURES = [
   {
@@ -19,7 +20,7 @@ const FEATURES = [
   },
   {
     icon: 'cash-outline' as const,
-    title: 'Cash Advance up to $1,500',
+    title: 'Ezer Pay in 4 early access',
     description: 'Get the money you need, when you need it',
   },
   {
@@ -36,13 +37,22 @@ const FEATURES = [
 
 export default function PaywallScreen() {
   const insets = useSafeAreaInsets();
-  const { status, daysRemaining, purchasePremium, restorePurchases } = usePremium();
+  const { status, daysRemaining, purchasePremium, restorePurchases, isPurchaseNativeAvailable } = usePremium();
   const [isPurchasing, setIsPurchasing] = useState(false);
   const [isRestoring, setIsRestoring] = useState(false);
 
-  const canDismiss = status === 'trial';
+  const canDismiss = status === 'trial' || status === 'loading' || isLoosePreviewMode();
 
   const handlePurchase = async () => {
+    if (!isPurchaseNativeAvailable) {
+      Alert.alert(
+        'Preview',
+        isExpoGo()
+          ? 'In-app purchases are not available in Expo Go. Use a development build to test billing, or close this screen to keep exploring.'
+          : 'Billing is not available in this build. Set up RevenueCat and a dev client to test purchases.',
+      );
+      return;
+    }
     setIsPurchasing(true);
     try {
       const success = await purchasePremium();
@@ -57,6 +67,10 @@ export default function PaywallScreen() {
   };
 
   const handleRestore = async () => {
+    if (!isPurchaseNativeAvailable) {
+      Alert.alert('Preview', 'Restore purchases requires a development build with the store SDK.');
+      return;
+    }
     setIsRestoring(true);
     try {
       const success = await restorePurchases();
@@ -143,6 +157,11 @@ export default function PaywallScreen() {
             }}>
               Take full control of your subscriptions and start saving today
             </Text>
+            {isExpoGo() && (
+              <Text style={{ fontSize: 13, color: 'rgba(255,255,255,0.45)', textAlign: 'center', marginTop: 16, maxWidth: 320 }}>
+                Expo Go preview: connect your API on your network, use the X to leave this screen, and use a dev build for bank linking and real purchases.
+              </Text>
+            )}
           </View>
 
           {/* Features */}

@@ -5,6 +5,10 @@ const base = require('./app.json');
 const plugins = [
   'expo-router',
   'expo-image-picker',
+  // Native Google Sign-In and the system browser both need config plugins, or
+  // the modules compile in but fail at runtime on device.
+  '@react-native-google-signin/google-signin',
+  'expo-web-browser',
   ['expo-build-properties', {
     android: {
       minSdkVersion: 24,
