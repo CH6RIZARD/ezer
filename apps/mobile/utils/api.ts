@@ -2,6 +2,26 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 
+/**
+ * The deployed API, as a last resort for any SHIPPED bundle.
+ *
+ * EXPO_PUBLIC_* values are inlined at BUILD time, and the only place this one
+ * is set is the `env` block of each eas.json profile — which EAS Build reads
+ * and nothing else does. So a bundle produced any other way (`expo export -p
+ * web`, a CI or host build step, a local export) carries no API URL at all and
+ * fell through to the loopback addresses below.
+ *
+ * On a deployed site that is fatal twice over: 127.0.0.1 is the visitor's own
+ * machine, where nothing is listening, and a page served over HTTPS is not
+ * allowed to call http:// anyway — the browser blocks it as mixed content
+ * before the request is made. Every sign-in attempt then failed with "Cannot
+ * reach the server at http://127.0.0.1:3001", which reads like the password
+ * was wrong.
+ *
+ * Not a secret: it is the same public hostname already committed in eas.json.
+ */
+const PRODUCTION_API_URL = 'https://ezer-api-production-fca5.up.railway.app';
+
 function resolveApiBaseUrl(): string {
   const fromEnv = process.env.EXPO_PUBLIC_API_URL?.replace(/\/$/, '');
   if (fromEnv) return fromEnv;
@@ -11,6 +31,13 @@ function resolveApiBaseUrl(): string {
   if (debuggerHost) {
     const host = debuggerHost.split(':')[0];
     if (host) return `http://${host}:3001`;
+  }
+
+  // Past this point the loopback guesses below only make sense while
+  // developing. A release bundle reaching them is a misconfiguration, and
+  // guessing the deployed API is strictly better than guessing a local one.
+  if (!__DEV__) {
+    return PRODUCTION_API_URL;
   }
 
   // Android emulator → host loopback
