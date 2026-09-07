@@ -1,0 +1,111 @@
+# Enables GitHub Pages (this repo's app token cannot) and deploys docs/.
+# Tries Actions as the source first; falls back to serving this branch's /docs.
+name: Deploy GitHub Pages
+
+on:
+  push:
+    branches:
+      - main
+      - cursor/enable-github-pages-19ce
+    paths:
+      - "docs/**"
+      - ".github/workflows/deploy-pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  enable:
+    name: Enable Pages
+    runs-on: ubuntu-latest
+    outputs:
+      build_type: ${{ steps.enable.outputs.build_type }}
+      html_url: ${{ steps.enable.outputs.html_url }}
+    steps:
+      - name: Create Pages site if missing
+        id: enable
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          set +e
+          pages_json=$(gh api "repos/${GH_REPO}/pages" 2>/tmp/pages-get.err)
+          get_status=$?
+          if [ "$get_status" -eq 0 ]; then
+            echo "Pages already enabled"
+            echo "$pages_json"
+            build_type=$(echo "$pages_json" | python3 -c "import json,sys; print(json.load(sys.stdin).get('build_type') or 'legacy')")
+            html_url=$(echo "$pages_json" | python3 -c "import json,sys; print(json.load(sys.stdin).get('html_url') or '')")
+            echo "build_type=${build_type}" >> "$GITHUB_OUTPUT"
+            echo "html_url=${html_url}" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "Pages not found. GET error:"
+          cat /tmp/pages-get.err || true
+
+          try_create() {
+            local label="$1"
+            local body="$2"
+            echo "Trying: ${label}"
+            echo "$body"
+            echo "$body" | gh api --method POST "repos/${GH_REPO}/pages" --input - > /tmp/pages-create.json 2>/tmp/pages-create.err
+            local st=$?
+            if [ "$st" -eq 0 ]; then
+              cat /tmp/pages-create.json
+              return 0
+            fi
+            echo "Failed (${label}):"
+            cat /tmp/pages-create.err || true
+            cat /tmp/pages-create.json || true
+            return 1
+          }
+
+          if try_create "workflow source" '{"build_type":"workflow"}'; then
+            pages_json=$(cat /tmp/pages-create.json)
+          elif try_create "branch ${BRANCH} /docs" "{\"source\":{\"branch\":\"${BRANCH}\",\"path\":\"/docs\"}}"; then
+            pages_json=$(cat /tmp/pages-create.json)
+          elif try_create "branch claude/exerr-login-issue-5yqw6x /docs" '{"source":{"branch":"claude/exerr-login-issue-5yqw6x","path":"/docs"}}'; then
+            pages_json=$(cat /tmp/pages-create.json)
+          else
+            echo "Could not enable Pages. GITHUB_TOKEN lacks pages=write or administration=write."
+            echo "build_type=none" >> "$GITHUB_OUTPUT"
+            echo "html_url=" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+
+          build_type=$(echo "$pages_json" | python3 -c "import json,sys; print(json.load(sys.stdin).get('build_type') or 'legacy')")
+          html_url=$(echo "$pages_json" | python3 -c "import json,sys; print(json.load(sys.stdin).get('html_url') or '')")
+          echo "build_type=${build_type}" >> "$GITHUB_OUTPUT"
+          echo "html_url=${html_url}" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Build static docs
+    needs: enable
+    if: needs.enable.outputs.build_type == 'workflow'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs
+
+  deploy:
+    name: Deploy
+    needs: build
+    if: needs.enable.outputs.build_type == 'workflow'
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
