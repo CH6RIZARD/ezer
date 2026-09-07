@@ -32,7 +32,7 @@ html{scroll-behavior:smooth}
    header past a 390px viewport and makes the whole document scroll sideways.
    Below that width the in-page links go; the Download action stays. */
 @media (max-width:720px){
-  .ez-nav a[href="#card"],.ez-nav a[href="#radar"],.ez-nav a[href="#demo"],.ez-nav a[href="#faq"]{display:none}
+  .ez-nav a[href="#card"],.ez-nav a[href="#radar"],.ez-nav a[href="#demo"]{display:none}
 }
 </style>
 </head>
@@ -42,7 +42,7 @@ html{scroll-behavior:smooth}
 <div style="max-width:1080px;margin:0 auto;padding:0 24px;display:flex;align-items:center;justify-content:space-between;height:76px">
 <div style="font-family:'Instrument Serif',serif;font-style:italic;font-size:30px;letter-spacing:-1px">Ezer</div>
 <div class="ez-nav" style="display:flex;align-items:center;gap:22px;font-size:13.5px;font-weight:600;color:#A79BC2">
-<a href="#card">Card</a><a href="#radar">Radar</a><a href="#demo">Demo</a><a href="#faq">FAQ</a>
+<a href="#card">Card</a><a href="#radar">Radar</a><a href="#demo">Demo</a>
 <a href="#download" style="padding:10px 18px;border-radius:13px;background:#4C1D95;color:#fff" class="hv0">Download</a>
 </div>
 </div>
@@ -138,11 +138,6 @@ html{scroll-behavior:smooth}
 </div>
 </div>
 
-<div id="faq" style="max-width:760px;margin:0 auto;padding:64px 24px 80px;display:flex;flex-direction:column;gap:22px">
-<div style="font-size:11px;font-weight:700;letter-spacing:2.5px;color:#D6B36F">FAQ</div>
-<div style="font-family:'Instrument Serif',serif;font-style:italic;font-size:clamp(28px,3.5vw,38px)">Fair questions.</div>
-<div id="ez-faq" style="display:flex;flex-direction:column;gap:10px"></div>
-</div>
 
 <div style="border-top:1px solid #241C3D">
 <div style="max-width:1080px;margin:0 auto;padding:28px 24px;display:flex;flex-wrap:wrap;gap:14px;align-items:center;justify-content:space-between;font-size:12px;color:#6F6390">
@@ -173,13 +168,6 @@ html{scroll-behavior:smooth}
     { d: 16, l: 'A', c: '#FA0F00', a: 22.99 },
     { d: 21, l: 'F', c: '#4C1D95', a: 34.00 },
     { d: 27, l: 'H', c: '#17B26A', a: 17.99 }
-  ];
-  var FAQS = [
-    { q: 'Does Ezer charge interest?', a: 'No. Pay in 4 is always 0% interest and has no hidden fees. A late payment pauses your card until you catch up — that is the only consequence.' },
-    { q: 'Will this affect my credit score?', a: 'No. Ezer does not run a hard credit check.' },
-    { q: 'How does the subscription radar work?', a: 'Link the card or account you pay subscriptions with. Ezer builds a 30-day calendar of upcoming charges, flags trials before they convert, and lets you cancel from one screen.' },
-    { q: 'What does Ezer cost?', a: 'The subscription radar is free. Pay in 4 is free when you pay on time.' },
-    { q: 'Is my data safe?', a: 'Bank-grade 256-bit encryption, read-only account access, and we never sell your data. Disconnect and delete everything anytime.' }
   ];
 
   function esc(t) { return String(t).replace(/[&<>"]/g, function (c) { return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]; }); }
@@ -237,33 +225,6 @@ html{scroll-behavior:smooth}
     }
   }
 
-  // FAQ accordion
-  var faq = document.getElementById('ez-faq');
-  if (faq) {
-    var open = -1;
-    function drawFaq() {
-      faq.innerHTML = FAQS.map(function (f, i) {
-        return '<div data-i="' + i + '" role="button" tabindex="0" aria-expanded="' + (open === i)
-          + '" class="hv5" style="background:#1F1834;border:1px solid #2C2347;border-radius:16px;padding:18px 20px;cursor:pointer;user-select:none">'
-          + '<div style="display:flex;justify-content:space-between;align-items:center;gap:14px">'
-          + '<div style="font-size:15px;font-weight:700">' + esc(f.q) + '</div>'
-          + '<div style="color:#D6B36F;font-size:18px;font-weight:700;flex:none">' + (open === i ? '−' : '+') + '</div></div>'
-          + (open === i ? '<div style="margin-top:10px;font-size:14px;line-height:1.6;color:#A79BC2">' + esc(f.a) + '</div>' : '')
-          + '</div>';
-      }).join('');
-    }
-    function toggle(i) { open = (open === i ? -1 : i); drawFaq(); }
-    faq.addEventListener('click', function (e) {
-      var row = e.target.closest('[data-i]');
-      if (row) { toggle(+row.dataset.i); }
-    });
-    faq.addEventListener('keydown', function (e) {
-      if (e.key !== 'Enter' && e.key !== ' ') { return; }
-      var row = e.target.closest('[data-i]');
-      if (row) { e.preventDefault(); toggle(+row.dataset.i); }
-    });
-    drawFaq();
-  }
 })();
 
 </script>
