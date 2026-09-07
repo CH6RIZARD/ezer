@@ -1,5 +1,6 @@
 import { AuthProvider, prisma } from '@ezer/db';
 import { signJwt } from './jwt';
+import { CONSENT_VERSION } from './consent';
 
 export type OAuthIdentity = {
   provider: AuthProvider;
@@ -39,10 +40,16 @@ export async function upsertOAuthUser(identity: OAuthIdentity): Promise<AuthSess
   }
 
   if (!user) {
+    // Social sign-in created accounts with no consent record whatsoever — the
+    // terms checkbox lives on the email signup screen only, so anyone arriving
+    // through Google, Apple or Microsoft agreed to nothing. Completing the
+    // provider flow is the acceptance; record it like any other.
     user = await prisma.user.create({
       data: {
         email,
         name: identity.name || null,
+        consentedAt: new Date(),
+        consentVersion: CONSENT_VERSION,
       },
     });
   } else if (identity.name && !user.name) {

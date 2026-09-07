@@ -8,6 +8,7 @@ import cors from '@fastify/cors';
 import multipart from '@fastify/multipart';
 import rateLimit from '@fastify/rate-limit';
 import { authRoutes } from './routes/auth';
+import { accountRoutes } from './routes/account';
 import { connectRoutes } from './routes/connect';
 import { walletRoutes } from './routes/wallet';
 import { coreRoutes } from './routes/core';
@@ -64,6 +65,7 @@ async function start() {
 
     // Register routes
     await server.register(authRoutes, { prefix: '/auth' });
+    await server.register(accountRoutes, { prefix: '/account' });
     await server.register(connectRoutes, { prefix: '/connect' });
     await server.register(walletRoutes, { prefix: '/wallet' });
     await server.register(coreRoutes);

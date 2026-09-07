@@ -10,6 +10,7 @@ import {
   microsoftCompleteSchema,
 } from '@ezer/shared';
 import { upsertOAuthUser } from '../utils/oauthUser';
+import { CONSENT_VERSION } from '../utils/consent';
 import { verifyAppleIdentityToken } from '../utils/verifyApple';
 import { verifyGoogleIdToken } from '../utils/verifyGoogle';
 import { verifyMicrosoftIdToken } from '../utils/verifyMicrosoft';
@@ -17,6 +18,7 @@ import { verifyMicrosoftIdToken } from '../utils/verifyMicrosoft';
 function formatZodError(error: { issues: { message: string }[] }): string {
   return error.issues.map(issue => issue.message).join('; ');
 }
+
 
 export async function authRoutes(server: FastifyInstance) {
   // POST /auth/signup
@@ -43,8 +45,17 @@ export async function authRoutes(server: FastifyInstance) {
       }
 
       const passwordHash = await bcrypt.hash(password, 10);
+      // Consent is recorded, not just collected. A checkbox the client ticks
+      // and nobody stores proves nothing when a regulator or Plaid asks when
+      // this user agreed and to which version.
       const user = await prisma.user.create({
-        data: { email: normalisedEmail, name: name.trim(), passwordHash },
+        data: {
+          email: normalisedEmail,
+          name: name.trim(),
+          passwordHash,
+          consentedAt: new Date(),
+          consentVersion: CONSENT_VERSION,
+        },
       });
       const token = signJwt({ userId: user.id, email: user.email });
 
