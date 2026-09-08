@@ -30,6 +30,11 @@ export default function IndexScreen() {
       router.replace('/onboarding');
       return;
     }
+    // Not signed in: the onboarding flow is the front door now. It opens on the
+    // ticker screen and carries its own Apple / Google / email step at the end,
+    // so showing provider buttons here as well would be a second, competing
+    // sign-in surface reached by the same tap.
+    router.replace('/onboarding');
   }, [isLoading, isAuthenticated, hasCompletedOnboarding]);
 
   /**

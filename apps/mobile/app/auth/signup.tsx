@@ -14,7 +14,7 @@ import {
   ActivityIndicator,
   ScrollView,
 } from 'react-native';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -26,7 +26,10 @@ export default function SignupScreen() {
   const { colors } = useTheme();
   const { signup } = useAuth();
   const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
+  // Onboarding collects the email on its auth step and hands it over, so
+  // nobody types it twice.
+  const params = useLocalSearchParams<{ email?: string }>();
+  const [email, setEmail] = useState(params.email ?? '');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
