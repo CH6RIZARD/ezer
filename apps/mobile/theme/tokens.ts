@@ -146,12 +146,25 @@ export const gradients = {
   bankGoldLocations: [0, 0.65, 1] as const,
 } as const;
 
-/** Optional virtual-card finishes, selectable in the prototype's Tweaks panel. */
+/**
+ * Card finishes. Amethyst is the default.
+ *
+ * Rose replaces Midnight, per the locked Card Studio layout: Midnight's blue
+ * sat too close to the Wallet's bankSapphire, so a virtual card and a linked
+ * bank card read as the same object at a glance.
+ *
+ * Bone is the one light finish, which is why anything drawn over it has to
+ * pick its ink from the finish rather than assuming white-on-dark.
+ */
 export const cardFinishes = {
   amethyst: ['#5B21B6', '#31136E', '#150A33'] as const,
   onyx: ['#33303B', '#17151D', '#0B0A10'] as const,
-  midnight: ['#2C4A8F', '#16264F', '#0B1226'] as const,
+  rose: ['#F06BB0', '#C2185B', '#7A1041'] as const,
+  bone: ['#F7F0E1', '#E9DCC2', '#D8C7A6'] as const,
 } as const;
+
+/** Finishes that need light ink drawn on them. Bone is the only light one. */
+export const isDarkFinish = (f: CardFinish): boolean => f !== 'bone';
 
 export type CardFinish = keyof typeof cardFinishes;
 

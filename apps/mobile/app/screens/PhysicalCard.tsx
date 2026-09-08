@@ -35,7 +35,8 @@ import { saveCardDesign, loadCardDesign } from '../../utils/cardDesignStore';
 const FINISHES: { key: CardFinish; label: string }[] = [
   { key: 'amethyst', label: 'Amethyst' },
   { key: 'onyx', label: 'Onyx' },
-  { key: 'midnight', label: 'Midnight' },
+  { key: 'rose', label: 'Rose' },
+  { key: 'bone', label: 'Bone' },
 ];
 
 const WIDTHS = [

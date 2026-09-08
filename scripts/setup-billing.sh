@@ -2,6 +2,10 @@
 # =============================================================================
 # EZER — create the Play subscription and wire it into RevenueCat
 #
+# Founding rate $7.99/month. The $14 list price is display-only copy in the
+# app; Play has no concept of a struck-through anchor, so only the real
+# charged amount is created here.
+#
 # Replaces the console click-path for the two billing objects the app needs:
 #
 #   1. a Google Play subscription with one monthly base plan
@@ -32,7 +36,7 @@ set -euo pipefail
 PACKAGE="${PACKAGE:-com.ezersaves.app}"
 PRODUCT_ID="${PRODUCT_ID:-ezer_premium_monthly}"
 BASE_PLAN_ID="${BASE_PLAN_ID:-monthly}"
-PRICE_MICROS="${PRICE_MICROS:-4990000}"   # $4.99
+PRICE_MICROS="${PRICE_MICROS:-7990000}"   # $7.99 founding rate
 CURRENCY="${CURRENCY:-USD}"
 REGION="${REGION:-US}"
 ENTITLEMENT="${ENTITLEMENT:-premium}"
@@ -71,7 +75,7 @@ read -r -d '' BODY <<JSON || true
     "regionalConfigs": [{
       "regionCode": "$REGION",
       "newSubscriberAvailability": true,
-      "price": { "currencyCode": "$CURRENCY", "units": "4", "nanos": 990000000 }
+      "price": { "currencyCode": "$CURRENCY", "units": "7", "nanos": 990000000 }
     }]
   }],
   "listings": [{
