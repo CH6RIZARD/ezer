@@ -83,12 +83,23 @@ export default function DrainReviewScreen() {
         return {
           id: sub.id,
           merchantId: sub.merchantId,
-          name: sub.merchantName || sub.merchantId,
+          // NO id fallback. This used to be `sub.merchantName || sub.merchantId`,
+          // which printed raw cuids at the user — rows reading
+          // "cmsci906c001011x7dg8bm959 · No recent signal · $0.00/mo". A
+          // database key is never a merchant name; showing one is strictly
+          // worse than showing nothing, because the user cannot act on it and
+          // it makes the whole screen look broken.
+          name: sub.merchantName?.trim() || null,
           logo: sub.logo,
           amountCents: sub.amountCents ?? priceBySubId.get(sub.id) ?? 0,
           ...usage,
         };
       })
+      // A row with no name AND no amount is not a subscription the user can
+      // decide anything about — it is an incomplete sync artefact. Detection
+      // writes the row before the merchant and price are resolved, so these
+      // appear between a Plaid sync and the enrichment that follows it.
+      .filter((r): r is typeof r & { name: string } => !!r.name && r.amountCents > 0)
       .sort((a, b) => RANK[a.flag] - RANK[b.flag] || b.amountCents - a.amountCents);
   }, [subscriptions, risks]);
 

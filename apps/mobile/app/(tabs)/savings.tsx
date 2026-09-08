@@ -58,11 +58,11 @@ export default function SavingsScreen() {
     goals,
     transactions,
     autoSave,
-    checkingBalance,
-    checkingLabel,
+    // checkingBalance / checkingLabel / averageSave were only read by the
+    // engine-facing figures removed from this screen. Nothing here shows a
+    // bank balance or a statistic about the sweep any more.
     totalSaved,
     savedThisMonth,
-    averageSave,
     preview,
     setAutoSaveEnabled,
     refresh,
@@ -217,7 +217,7 @@ export default function SavingsScreen() {
         headline: `About ${formatCents(dollarsToCents(preview.amountDollars))}`,
         detail: `this week, split across ${activeGoals.length} ${
           activeGoals.length === 1 ? 'goal' : 'goals'
-        }. We only move what you can spare above your buffer.`,
+        }.`,
       }
     : {
         headline: 'Nothing this time',
@@ -274,21 +274,16 @@ export default function SavingsScreen() {
               {hydrated ? formatCents(dollarsToCents(totalSaved)) : '—'}
             </Text>
 
-            {/* Two facts that earn their space: what the app did this month,
-                and what it typically moves. Both are observed, not projected. */}
+            {/* One fact, not two. "Typical save" was the mean of past debits —
+                a statistic about the engine's behaviour, not something anyone
+                opens this app to find out. What they came for is the total
+                above and how it moved this month. */}
             <View style={styles.statRow}>
               <View style={styles.stat}>
                 <Text style={[styles.statValue, { color: colors.ink }]} numberOfLines={1}>
                   {formatCents(dollarsToCents(savedThisMonth))}
                 </Text>
                 <Text style={[styles.statLabel, { color: colors.mut2 }]}>Saved this month</Text>
-              </View>
-              <View style={[styles.statDivider, { backgroundColor: colors.line }]} />
-              <View style={styles.stat}>
-                <Text style={[styles.statValue, { color: colors.ink }]} numberOfLines={1}>
-                  {averageSave > 0 ? formatCents(dollarsToCents(averageSave)) : '—'}
-                </Text>
-                <Text style={[styles.statLabel, { color: colors.mut2 }]}>Typical save</Text>
               </View>
             </View>
 
@@ -397,55 +392,20 @@ export default function SavingsScreen() {
               {autopilot.detail}
             </Text>
 
-            {/* The buffer and balance are the two inputs to the decision above,
-                so they sit with it rather than in a settings screen. */}
+            {/* The checking balance and the buffer used to sit here as "the two
+                inputs to the decision above". They are inputs to the ENGINE,
+                not to the user — someone opening this tab wants to know what
+                they have saved, not to be shown their own bank balance and a
+                threshold they never think about. Both are gone; the buffer
+                stays adjustable, just not on the screen whose job is the
+                total. Only the on/off control remains. */}
             <View
               style={[
                 styles.autoFacts,
                 { borderTopColor: autoSave.enabled ? 'rgba(255,255,255,.16)' : colors.line },
               ]}
             >
-              <View style={{ flex: 1 }}>
-                <Text
-                  style={[
-                    styles.autoFactValue,
-                    { color: autoSave.enabled ? '#FFFFFF' : colors.ink },
-                  ]}
-                  numberOfLines={1}
-                >
-                  {checkingBalance === null ? '—' : formatCents(dollarsToCents(checkingBalance))}
-                </Text>
-                <Text
-                  style={[
-                    styles.autoFactLabel,
-                    { color: autoSave.enabled ? 'rgba(255,255,255,.62)' : colors.mut2 },
-                  ]}
-                  numberOfLines={1}
-                >
-                  {checkingLabel ?? 'Checking'}
-                </Text>
-              </View>
-
-              <View style={{ flex: 1 }}>
-                <Text
-                  style={[
-                    styles.autoFactValue,
-                    { color: autoSave.enabled ? '#FFFFFF' : colors.ink },
-                  ]}
-                  numberOfLines={1}
-                >
-                  {formatCents(dollarsToCents(autoSave.bufferDollars))}
-                </Text>
-                <Text
-                  style={[
-                    styles.autoFactLabel,
-                    { color: autoSave.enabled ? 'rgba(255,255,255,.62)' : colors.mut2 },
-                  ]}
-                  numberOfLines={1}
-                >
-                  Your buffer
-                </Text>
-              </View>
+              <View style={{ flex: 1 }} />
 
               <Pressable
                 onPress={() => { void setAutoSaveEnabled(!autoSave.enabled); }}
