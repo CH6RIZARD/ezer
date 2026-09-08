@@ -19,17 +19,22 @@ export default function IndexScreen() {
   /** Shown when a provider refuses — the screen must say so, not navigate. */
   const [authError, setAuthError] = useState<string | null>(null);
 
-  // Auth gate: once hydrated, redirect authenticated users (no OAuth flash)
+  // Auth gate: once hydrated, route by session state.
+  //
+  // A signed-OUT visitor now goes to /onboarding, not to the provider buttons
+  // below. Onboarding owns the whole first run — story first, account created
+  // on its last screen — so asking a stranger to authenticate before they have
+  // been told what the product does is exactly the order the flow map inverts.
+  //
+  // The provider UI here is kept as the fallback this screen renders if the
+  // redirect has not landed yet, and for anyone deep-linked straight to "/".
   useEffect(() => {
     if (isLoading) return;
     if (isAuthenticated && hasCompletedOnboarding) {
       router.replace('/(tabs)/home');
       return;
     }
-    if (isAuthenticated && !hasCompletedOnboarding) {
-      router.replace('/onboarding');
-      return;
-    }
+    router.replace('/onboarding');
   }, [isLoading, isAuthenticated, hasCompletedOnboarding]);
 
   /**
