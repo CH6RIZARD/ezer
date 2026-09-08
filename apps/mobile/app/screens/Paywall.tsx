@@ -1,6 +1,20 @@
 // =============================================================================
-// EZER Mobile App - Paywall Screen
-// Conversion-optimized full-screen paywall for $3 lifetime premium purchase
+// EZER Mobile — Paywall
+//
+// Layout is the approved "Amethyst on bone" design: the virtual card is the
+// hero, tilted, over a warm paper ground. Deliberately light where the rest of
+// the app is dark — this screen is a moment, not a surface you live in, and the
+// card has to read as an object sitting on something.
+//
+// COPY IS NOT THE DESIGN'S. The comps sold a $2.99 lifetime purchase and said
+// "One-time purchase. No subscriptions." That is now false: this is $7.99/month
+// against a $14 list price. Shipping the comp's disclosure verbatim would be a
+// false statement to a purchaser, and both stores reject a paywall whose copy
+// disagrees with the product it charges for.
+//
+// The two prices are display strings from revenueCatConfig. The amount actually
+// charged is whatever the store package resolves to at runtime; this screen
+// never computes a price.
 // =============================================================================
 
 import React, { useState } from 'react';
@@ -11,36 +25,54 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { usePremium } from '../../utils/PremiumContext';
 import { isExpoGo, isLoosePreviewMode } from '../../utils/expoRuntime';
+import {
+  FOUNDING_PRICE_LABEL,
+  LIST_PRICE_LABEL,
+  BILLING_PERIOD_LABEL,
+} from '../../utils/revenueCatConfig';
 
+// Paper palette, from the comp. Not in theme/tokens because nothing else in
+// the app uses it — putting it there would imply a second surface style exists.
+const PAPER = '#F7F3EA';
+const PAPER_EDGE = '#EEE7D6';
+const INK = '#241A38';
+const INK_MUTED = '#8A7F6B';
+const INK_FAINT = '#A99E86';
+const GOLD = '#A87D2F';
+const PURPLE = '#4C1D95';
+const GREEN = '#348F66';
+
+const SERIF = 'InstrumentSerif_400Regular_Italic';
+const UI_BOLD = 'SpaceGrotesk_700Bold';
+const UI_SEMI = 'SpaceGrotesk_600SemiBold';
+const UI_MED = 'SpaceGrotesk_500Medium';
+
+/**
+ * What a subscriber gets. Two of these are not built yet, and both say so —
+ * "early access" is a promise about timing, which is true, rather than a claim
+ * that the feature works today, which is not.
+ */
 const FEATURES = [
-  {
-    icon: 'infinite-outline' as const,
-    title: 'Unlimited Subscription Tracking',
-    description: 'Track every subscription, trial, and recurring charge',
-  },
-  {
-    icon: 'cash-outline' as const,
-    title: 'Ezer Pay in 4 early access',
-    description: 'Get the money you need, when you need it',
-  },
-  {
-    icon: 'notifications-outline' as const,
-    title: 'Smart Alerts & Trial Watchdog',
-    description: 'Never get charged for a forgotten trial again',
-  },
-  {
-    icon: 'trending-up-outline' as const,
-    title: 'Savings Goals & Investing',
-    description: 'Turn cancelled subscriptions into real savings',
-  },
+  'Unlimited subscription tracking',
+  'Smart alerts and trial watchdog',
+  'Savings goals — early access',
+  'Ezer Pay in 4 — early access',
 ];
 
 export default function PaywallScreen() {
   const insets = useSafeAreaInsets();
-  const { status, daysRemaining, purchasePremium, restorePurchases, isPurchaseNativeAvailable } = usePremium();
+  const {
+    status,
+    daysRemaining,
+    purchasePremium,
+    restorePurchases,
+    isPurchaseNativeAvailable,
+  } = usePremium();
   const [isPurchasing, setIsPurchasing] = useState(false);
   const [isRestoring, setIsRestoring] = useState(false);
 
+  // An expired user has nothing behind this screen to return to, so the close
+  // affordance is hidden rather than shown-and-inert.
   const canDismiss = status === 'trial' || status === 'loading' || isLoosePreviewMode();
 
   const handlePurchase = async () => {
@@ -57,8 +89,8 @@ export default function PaywallScreen() {
     try {
       const success = await purchasePremium();
       if (success) {
-        Alert.alert('Welcome to Premium!', 'You now have lifetime access to all EZER features.', [
-          { text: 'Let\'s Go', onPress: () => router.back() },
+        Alert.alert('You’re in', 'Your founding rate is locked for as long as you stay subscribed.', [
+          { text: 'Let’s go', onPress: () => router.back() },
         ]);
       }
     } finally {
@@ -75,244 +107,175 @@ export default function PaywallScreen() {
     try {
       const success = await restorePurchases();
       if (success) {
-        Alert.alert('Purchase Restored!', 'Your premium access has been restored.', [
+        Alert.alert('Subscription restored', 'Your access is back.', [
           { text: 'Great', onPress: () => router.back() },
         ]);
       } else {
-        Alert.alert('No Purchase Found', 'We couldn\'t find a previous purchase on this account.');
+        Alert.alert('Nothing to restore', 'We couldn’t find a subscription on this account.');
       }
     } finally {
       setIsRestoring(false);
     }
   };
 
+  const busy = isPurchasing || isRestoring;
+
   return (
-    <View style={{ flex: 1, backgroundColor: '#0a0a0f' }}>
-      <LinearGradient
-        colors={['#0a0a0f', '#111118', '#0a0a0f']}
-        style={{ flex: 1 }}
+    <View style={{ flex: 1, backgroundColor: PAPER }}>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{
+          paddingTop: insets.top + 14,
+          paddingBottom: insets.bottom + 24,
+          paddingHorizontal: 20,
+          minHeight: '100%',
+        }}
       >
-        <ScrollView
-          contentContainerStyle={{
-            paddingTop: insets.top + 16,
-            paddingBottom: insets.bottom + 32,
-            paddingHorizontal: 24,
-          }}
-          showsVerticalScrollIndicator={false}
-        >
-          {/* Close button — only during trial */}
-          {canDismiss && (
+        {/* header */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+          {canDismiss ? (
             <Pressable
               onPress={() => router.back()}
-              style={{
-                alignSelf: 'flex-end',
-                width: 36,
-                height: 36,
-                borderRadius: 18,
-                backgroundColor: 'rgba(255,255,255,0.1)',
-                justifyContent: 'center',
-                alignItems: 'center',
-                marginBottom: 8,
-              }}
+              hitSlop={10}
+              style={{ width: 42, height: 42, borderRadius: 21, backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: PAPER_EDGE, alignItems: 'center', justifyContent: 'center' }}
             >
-              <Ionicons name="close" size={20} color="rgba(255,255,255,0.6)" />
+              <Ionicons name="close" size={18} color={INK} />
             </Pressable>
+          ) : (
+            <View style={{ width: 42 }} />
           )}
+          <Text style={{ fontSize: 15, fontFamily: UI_BOLD, letterSpacing: 2.5, color: GOLD }}>EZER</Text>
+          <View style={{ width: 42 }} />
+        </View>
 
-          {/* Hero */}
-          <View style={{ alignItems: 'center', marginBottom: 40, marginTop: canDismiss ? 0 : 24 }}>
-            <View style={{
-              width: 80,
-              height: 80,
-              borderRadius: 40,
-              backgroundColor: 'rgba(77,240,192,0.15)',
-              justifyContent: 'center',
-              alignItems: 'center',
-              marginBottom: 24,
-              shadowColor: '#4df0c0',
-              shadowOffset: { width: 0, height: 0 },
-              shadowOpacity: 0.3,
-              shadowRadius: 20,
-            }}>
-              <Ionicons name="diamond" size={40} color="#4df0c0" />
-            </View>
-
-            <Text style={{
-              fontSize: 32,
-              fontWeight: '800',
-              color: '#FFFFFF',
-              textAlign: 'center',
-              marginBottom: 12,
-              letterSpacing: -0.5,
-            }}>
-              Unlock EZER Premium
-            </Text>
-
-            <Text style={{
-              fontSize: 16,
-              color: 'rgba(255,255,255,0.6)',
-              textAlign: 'center',
-              lineHeight: 24,
-              maxWidth: 300,
-            }}>
-              Take full control of your subscriptions and start saving today
-            </Text>
-            {isExpoGo() && (
-              <Text style={{ fontSize: 13, color: 'rgba(255,255,255,0.45)', textAlign: 'center', marginTop: 16, maxWidth: 320 }}>
-                Expo Go preview: connect your API on your network, use the X to leave this screen, and use a dev build for bank linking and real purchases.
-              </Text>
-            )}
-          </View>
-
-          {/* Features */}
-          <View style={{ marginBottom: 32 }}>
-            {FEATURES.map((feature, index) => (
-              <View
-                key={index}
-                style={{
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  backgroundColor: 'rgba(255,255,255,0.04)',
-                  borderRadius: 16,
-                  padding: 16,
-                  marginBottom: 12,
-                  borderWidth: 1,
-                  borderColor: 'rgba(255,255,255,0.06)',
-                }}
-              >
-                <View style={{
-                  width: 48,
-                  height: 48,
-                  borderRadius: 24,
-                  backgroundColor: 'rgba(77,240,192,0.1)',
-                  justifyContent: 'center',
-                  alignItems: 'center',
-                  marginRight: 16,
-                }}>
-                  <Ionicons name={feature.icon} size={24} color="#4df0c0" />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: 16, fontWeight: '700', color: '#FFFFFF', marginBottom: 2 }}>
-                    {feature.title}
-                  </Text>
-                  <Text style={{ fontSize: 13, color: 'rgba(255,255,255,0.5)', lineHeight: 18 }}>
-                    {feature.description}
-                  </Text>
-                </View>
-                <Ionicons name="checkmark-circle" size={22} color="#4df0c0" />
-              </View>
-            ))}
-          </View>
-
-          {/* Social Proof */}
-          <View style={{ alignItems: 'center', marginBottom: 32 }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 }}>
-              {[1, 2, 3, 4, 5].map(i => (
-                <Ionicons key={i} name="star" size={18} color="#F59E0B" />
-              ))}
-            </View>
-            <Text style={{ fontSize: 14, color: 'rgba(255,255,255,0.5)', textAlign: 'center' }}>
-              Join thousands of smart savers
-            </Text>
-          </View>
-
-          {/* Trial countdown - compact so it fits on iPhone without indent */}
-          {status === 'trial' && daysRemaining > 0 && (
-            <View style={{
-              backgroundColor: 'rgba(77,240,192,0.08)',
-              borderRadius: 12,
-              paddingVertical: 10,
-              paddingHorizontal: 12,
-              marginBottom: 20,
-              borderWidth: 1,
-              borderColor: 'rgba(77,240,192,0.15)',
-              flexDirection: 'row',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 8,
-            }}>
-              <Ionicons name="time-outline" size={18} color="#4df0c0" />
-              <Text style={{ fontSize: 13, fontWeight: '600', color: '#4df0c0' }} numberOfLines={1}>
-                {daysRemaining} day{daysRemaining !== 1 ? 's' : ''} left in free trial
-              </Text>
-            </View>
-          )}
-
-          {/* Price */}
-          <View style={{ alignItems: 'center', marginBottom: 24 }}>
-            <View style={{
-              backgroundColor: 'rgba(255,255,255,0.06)',
-              borderRadius: 16,
-              paddingVertical: 20,
-              paddingHorizontal: 32,
-              borderWidth: 1,
-              borderColor: 'rgba(77,240,192,0.2)',
-              alignItems: 'center',
-            }}>
-              <Text style={{ fontSize: 42, fontWeight: '800', color: '#FFFFFF', letterSpacing: -1 }}>
-                $2.99
-              </Text>
-              <Text style={{ fontSize: 15, color: 'rgba(255,255,255,0.5)', marginTop: 4, fontWeight: '600' }}>
-                one-time payment · lifetime access
-              </Text>
-            </View>
-          </View>
-
-          {/* CTA Button */}
-          <Pressable
-            onPress={handlePurchase}
-            disabled={isPurchasing}
+        {/* the card, tilted — the hero */}
+        <View style={{ alignItems: 'center', marginTop: 30 }}>
+          <LinearGradient
+            colors={['#5B21B6', '#31136E', '#150A33']}
+            locations={[0, 0.55, 1]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
             style={{
-              backgroundColor: '#4df0c0',
-              borderRadius: 16,
-              paddingVertical: 18,
-              alignItems: 'center',
-              marginBottom: 16,
-              shadowColor: '#4df0c0',
-              shadowOffset: { width: 0, height: 4 },
-              shadowOpacity: 0.3,
-              shadowRadius: 12,
-              elevation: 6,
-              opacity: isPurchasing ? 0.7 : 1,
+              width: 308, height: 190, borderRadius: 20, padding: 20,
+              justifyContent: 'space-between', transform: [{ rotate: '-4deg' }],
+              shadowColor: '#241A38', shadowOffset: { width: 0, height: 24 },
+              shadowOpacity: 0.28, shadowRadius: 48, elevation: 12,
             }}
           >
-            {isPurchasing ? (
-              <ActivityIndicator color="#0a0a0f" />
-            ) : (
-              <Text style={{ fontSize: 18, fontWeight: '800', color: '#0a0a0f', letterSpacing: 0.5 }}>
-                Unlock EZER Premium
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+              <LinearGradient
+                colors={['#E7C77E', '#A87D2F', '#E7C77E']}
+                start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+                style={{ width: 38, height: 28, borderRadius: 7 }}
+              />
+              <Text style={{ fontSize: 10, fontFamily: UI_SEMI, letterSpacing: 0.5, color: '#C9BCE8', textTransform: 'uppercase' }}>
+                Founding member
               </Text>
-            )}
-          </Pressable>
+            </View>
 
-          {/* Restore */}
-          <Pressable
-            onPress={handleRestore}
-            disabled={isRestoring}
-            style={{ alignItems: 'center', paddingVertical: 12, marginBottom: 16 }}
+            <Text style={{ fontFamily: SERIF, fontSize: 30, color: '#FFFFFF', letterSpacing: 1 }}>
+              Ezer Premium
+            </Text>
+
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end' }}>
+              <View>
+                <Text style={{ fontSize: 9, letterSpacing: 0.5, color: '#C9BCE8', textTransform: 'uppercase' }}>Cardholder</Text>
+                <Text style={{ fontSize: 12, fontFamily: UI_SEMI, color: '#FFFFFF', letterSpacing: 1 }}>EZER MEMBER</Text>
+              </View>
+              <View style={{ alignItems: 'flex-end' }}>
+                <Text style={{ fontSize: 9, letterSpacing: 0.5, color: '#C9BCE8', textTransform: 'uppercase' }}>Rate</Text>
+                <Text style={{ fontSize: 12, fontFamily: UI_SEMI, color: '#FFFFFF' }}>LOCKED</Text>
+              </View>
+            </View>
+          </LinearGradient>
+        </View>
+
+        <Text style={{ textAlign: 'center', fontSize: 26, fontFamily: UI_BOLD, letterSpacing: -0.6, color: INK, marginTop: 36 }}>
+          One rate. Every feature.{' '}
+          <Text style={{ fontFamily: SERIF, color: PURPLE }}>Locked.</Text>
+        </Text>
+
+        {status === 'trial' && typeof daysRemaining === 'number' && daysRemaining > 0 ? (
+          <View style={{ alignSelf: 'center', marginTop: 14, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999, backgroundColor: '#F6EBD3', borderWidth: 1, borderColor: '#E2C892' }}>
+            <Text style={{ fontSize: 10, fontFamily: UI_SEMI, letterSpacing: 0.5, color: GOLD, textTransform: 'uppercase' }}>
+              {daysRemaining} {daysRemaining === 1 ? 'day' : 'days'} left in trial
+            </Text>
+          </View>
+        ) : null}
+
+        <View style={{ marginTop: 24, gap: 10 }}>
+          {FEATURES.map(f => (
+            <View
+              key={f}
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 14, paddingVertical: 12, backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: PAPER_EDGE, borderRadius: 15 }}
+            >
+              <Ionicons name="checkmark" size={16} color={GREEN} />
+              <Text style={{ flex: 1, fontSize: 13.5, fontFamily: UI_MED, color: INK }}>{f}</Text>
+            </View>
+          ))}
+        </View>
+
+        <View style={{ flex: 1, minHeight: 24 }} />
+
+        {/* price + CTA */}
+        <View style={{ flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', marginTop: 22 }}>
+          <View>
+            <Text style={{ fontSize: 11, fontFamily: UI_SEMI, letterSpacing: 0.5, color: INK_MUTED, textTransform: 'uppercase' }}>
+              Founding rate
+            </Text>
+            <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 8, marginTop: 2 }}>
+              <Text style={{ fontFamily: SERIF, fontSize: 34, lineHeight: 38, color: PURPLE }}>
+                {FOUNDING_PRICE_LABEL}
+              </Text>
+              <Text style={{ fontSize: 13, fontFamily: UI_MED, color: INK_MUTED }}>
+                /{BILLING_PERIOD_LABEL}
+              </Text>
+              <Text style={{ fontSize: 13, fontFamily: UI_MED, color: INK_FAINT, textDecorationLine: 'line-through' }}>
+                {LIST_PRICE_LABEL}
+              </Text>
+            </View>
+          </View>
+        </View>
+
+        <Pressable
+          onPress={handlePurchase}
+          disabled={busy}
+          style={{ marginTop: 16, opacity: busy ? 0.6 : 1 }}
+        >
+          <LinearGradient
+            colors={[PURPLE, GOLD]}
+            start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
+            style={{ height: 56, borderRadius: 17, alignItems: 'center', justifyContent: 'center' }}
           >
-            {isRestoring ? (
-              <ActivityIndicator color="rgba(255,255,255,0.4)" size="small" />
+            {isPurchasing ? (
+              <ActivityIndicator color="#FFFFFF" />
             ) : (
-              <Text style={{ fontSize: 14, color: 'rgba(255,255,255,0.4)', textDecorationLine: 'underline' }}>
-                Restore Purchase
+              <Text style={{ fontSize: 15, fontFamily: UI_BOLD, color: '#FFFFFF' }}>
+                Lock {FOUNDING_PRICE_LABEL}/{BILLING_PERIOD_LABEL}
               </Text>
             )}
-          </Pressable>
+          </LinearGradient>
+        </Pressable>
 
-          {/* Fine print */}
-          <Text style={{
-            fontSize: 12,
-            color: 'rgba(255,255,255,0.25)',
-            textAlign: 'center',
-            lineHeight: 18,
-            paddingHorizontal: 16,
-          }}>
-            One-time purchase. No subscriptions. No hidden fees.{'\n'}
-            Payment will be charged to your App Store or Google Play account.
-          </Text>
-        </ScrollView>
-      </LinearGradient>
+        <View style={{ flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 14, marginTop: 14 }}>
+          <Pressable onPress={handleRestore} disabled={busy} hitSlop={8}>
+            {isRestoring ? (
+              <ActivityIndicator size="small" color={INK_MUTED} />
+            ) : (
+              <Text style={{ fontSize: 12, color: INK_MUTED, textDecorationLine: 'underline' }}>Restore purchase</Text>
+            )}
+          </Pressable>
+        </View>
+
+        {/* Required disclosure. Auto-renewal and cancellation must be stated on
+            the screen that takes the money — a store review checks for exactly
+            this, and its absence is a rejection. */}
+        <Text style={{ textAlign: 'center', fontSize: 10.5, color: INK_FAINT, marginTop: 12, lineHeight: 16 }}>
+          Renews every {BILLING_PERIOD_LABEL} at {FOUNDING_PRICE_LABEL} until cancelled. Cancel any time in your
+          App Store or Google Play account settings. Your founding rate stays {FOUNDING_PRICE_LABEL} for as long
+          as the subscription remains active.
+        </Text>
+      </ScrollView>
     </View>
   );
 }
