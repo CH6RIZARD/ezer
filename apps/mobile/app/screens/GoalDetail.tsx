@@ -42,8 +42,9 @@ export default function GoalDetailScreen() {
   const {
     goals,
     autoSave,
-    checkingBalance,
-    checkingLabel,
+    // checkingBalance / checkingLabel were only ever read by the removed
+    // "How this works" card. The goal screen has no business showing a
+    // checking-account balance.
     preview,
     transactionsForGoal,
     setGoalAutoSave,
@@ -318,7 +319,7 @@ export default function GoalDetailScreen() {
                 <Body style={{ marginTop: 3, lineHeight: 17 }}>
                   {goal.autoSave
                     ? funded
-                      ? 'This goal is funded, so runs skip it.'
+                      ? 'This goal is funded, so spare money goes to your other goals.'
                       : shareOfNext > 0
                       ? `About ${formatCents(
                           dollarsToCents(shareOfNext)
@@ -356,57 +357,37 @@ export default function GoalDetailScreen() {
             )}
           </Surface>
 
-          {/* --- the rule, stated ------------------------------------------- */}
-          <SectionHeader style={styles.section}>How this works</SectionHeader>
-          <Surface style={{ padding: 16, gap: 12 }}>
+          {/* --- reaching the goal -------------------------------------------
+              This card used to be titled "How this works" and printed the
+              engine's inputs at the user: their checking balance, the buffer,
+              the weekly cap, and a bare "Skipping" when a run found nothing
+              spare. That is the sweep algorithm's own vocabulary, and on a
+              GOAL screen it answers a question nobody asked — the person is
+              here to see whether their trip fund is coming along, not to audit
+              a cash-flow rule. "Skipping" in particular reads as the app
+              refusing them.
+
+              What belongs here is the goal: is it growing on its own, and how
+              much is left. The controls that actually change the behaviour
+              live on the Savings tab, so this points there instead of
+              duplicating them. ------------------------------------------- */}
+          <SectionHeader style={styles.section}>Reaching this goal</SectionHeader>
+          <Surface style={{ padding: 16, gap: 10 }}>
             <Body style={{ lineHeight: 18 }}>
-              Once a week we look at your checking account and work out what you can spare above
-              the buffer you set, without going over your weekly cap. Whatever is spare gets split
-              across your active goals by how much each still needs. You never pick an amount.
+              {goal.autoSave
+                ? 'This goal grows on its own. Every week we set aside whatever you can comfortably spare, and this goal takes a share of it based on how much it still needs — so it fills faster when you have room and pauses when you do not.'
+                : 'Automatic saving is off for this goal, so it only grows when you add money yourself.'}
             </Body>
 
-            <View style={[styles.ruleRow, { borderTopColor: colors.line }]}>
-              <Text style={[styles.ruleLabel, { color: colors.mut }]}>
-                {checkingLabel ?? 'Checking balance'}
-              </Text>
-              <Text style={[styles.ruleValue, { color: colors.ink }]}>
-                {/* null means no bank linked yet — an em dash, not a fake $0.00. */}
-                {checkingBalance === null
-                  ? 'Not linked'
-                  : formatCents(dollarsToCents(checkingBalance))}
-              </Text>
-            </View>
-            <View style={styles.ruleRow}>
-              <Text style={[styles.ruleLabel, { color: colors.mut }]}>Your buffer</Text>
-              <Text style={[styles.ruleValue, { color: colors.ink }]}>
-                −{formatCents(dollarsToCents(autoSave.bufferDollars))}
-              </Text>
-            </View>
-            <View style={styles.ruleRow}>
-              <Text style={[styles.ruleLabel, { color: colors.mut }]}>Most we move per week</Text>
-              <Text style={[styles.ruleValue, { color: colors.ink }]}>
-                {formatCents(dollarsToCents(autoSave.weeklyCapDollars))}
-              </Text>
-            </View>
-            <View
-              style={[
-                styles.ruleRow,
-                { borderTopColor: colors.line, borderTopWidth: 1, paddingTop: 10 },
-              ]}
+            <Pressable
+              onPress={() => router.push('/(tabs)/savings')}
+              hitSlop={8}
+              style={{ paddingTop: 2 }}
             >
-              <Text
-                style={[styles.ruleLabel, { color: colors.ink, fontFamily: fontFamily.semibold }]}
-              >
-                This week
+              <Text style={[typeScale.cardTitle, { color: colors.accent, fontSize: 14 }]}>
+                Adjust automatic saving
               </Text>
-              <Text style={[styles.ruleValue, { color: colors.success }]}>
-                {preview.unknown
-                  ? 'Unknown'
-                  : preview.wouldSweep
-                  ? formatCents(dollarsToCents(preview.amountDollars))
-                  : 'Skipping'}
-              </Text>
-            </View>
+            </Pressable>
           </Surface>
 
           {/* --- activity ---------------------------------------------------- */}

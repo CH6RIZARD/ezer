@@ -1,0 +1,232 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>EZER — Pay in four. Leak in zero.</title>
+<meta name="description" content="EZER splits any purchase into four payments and catches every subscription before it bills.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Instrument+Serif:ital@0;1&display=swap">
+<style>
+
+body{margin:0;background:#151021;font-family:'Space Grotesk',system-ui,sans-serif;color:#F1EAF9}
+a{color:#C4A9F7;text-decoration:none}a:hover{color:#D6B36F}
+@keyframes ezFloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-7px)}}
+@keyframes ezSpin{from{transform:rotateY(0deg)}to{transform:rotateY(360deg)}}
+@keyframes ezPulse{0%,100%{box-shadow:0 0 0 0 rgba(196,161,90,.45)}50%{box-shadow:0 0 0 9px rgba(196,161,90,0)}}
+@keyframes ezMarq{from{transform:translateX(0)}to{transform:translateX(-50%)}}
+@keyframes ezRise{from{opacity:0;transform:translateY(26px)}to{opacity:1;transform:none}}
+
+.hv0:hover{background:#5B21B6;color:#fff}
+.hv1:hover{color:#fff;filter:brightness(1.12)}
+.hv2:hover{color:#fff;border-color:#5B21B6}
+.hv3:hover{color:#fff;background:#5B21B6}
+.hv4:hover{color:#151021;filter:brightness(1.05)}
+.hv5:hover{border-color:#3B2F5A}
+html{scroll-behavior:smooth}
+*{box-sizing:border-box}
+:focus-visible{outline:2px solid #D6B36F;outline-offset:3px;border-radius:4px}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+/* The section links plus the Download pill measure 353px, which pushes the
+   header past a 390px viewport and makes the whole document scroll sideways.
+   Below that width the in-page links go; the Download action stays. */
+@media (max-width:720px){
+  .ez-nav a[href="#card"],.ez-nav a[href="#radar"],.ez-nav a[href="#demo"]{display:none}
+}
+</style>
+</head>
+<body>
+<div style="min-height:100vh;background:radial-gradient(900px 600px at 50% -10%, #251C3D, #151021 60%)">
+
+<div style="max-width:1080px;margin:0 auto;padding:0 24px;display:flex;align-items:center;justify-content:space-between;height:76px">
+<div style="font-family:'Instrument Serif',serif;font-style:italic;font-size:30px;letter-spacing:-1px">Ezer</div>
+<div class="ez-nav" style="display:flex;align-items:center;gap:22px;font-size:13.5px;font-weight:600;color:#A79BC2">
+<a href="#card">Card</a><a href="#radar">Radar</a><a href="#demo">Demo</a>
+<a href="#download" style="padding:10px 18px;border-radius:13px;background:#4C1D95;color:#fff" class="hv0">Download</a>
+</div>
+</div>
+
+<div style="max-width:1080px;margin:0 auto;padding:56px 24px 30px;display:flex;flex-wrap:wrap;align-items:center;gap:48px">
+<div style="flex:1 1 380px;min-width:0;display:flex;flex-direction:column;gap:20px">
+<div style="animation:ezRise .8s ease both;font-size:11px;font-weight:700;letter-spacing:2.5px;color:#D6B36F">EZER · PAY IN 4</div>
+<div style="animation:ezRise .8s .1s ease both;font-family:'Instrument Serif',serif;font-style:italic;font-size:clamp(44px,6.5vw,76px);line-height:1.02;letter-spacing:-2px">Pay in four.<br>Leak in zero.</div>
+<div style="animation:ezRise .8s .2s ease both;font-size:17px;line-height:1.6;color:#A79BC2;max-width:440px">One virtual card that splits any purchase into four easy payments — and a radar that catches every subscription before it bills. No interest. No credit pull.</div>
+<div style="animation:ezRise .8s .3s ease both;display:flex;flex-wrap:wrap;gap:12px">
+<a href="#download" style="height:54px;padding:0 26px;border-radius:17px;display:inline-flex;align-items:center;justify-content:center;font-weight:700;font-size:15px;color:#fff;background:linear-gradient(120deg,#4C1D95,#A87D2F)" class="hv1">Download the app</a>
+<a href="#demo" style="height:54px;padding:0 26px;border-radius:17px;display:inline-flex;align-items:center;justify-content:center;font-weight:700;font-size:15px;color:#F1EAF9;background:#1F1834;border:1px solid #3B2F5A" class="hv2">Watch a month leak</a>
+</div>
+</div>
+<div style="flex:1 1 340px;min-width:0;display:flex;justify-content:center;perspective:1200px;padding:20px 0">
+<div style="animation:ezFloat 3.6s ease-in-out infinite">
+<div style="position:relative;width:min(340px,80vw);aspect-ratio:300/188;transform-style:preserve-3d;animation:ezSpin 10s linear infinite">
+<div style="position:absolute;inset:0;border-radius:22px;background:linear-gradient(135deg,#E7C77E,#A87D2F 55%,#E7C77E)"></div>
+<div style="position:absolute;inset:0;border-radius:22px;transform:translateZ(3px);backface-visibility:hidden;overflow:hidden">
+<div style="position:absolute;inset:0;background:linear-gradient(135deg,#33303B,#17151D 55%,#0B0A10)"></div>
+<div style="position:absolute;inset:0;padding:20px 22px;display:flex;flex-direction:column">
+<div style="display:flex;justify-content:space-between;align-items:flex-start"><div style="width:42px;height:31px;border-radius:7px;background:linear-gradient(135deg,#E7C77E,#A87D2F)"></div><div style="font-size:14px;font-weight:700;letter-spacing:2.5px;color:#D6B36F">EZER</div></div>
+<div style="margin-top:auto;font-size:17px;letter-spacing:2px;color:rgba(255,255,255,.92)">••••&nbsp;&nbsp;••••&nbsp;&nbsp;••••&nbsp;&nbsp;••••</div>
+<div style="display:flex;justify-content:space-between;margin-top:11px;font-size:10px;font-weight:700;letter-spacing:1px;color:rgba(255,255,255,.55)"><div>EZER MEMBER</div><div>PAY IN 4</div></div>
+</div>
+</div>
+<div style="position:absolute;inset:0;border-radius:22px;transform:rotateY(180deg) translateZ(3px);backface-visibility:hidden;background:linear-gradient(135deg,#3B1580,#1E0B45 55%,#0E0724);overflow:hidden">
+<div style="position:absolute;top:24px;left:0;right:0;height:40px;background:#0B0812"></div>
+<div style="position:absolute;top:84px;left:22px;right:22px;height:32px;border-radius:7px;background:rgba(255,255,255,.9);display:flex;align-items:center;justify-content:flex-end;padding:0 13px;font-size:14px;letter-spacing:2px;color:#241A38">•••</div>
+<div style="position:absolute;bottom:17px;left:22px;font-size:9px;font-weight:700;letter-spacing:1px;color:rgba(255,255,255,.45)">SINGLE-USE VIRTUAL CARD</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+
+<div style="overflow:hidden;white-space:nowrap;padding:10px 0 34px;opacity:.55">
+<div style="display:inline-flex;gap:12px;animation:ezMarq 30s linear infinite">
+<span id="ez-marq"></span>
+</div>
+</div>
+
+<div id="card" style="max-width:1080px;margin:0 auto;padding:64px 24px;display:flex;flex-direction:column;gap:28px">
+<div style="font-size:11px;font-weight:700;letter-spacing:2.5px;color:#D6B36F">THE CARD</div>
+<div style="font-family:'Instrument Serif',serif;font-style:italic;font-size:clamp(30px,4vw,44px);line-height:1.08;max-width:560px">Split anything in four.</div>
+<div style="font-size:15.5px;line-height:1.6;color:#A79BC2;max-width:560px">Check out anywhere with a single-use virtual card. Ezer pays the merchant in full; you pay in four, two weeks apart, with zero interest and zero fine print.</div>
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;max-width:720px">
+<div style="background:rgba(214,179,111,.15);border:1px solid #6E572B;border-radius:16px;padding:18px 14px"><div style="font-size:10px;font-weight:700;letter-spacing:.5px;color:#D6B36F">PAY 1</div><div style="font-size:19px;font-weight:700;margin-top:5px">Today</div><div style="font-size:12px;color:#A79BC2;margin-top:3px">25% at checkout</div></div>
+<div style="background:#1F1834;border:1px solid #2C2347;border-radius:16px;padding:18px 14px"><div style="font-size:10px;font-weight:700;letter-spacing:.5px;color:#6F6390">PAY 2</div><div style="font-size:19px;font-weight:700;margin-top:5px">+2 weeks</div><div style="font-size:12px;color:#A79BC2;margin-top:3px">auto, reminded first</div></div>
+<div style="background:#1F1834;border:1px solid #2C2347;border-radius:16px;padding:18px 14px"><div style="font-size:10px;font-weight:700;letter-spacing:.5px;color:#6F6390">PAY 3</div><div style="font-size:19px;font-weight:700;margin-top:5px">+4 weeks</div><div style="font-size:12px;color:#A79BC2;margin-top:3px">auto, reminded first</div></div>
+<div style="background:#1F1834;border:1px solid #2C2347;border-radius:16px;padding:18px 14px"><div style="font-size:10px;font-weight:700;letter-spacing:.5px;color:#6F6390">PAY 4</div><div style="font-size:19px;font-weight:700;margin-top:5px">+6 weeks</div><div style="font-size:12px;color:#A79BC2;margin-top:3px">done. no interest paid</div></div>
+</div>
+</div>
+
+<div id="radar" style="background:#120D20;border-top:1px solid #241C3D;border-bottom:1px solid #241C3D">
+<div style="max-width:1080px;margin:0 auto;padding:64px 24px;display:flex;flex-wrap:wrap;gap:44px;align-items:center">
+<div style="flex:1 1 380px;min-width:0;display:flex;flex-direction:column;gap:18px">
+<div style="font-size:11px;font-weight:700;letter-spacing:2.5px;color:#D6B36F">THE RADAR</div>
+<div style="font-family:'Instrument Serif',serif;font-style:italic;font-size:clamp(30px,4vw,44px);line-height:1.08">Every renewal, seen coming.</div>
+<div style="font-size:15.5px;line-height:1.6;color:#A79BC2">Ezer watches your calendar of charges 30 days out. Trials get flagged before they bill, renewals before they sneak. Cancel anything in one tap.</div>
+</div>
+<div style="flex:1 1 340px;min-width:0;background:#1F1834;border:1px solid #2C2347;border-radius:22px;padding:20px;display:flex;flex-direction:column;gap:14px">
+<div style="display:flex;align-items:center;gap:12px"><div style="width:42px;height:42px;border-radius:13px;background:#E50914;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:18px;flex:none">N</div><div style="flex:1;min-width:0"><div style="font-size:15px;font-weight:700">Netflix</div><div style="font-size:12px;color:#A79BC2">Renewal · $15.49</div></div><div style="padding:6px 11px;border-radius:10px;background:rgba(224,112,90,.16);color:#E0705A;font-size:11px;font-weight:700">in 3d</div></div>
+<div style="display:flex;align-items:center;gap:12px"><div style="width:42px;height:42px;border-radius:13px;background:#17B26A;display:flex;align-items:center;justify-content:center;color:#0B0812;font-weight:700;font-size:18px;flex:none">H</div><div style="flex:1;min-width:0"><div style="font-size:15px;font-weight:700">Hulu</div><div style="font-size:12px;color:#A79BC2">Trial ends · becomes $17.99/mo</div></div><div style="padding:6px 11px;border-radius:10px;background:rgba(214,179,111,.15);color:#D6B36F;font-size:11px;font-weight:700;animation:ezPulse 2.4s infinite">in 5d</div></div>
+<div style="display:flex;align-items:center;gap:12px"><div style="width:42px;height:42px;border-radius:13px;background:#FA0F00;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:18px;flex:none">A</div><div style="flex:1;min-width:0"><div style="font-size:15px;font-weight:700">Adobe CC</div><div style="font-size:12px;color:#A79BC2">Renewal · $22.99</div></div><div style="padding:6px 11px;border-radius:10px;background:rgba(224,112,90,.16);color:#E0705A;font-size:11px;font-weight:700">in 9d</div></div>
+</div>
+</div>
+</div>
+
+<div id="demo" style="max-width:1080px;margin:0 auto;padding:64px 24px;display:flex;flex-wrap:wrap;gap:44px;align-items:center">
+<div style="flex:1 1 360px;min-width:0;background:#1F1834;border:1px solid #2C2347;border-radius:24px;padding:18px;max-width:460px">
+<div style="display:flex;justify-content:space-between;align-items:baseline;padding:0 4px 12px"><div style="font-family:'Instrument Serif',serif;font-style:italic;font-size:21px">October</div><div style="font-size:10px;font-weight:700;letter-spacing:.8px;color:#6F6390">AUTO-REPLAY</div></div>
+<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px;padding:0 0 7px;font-size:9px;font-weight:700;letter-spacing:.5px;color:#6F6390;text-align:center"><div>SUN</div><div>MON</div><div>TUE</div><div>WED</div><div>THU</div><div>FRI</div><div>SAT</div></div>
+<div id="ez-cal" style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px"></div>
+<div style="margin-top:14px;display:flex;justify-content:space-between;align-items:baseline;padding:0 4px"><div style="font-size:11px;font-weight:700;letter-spacing:.8px;color:#A79BC2">DRAINED SO FAR</div><div style="font-family:'Instrument Serif',serif;font-style:italic;font-size:38px;color:#E0705A"><span id="ez-total">$0.00</span></div></div>
+</div>
+<div style="flex:1 1 340px;min-width:0;display:flex;flex-direction:column;gap:18px">
+<div style="font-size:11px;font-weight:700;letter-spacing:2.5px;color:#D6B36F">MEANWHILE, LAST MONTH</div>
+<div style="font-family:'Instrument Serif',serif;font-style:italic;font-size:clamp(30px,4vw,44px);line-height:1.08">This is a month, leaking.</div>
+<div style="font-size:15.5px;line-height:1.6;color:#A79BC2">Six charges, $116.45, and nobody noticed a single one. Watch it drain — then imagine every one of them flagged in advance instead.</div>
+<div><a href="#download" style="height:50px;padding:0 24px;border-radius:16px;display:inline-flex;align-items:center;justify-content:center;font-weight:700;font-size:14.5px;color:#fff;background:#4C1D95" class="hv3">Ezer notices</a></div>
+</div>
+</div>
+
+<div id="download" style="background:linear-gradient(120deg,#31136E,#1E0B45)">
+<div style="max-width:1080px;margin:0 auto;padding:72px 24px;display:flex;flex-direction:column;align-items:center;gap:20px;text-align:center">
+<div style="font-family:'Instrument Serif',serif;font-style:italic;font-size:clamp(34px,5vw,54px);line-height:1.05">Your money, with a bodyguard.</div>
+<div style="font-size:15.5px;line-height:1.6;color:#C4B4E4;max-width:440px">Sixty seconds to set up. Free to start. Cancel anything from one screen.</div>
+<div style="display:flex;flex-wrap:wrap;gap:12px;justify-content:center">
+<a href="#download" style="height:56px;padding:0 34px;border-radius:17px;display:inline-flex;align-items:center;gap:10px;font-weight:700;font-size:15px;color:#151021;background:#F1EAF9" class="hv4">Join the waitlist</a>
+</div>
+<div style="font-size:11px;color:#8E7FB8">Bank-grade 256-bit encryption · We never sell your data</div>
+</div>
+</div>
+
+
+<div style="border-top:1px solid #241C3D">
+<div style="max-width:1080px;margin:0 auto;padding:28px 24px;display:flex;flex-wrap:wrap;gap:14px;align-items:center;justify-content:space-between;font-size:12px;color:#6F6390">
+<div style="font-family:'Instrument Serif',serif;font-style:italic;font-size:20px;color:#F1EAF9">Ezer</div>
+<div style="display:flex;flex-wrap:wrap;gap:18px;align-items:center"><a href="privacy.html">Privacy Policy</a><a href="data-retention-policy.html">Data Retention</a><a href="mailto:daniel4chigs@gmail.com">Contact</a><span>© 2026 EZER · 7308 Forest Bend Drive, Parker, Texas</span></div>
+</div>
+</div>
+
+</div>
+<script>
+
+(function () {
+  var MARQ = [
+    { pre: 'Netflix',    hl: '-$15.49',      hc: '#E0705A', post: 'caught' },
+    { pre: 'Hulu trial', hl: 'flagged',      hc: '#D6B36F', post: '' },
+    { pre: 'Adobe CC',   hl: '-$22.99',      hc: '#E0705A', post: 'caught' },
+    { pre: 'Spotify',    hl: '-$11.99',      hc: '#E0705A', post: 'caught' },
+    { pre: 'Gym app',    hl: 'renewal seen', hc: '#D6B36F', post: '' },
+    { pre: 'YouTube',    hl: '-$13.99',      hc: '#E0705A', post: 'caught' },
+    { pre: 'Figma',      hl: '-$34',         hc: '#E0705A', post: 'caught' },
+    { pre: 'Split in 4', hl: '$212 sofa',    hc: '#C4A9F7', post: '' },
+    { pre: 'iCloud',     hl: '-$2.99',       hc: '#E0705A', post: 'caught' }
+  ];
+  var CH = [
+    { d: 3,  l: 'N', c: '#E50914', a: 15.49 },
+    { d: 7,  l: 'S', c: '#1DB954', a: 11.99 },
+    { d: 12, l: 'Y', c: '#FF0033', a: 13.99 },
+    { d: 16, l: 'A', c: '#FA0F00', a: 22.99 },
+    { d: 21, l: 'F', c: '#4C1D95', a: 34.00 },
+    { d: 27, l: 'H', c: '#17B26A', a: 17.99 }
+  ];
+
+  function esc(t) { return String(t).replace(/[&<>"]/g, function (c) { return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]; }); }
+
+  // marquee — the track is duplicated so the -50% translate loops seamlessly
+  var marq = document.getElementById('ez-marq');
+  if (marq) {
+    var chip = MARQ.map(function (m) {
+      return '<span style="padding:8px 14px;border-radius:12px;background:#1F1834;border:1px solid #2C2347;font-size:11.5px;font-weight:600;color:#A79BC2">'
+        + esc(m.pre) + ' <span style="color:' + m.hc + ';font-weight:700">' + esc(m.hl) + '</span> ' + esc(m.post) + '</span>';
+    }).join('');
+    marq.outerHTML = chip + chip;
+  }
+
+  // calendar replay
+  var cal = document.getElementById('ez-cal');
+  var total = document.getElementById('ez-total');
+  if (cal && total) {
+    var byDay = {};
+    CH.forEach(function (ch, i) { byDay[ch.d] = { idx: i, l: ch.l, c: ch.c, a: ch.a }; });
+    var shown = 0, pause = 0;
+
+    function draw() {
+      var out = '';
+      for (var i = 0; i < 35; i++) {
+        var day = i - 3, inM = day >= 1 && day <= 31, ch = inM ? byDay[day] : null;
+        var on = ch ? ch.idx < shown : false;
+        out += '<div style="min-height:52px;border-radius:10px;background:'
+          + (ch ? '#2C2148' : (inM ? '#251E40' : 'transparent'))
+          + ';padding:4px 2px;display:flex;flex-direction:column;align-items:center;gap:1px">'
+          + '<div style="font-size:10px;font-weight:600;color:#A79BC2">' + (inM ? day : '') + '</div>';
+        if (ch) {
+          out += '<div style="opacity:' + (on ? 1 : 0) + ';transform:scale(' + (on ? 1 : 0.4)
+            + ');transition:all .35s cubic-bezier(.2,.9,.3,1.2);display:flex;flex-direction:column;align-items:center;gap:1px">'
+            + '<div style="width:17px;height:17px;border-radius:6px;background:' + ch.c
+            + ';display:flex;align-items:center;justify-content:center;color:#fff;font-size:9px;font-weight:700">' + ch.l + '</div>'
+            + '<div style="font-size:9px;font-weight:700;color:#E0705A">-$' + ch.a.toFixed(2).replace('.00', '') + '</div></div>';
+        }
+        out += '</div>';
+      }
+      cal.innerHTML = out;
+      total.textContent = '$' + CH.slice(0, shown).reduce(function (s, c) { return s + c.a; }, 0).toFixed(2);
+    }
+
+    draw();
+    if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      setInterval(function () {
+        if (shown < CH.length) { shown++; }
+        else if (++pause > 4) { pause = 0; shown = 0; }
+        draw();
+      }, 700);
+    } else {
+      shown = CH.length;
+      draw();
+    }
+  }
+
+})();
+
+</script>
+</body>
+</html>

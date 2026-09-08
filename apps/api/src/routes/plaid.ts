@@ -11,7 +11,7 @@ import {
   hasStableAmount,
 } from '@ezer/shared';
 
-function getPlaidClient() {
+export function getPlaidClient() {
   const config = new Configuration({
     basePath: PlaidEnvironments[process.env.PLAID_ENV as keyof typeof PlaidEnvironments || 'sandbox'],
     baseOptions: {
