@@ -22,6 +22,7 @@
         "EXPO_PUBLIC_API_URL": "https://ezer-api-production-fca5.up.railway.app",
         "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "762737066469-e61id3vocajiutp7v8npjfjojnsqsg8p.apps.googleusercontent.com",
         "EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID": "762737066469-bj1106o45bhlvsbiv17lsdnd5qkikqkv.apps.googleusercontent.com",
+        "EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID": "762737066469-t45p676fjopdncko53puel70kkdcf2b8.apps.googleusercontent.com",
         "EXPO_PUBLIC_FEATURE_PLAID": "1"
       }
     },
@@ -34,6 +35,13 @@
       },
       "android": {
         "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://ezer-api-production-fca5.up.railway.app",
+        "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "762737066469-e61id3vocajiutp7v8npjfjojnsqsg8p.apps.googleusercontent.com",
+        "EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID": "762737066469-t45p676fjopdncko53puel70kkdcf2b8.apps.googleusercontent.com",
+        "EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID": "762737066469-bj1106o45bhlvsbiv17lsdnd5qkikqkv.apps.googleusercontent.com",
+        "EXPO_PUBLIC_FEATURE_PLAID": "1"
       }
     },
     "preview": {
@@ -46,6 +54,7 @@
         "EXPO_PUBLIC_API_URL": "https://ezer-api-production-fca5.up.railway.app",
         "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "762737066469-e61id3vocajiutp7v8npjfjojnsqsg8p.apps.googleusercontent.com",
         "EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID": "762737066469-bj1106o45bhlvsbiv17lsdnd5qkikqkv.apps.googleusercontent.com",
+        "EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID": "762737066469-t45p676fjopdncko53puel70kkdcf2b8.apps.googleusercontent.com",
         "EXPO_PUBLIC_FEATURE_PLAID": "1"
       }
     },
@@ -60,6 +69,7 @@
         "EXPO_PUBLIC_API_URL": "https://ezer-api-production-fca5.up.railway.app",
         "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "762737066469-e61id3vocajiutp7v8npjfjojnsqsg8p.apps.googleusercontent.com",
         "EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID": "762737066469-bj1106o45bhlvsbiv17lsdnd5qkikqkv.apps.googleusercontent.com",
+        "EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID": "762737066469-t45p676fjopdncko53puel70kkdcf2b8.apps.googleusercontent.com",
         "EXPO_PUBLIC_FEATURE_PLAID": "1"
       }
     },
@@ -72,6 +82,7 @@
         "EXPO_PUBLIC_API_URL": "https://ezer-api-production-fca5.up.railway.app",
         "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "762737066469-e61id3vocajiutp7v8npjfjojnsqsg8p.apps.googleusercontent.com",
         "EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID": "762737066469-bj1106o45bhlvsbiv17lsdnd5qkikqkv.apps.googleusercontent.com",
+        "EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID": "762737066469-t45p676fjopdncko53puel70kkdcf2b8.apps.googleusercontent.com",
         "EXPO_PUBLIC_FEATURE_PLAID": "1"
       }
     }
