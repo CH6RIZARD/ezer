@@ -56,6 +56,10 @@ export default function PhysicalCardScreen() {
 
   const [finish, setFinish] = useState<CardFinish>('amethyst');
   const [strokes, setStrokes] = useState<Stroke[]>([]);
+  // Undone strokes, newest last. Drawing anything new drops them: the redo
+  // stack describes one linear history, and keeping it across a fresh stroke
+  // would let redo resurrect artwork from a branch the user abandoned.
+  const [undone, setUndone] = useState<Stroke[]>([]);
   const [color, setColor] = useState<string>(colors.gold);
   const [strokeWidth, setStrokeWidth] = useState<number>(WIDTHS[1].value);
   const [drawing, setDrawing] = useState(false);
@@ -97,14 +101,33 @@ export default function PhysicalCardScreen() {
 
   const handleStrokeEnd = useCallback((s: Stroke) => {
     setStrokes(prev => [...prev, s]);
+    setUndone([]);
   }, []);
 
   const undo = useCallback(() => {
-    setStrokes(prev => prev.slice(0, -1));
+    setStrokes(prev => {
+      if (prev.length === 0) return prev;
+      setUndone(u => [...u, prev[prev.length - 1]]);
+      return prev.slice(0, -1);
+    });
   }, []);
 
+  const redo = useCallback(() => {
+    setUndone(prev => {
+      if (prev.length === 0) return prev;
+      setStrokes(st => [...st, prev[prev.length - 1]]);
+      return prev.slice(0, -1);
+    });
+  }, []);
+
+  // Clear is undoable in one step rather than being a point of no return —
+  // the whole drawing goes onto the redo stack, so a mis-tap costs nothing.
   const clearAll = useCallback(() => {
-    setStrokes([]);
+    setStrokes(prev => {
+      if (prev.length === 0) return prev;
+      setUndone(prev.slice().reverse());
+      return [];
+    });
   }, []);
 
   const save = useCallback(async () => {
