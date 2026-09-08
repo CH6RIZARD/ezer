@@ -32,6 +32,13 @@ function getAppleAudiences(): string[] {
   const audiences = [
     process.env.APPLE_CLIENT_ID,
     process.env.APPLE_BUNDLE_ID,
+    // The app's bundle id moved to com.ezersaves.app because com.ezer.app was
+    // already taken in the Play Console. BOTH are accepted, and the old one is
+    // deliberately kept: an Apple identity token carries the bundle id it was
+    // issued to as its `aud`, so anyone who signed in from a com.ezer.app build
+    // still holds tokens with the old audience. Dropping it would reject them
+    // at login with no way to recover the account.
+    'com.ezersaves.app',
     'com.ezer.app',
   ].filter((value): value is string => Boolean(value));
 

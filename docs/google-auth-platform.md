@@ -32,8 +32,8 @@ EZER uses **native** Google Sign-In for Samsung/Android and iPhone — not the o
 | Type | Values |
 |------|--------|
 | **Web application** | Used so the mobile SDK returns an ID token. No redirect needed for native ID-token login. Copy Client ID → `EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID` + `GOOGLE_WEB_CLIENT_ID` / `GOOGLE_CLIENT_ID` |
-| **iOS** | Bundle ID: `com.ezer.app` → `EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID` + `GOOGLE_IOS_CLIENT_ID` |
-| **Android** | Package: `com.ezer.app` + SHA-1 of your signing key → `GOOGLE_ANDROID_CLIENT_ID` |
+| **iOS** | Bundle ID: `com.ezersaves.app` → `EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID` + `GOOGLE_IOS_CLIENT_ID` |
+| **Android** | Package: `com.ezersaves.app` + SHA-1 of your signing key → `GOOGLE_ANDROID_CLIENT_ID` |
 
 ### Android SHA-1
 
