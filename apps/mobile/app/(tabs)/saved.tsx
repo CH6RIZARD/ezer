@@ -13,6 +13,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../../utils/ThemeContext';
+import { usePremiumGate } from '../../utils/usePremiumGate';
 import { usePlaid } from '../../utils/usePlaid';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -114,6 +115,8 @@ function cardShell(colors: ReturnType<typeof useTheme>['colors']) {
 }
 
 export default function BnplScreen() {
+  // Saved is a real feature and was the one gated tab that never gated.
+  usePremiumGate();
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
   const { linkedAccounts, openPlaidLink, isLoading } = usePlaid();

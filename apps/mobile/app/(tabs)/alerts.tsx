@@ -11,10 +11,10 @@ import { View, Text, ScrollView, StyleSheet } from 'react-native';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../../utils/ThemeContext';
+import { usePremiumGate } from '../../utils/usePremiumGate';
 import { usePremium } from '../../utils/PremiumContext';
 import { useData, type RiskItem } from '../../contexts/DataContext';
 import { formatCents } from '../../utils/calculations';
-import { isLoosePreviewMode } from '../../utils/expoRuntime';
 import { fontFamily, typeScale, radius, layout } from '../../theme/type';
 import {
   Body,
@@ -32,9 +32,7 @@ export default function AlertsScreen() {
   const { status: premiumStatus } = usePremium();
   const { risks } = useData();
 
-  useEffect(() => {
-    if (premiumStatus === 'expired' && !isLoosePreviewMode()) router.replace('/screens/Paywall');
-  }, [premiumStatus]);
+  usePremiumGate();
 
   const trials = risks.filter(r => r.type === 'trial');
   const renewals = risks.filter(r => r.type === 'renewal');

@@ -17,11 +17,11 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useTheme } from '../../utils/ThemeContext';
+import { usePremiumGate } from '../../utils/usePremiumGate';
 import { usePremium } from '../../utils/PremiumContext';
 import { useData } from '../../contexts/DataContext';
 import { formatCents } from '../../utils/calculations';
 
-import { isLoosePreviewMode } from '../../utils/expoRuntime';
 import { fontFamily, typeScale, radius, layout, motion } from '../../theme/type';
 import {
   Label,
@@ -63,11 +63,7 @@ export default function HomeScreen() {
   const [monthOffset, setMonthOffset] = useState(0);
   const [popDate, setPopDate] = useState<Date | null>(null);
 
-  useEffect(() => {
-    if (premium.status === 'expired' && !isLoosePreviewMode()) {
-      router.replace('/screens/Paywall');
-    }
-  }, [premium.status]);
+  usePremiumGate();
 
   // --- calendar model ---------------------------------------------------------
   const month = useMemo(() => {
