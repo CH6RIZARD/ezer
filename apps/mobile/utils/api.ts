@@ -92,6 +92,10 @@ export const api = {
   get: <T>(path: string) => request<T>('GET', path),
   post: <T>(path: string, body?: any) => request<T>('POST', path, body),
   patch: <T>(path: string, body?: any) => request<T>('PATCH', path, body),
+  // Account deletion is the only DELETE the app makes, and it had no client
+  // method — which is part of why the endpoint shipped with nothing calling it
+  // while the privacy policy promised users could delete from inside the app.
+  del: <T>(path: string) => request<T>('DELETE', path),
 
   setToken: (token: string) => AsyncStorage.setItem(TOKEN_KEY, token),
   clearToken: () => AsyncStorage.removeItem(TOKEN_KEY),

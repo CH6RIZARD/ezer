@@ -1,121 +1,221 @@
 // =============================================================================
-// EZER Mobile App - Account Details Screen
+// EZER Mobile — Account
+//
+// This screen used to show a stranger: `useState('John Doe')`,
+// 'john.doe@example.com', '+1 (555) 123-4567'. Save called no API, "Change
+// Password" only opened an alert, and "Two-Factor Authentication" announced
+// that it was enabled without enabling anything. A signed-in user opened their
+// own account page and saw someone else's details next to two security
+// controls that did nothing.
+//
+// It now shows the signed-in user, and it carries the two rights the published
+// privacy policy promises are exercisable "from inside the app, without asking
+// us":
+//
+//   · Download your data   → GET  /account/export
+//   · Delete your account  → DELETE /account
+//
+// Those endpoints existed server-side but nothing called them, which made the
+// policy — already submitted to Plaid — a false statement. Apple also requires
+// in-app account deletion for any app offering account creation (App Store
+// Review Guideline 5.1.1(v)); its absence is a rejection, not a nit.
+//
+// Password change and 2FA are GONE rather than reimplemented: neither has a
+// backend, and a control that reports success while doing nothing is worse
+// than no control at all.
 // =============================================================================
 
 import React, { useState } from 'react';
-import { View, Text, ScrollView, Pressable, TextInput, Alert } from 'react-native';
+import { View, Text, ScrollView, Pressable, Alert, ActivityIndicator, Share } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../../utils/ThemeContext';
+import { useAuth } from '../../utils/AuthContext';
+import { api } from '../../utils/api';
 
 export default function AccountDetailsScreen() {
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
-  const [name, setName] = useState('John Doe');
-  const [email, setEmail] = useState('john.doe@example.com');
-  const [phone, setPhone] = useState('+1 (555) 123-4567');
-  const [saved, setSaved] = useState(false);
+  const { user, logout } = useAuth();
 
-  const handleSave = () => {
-    if (!name.trim() || !email.trim()) {
-      Alert.alert('Missing Fields', 'Name and email are required.');
-      return;
+  const [busy, setBusy] = useState<null | 'export' | 'delete'>(null);
+
+  /**
+   * Data portability. The server strips passwordHash before returning, so this
+   * is the subject's data and nothing else.
+   */
+  const handleExport = async () => {
+    setBusy('export');
+    try {
+      const res: any = await api.get('/account/export');
+      const json = JSON.stringify(res?.data ?? res, null, 2);
+      await Share.share({
+        title: 'EZER account data',
+        message: json,
+      });
+    } catch (err: any) {
+      Alert.alert('Could not export', err?.message ?? 'Please try again.');
+    } finally {
+      setBusy(null);
     }
-    setSaved(true);
-    Alert.alert('Saved', 'Your account details have been updated.');
-    setTimeout(() => setSaved(false), 2000);
   };
 
-  const handleChangePassword = () => {
-    Alert.prompt
-      ? Alert.prompt('Change Password', 'Enter your new password:', [
-          { text: 'Cancel', style: 'cancel' },
-          { text: 'Update', onPress: (pwd) => {
-            if (pwd && pwd.length >= 8) {
-              Alert.alert('Password Updated', 'Your password has been changed successfully.');
-            } else {
-              Alert.alert('Error', 'Password must be at least 8 characters.');
-            }
-          }},
-        ], 'secure-text')
-      : Alert.alert(
-          'Change Password',
-          'To change your password, we\'ll send a reset link to your email address.',
-          [
-            { text: 'Cancel', style: 'cancel' },
-            { text: 'Send Reset Link', onPress: () => {
-              Alert.alert('Email Sent', `A password reset link has been sent to ${email}.`);
-            }},
-          ]
-        );
-  };
-
-  const handleToggle2FA = () => {
+  /**
+   * Deletion is irreversible and it revokes bank connections upstream at Plaid
+   * before removing anything locally, so it asks twice and names what goes.
+   */
+  const handleDelete = () => {
     Alert.alert(
-      'Two-Factor Authentication',
-      'Enable two-factor authentication for extra security. We\'ll send a verification code to your phone number each time you log in.',
+      'Delete your account?',
+      'This removes your account, your linked banks, your subscriptions and your savings goals. It cannot be undone.',
       [
         { text: 'Cancel', style: 'cancel' },
-        { text: 'Enable 2FA', onPress: () => {
-          Alert.alert('2FA Enabled', `Verification codes will be sent to ${phone} on each login.`);
-        }},
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: () => {
+            Alert.alert(
+              'Are you sure?',
+              'Your bank connections are revoked and your data is erased. There is no way back.',
+              [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                  text: 'Delete everything',
+                  style: 'destructive',
+                  onPress: async () => {
+                    setBusy('delete');
+                    try {
+                      await api.del('/account');
+                      // Clear the local session before navigating, or the app
+                      // would sit on a token for a user that no longer exists.
+                      await logout();
+                      router.replace('/onboarding');
+                    } catch (err: any) {
+                      setBusy(null);
+                      Alert.alert('Could not delete', err?.message ?? 'Please try again.');
+                    }
+                  },
+                },
+              ]
+            );
+          },
+        },
       ]
     );
   };
 
+  const rowStyle = {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    backgroundColor: colors.card,
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+  };
+
   return (
     <ScrollView style={{ flex: 1, backgroundColor: colors.background }}>
-      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 24, paddingTop: insets.top + 16 }}>
-        <Pressable onPress={() => router.back()} style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: colors.card, justifyContent: 'center', alignItems: 'center', shadowColor: colors.shadow, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.08, shadowRadius: 8, elevation: 2 }}>
+      <View
+        style={{
+          flexDirection: 'row',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          padding: 24,
+          paddingTop: insets.top + 16,
+        }}
+      >
+        <Pressable
+          onPress={() => router.back()}
+          style={{
+            width: 44, height: 44, borderRadius: 22, backgroundColor: colors.card,
+            justifyContent: 'center', alignItems: 'center',
+          }}
+        >
           <Ionicons name="arrow-back" size={24} color={colors.text} />
         </Pressable>
-        <Text style={{ fontSize: 24, fontWeight: '700', color: colors.text }}>Account Details</Text>
+        <Text style={{ fontSize: 24, fontWeight: '700', color: colors.text }}>Account</Text>
         <View style={{ width: 44 }} />
       </View>
 
       <View style={{ paddingHorizontal: 24 }}>
-        {/* Profile Section */}
-        <View style={{ marginBottom: 32 }}>
-          <Text style={{ fontSize: 16, fontWeight: '700', color: colors.textSecondary, marginBottom: 16, textTransform: 'uppercase', letterSpacing: 0.5 }}>Personal Information</Text>
+        {/* --- who you actually are ---------------------------------------- */}
+        <Text
+          style={{
+            fontSize: 13, fontWeight: '700', color: colors.textSecondary,
+            marginBottom: 12, textTransform: 'uppercase', letterSpacing: 0.5,
+          }}
+        >
+          Signed in as
+        </Text>
 
-          <View style={{ marginBottom: 20 }}>
-            <Text style={{ fontSize: 14, fontWeight: '600', color: colors.textSecondary, marginBottom: 8 }}>Full Name</Text>
-            <TextInput style={{ backgroundColor: colors.card, borderRadius: 12, padding: 16, fontSize: 16, color: colors.text, borderWidth: 1, borderColor: colors.border }} value={name} onChangeText={setName} placeholderTextColor={colors.textSecondary} />
-          </View>
-
-          <View style={{ marginBottom: 20 }}>
-            <Text style={{ fontSize: 14, fontWeight: '600', color: colors.textSecondary, marginBottom: 8 }}>Email</Text>
-            <TextInput style={{ backgroundColor: colors.card, borderRadius: 12, padding: 16, fontSize: 16, color: colors.text, borderWidth: 1, borderColor: colors.border }} value={email} onChangeText={setEmail} keyboardType="email-address" autoCapitalize="none" placeholderTextColor={colors.textSecondary} />
-          </View>
-
-          <View style={{ marginBottom: 20 }}>
-            <Text style={{ fontSize: 14, fontWeight: '600', color: colors.textSecondary, marginBottom: 8 }}>Phone Number</Text>
-            <TextInput style={{ backgroundColor: colors.card, borderRadius: 12, padding: 16, fontSize: 16, color: colors.text, borderWidth: 1, borderColor: colors.border }} value={phone} onChangeText={setPhone} keyboardType="phone-pad" placeholderTextColor={colors.textSecondary} />
-          </View>
+        <View
+          style={{
+            backgroundColor: colors.card, borderRadius: 12, padding: 16,
+            borderWidth: 1, borderColor: colors.border, marginBottom: 32,
+          }}
+        >
+          <Text style={{ fontSize: 17, fontWeight: '600', color: colors.text }}>
+            {user?.name || '—'}
+          </Text>
+          <Text style={{ fontSize: 14, color: colors.textSecondary, marginTop: 4 }}>
+            {user?.email || '—'}
+          </Text>
         </View>
 
-        {/* Security Section */}
-        <View style={{ marginBottom: 32 }}>
-          <Text style={{ fontSize: 16, fontWeight: '700', color: colors.textSecondary, marginBottom: 16, textTransform: 'uppercase', letterSpacing: 0.5 }}>Security</Text>
+        {/* --- rights ------------------------------------------------------- */}
+        <Text
+          style={{
+            fontSize: 13, fontWeight: '700', color: colors.textSecondary,
+            marginBottom: 12, textTransform: 'uppercase', letterSpacing: 0.5,
+          }}
+        >
+          Your data
+        </Text>
 
-          <Pressable onPress={handleChangePassword} style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: colors.card, padding: 16, borderRadius: 12, marginBottom: 12, shadowColor: colors.shadow, shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 4, elevation: 1 }}>
-            <Ionicons name="key-outline" size={24} color={colors.text} />
-            <Text style={{ flex: 1, fontSize: 16, fontWeight: '600', color: colors.text, marginLeft: 12 }}>Change Password</Text>
-            <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
-          </Pressable>
-
-          <Pressable onPress={handleToggle2FA} style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: colors.card, padding: 16, borderRadius: 12, marginBottom: 12, shadowColor: colors.shadow, shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 4, elevation: 1 }}>
-            <Ionicons name="shield-checkmark-outline" size={24} color={colors.text} />
-            <Text style={{ flex: 1, fontSize: 16, fontWeight: '600', color: colors.text, marginLeft: 12 }}>Two-Factor Authentication</Text>
-            <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
-          </Pressable>
-        </View>
-
-        {/* Save Button */}
-        <Pressable onPress={handleSave} style={{ backgroundColor: colors.accent, paddingVertical: 16, borderRadius: 12, alignItems: 'center', shadowColor: colors.accent, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8, elevation: 4, marginBottom: insets.bottom + 40 }}>
-          <Text style={{ color: '#1F2933', fontSize: 16, fontWeight: '700' }}>{saved ? 'Saved!' : 'Save Changes'}</Text>
+        <Pressable onPress={handleExport} disabled={busy !== null} style={rowStyle}>
+          {busy === 'export' ? (
+            <ActivityIndicator color={colors.text} />
+          ) : (
+            <Ionicons name="download-outline" size={22} color={colors.text} />
+          )}
+          <View style={{ flex: 1, marginLeft: 12 }}>
+            <Text style={{ fontSize: 16, fontWeight: '600', color: colors.text }}>
+              Download your data
+            </Text>
+            <Text style={{ fontSize: 13, color: colors.textSecondary, marginTop: 2 }}>
+              Everything we hold about you, as a file.
+            </Text>
+          </View>
         </Pressable>
+
+        <Pressable onPress={handleDelete} disabled={busy !== null} style={rowStyle}>
+          {busy === 'delete' ? (
+            <ActivityIndicator color={colors.danger} />
+          ) : (
+            <Ionicons name="trash-outline" size={22} color={colors.danger} />
+          )}
+          <View style={{ flex: 1, marginLeft: 12 }}>
+            <Text style={{ fontSize: 16, fontWeight: '600', color: colors.danger }}>
+              Delete your account
+            </Text>
+            <Text style={{ fontSize: 13, color: colors.textSecondary, marginTop: 2 }}>
+              Erases your data and disconnects your banks. Permanent.
+            </Text>
+          </View>
+        </Pressable>
+
+        <Text
+          style={{
+            fontSize: 12, lineHeight: 18, color: colors.textSecondary,
+            marginTop: 12, marginBottom: insets.bottom + 40,
+          }}
+        >
+          Deleting revokes every bank connection with Plaid before your records are
+          removed, so nothing stays linked to your bank afterwards.
+        </Text>
       </View>
     </ScrollView>
   );
