@@ -28,7 +28,7 @@ export function configureGoogleSignIn(): void {
 
   if (Platform.OS === 'ios' && !iosClientId) {
     throw new Error(
-      'Missing EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID. Create an iOS client with bundle ID com.ezer.app.'
+      'Missing EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID. Create an iOS client with bundle ID com.ezersaves.app.'
     );
   }
 

@@ -15,7 +15,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 ENV_FILE="$ROOT/.env"
 GCLOUD="${GCLOUD:-$HOME/google-cloud-sdk/bin/gcloud}"
 PROJECT_ID="${1:-${GOOGLE_CLOUD_PROJECT:-ezer-app}}"
-BUNDLE_ID="com.ezer.app"
+BUNDLE_ID="com.ezersaves.app"
 ANDROID_SHA1="${ANDROID_SHA1:-70:F2:45:F4:77:A4:A6:7E:5E:93:7F:EB:87:69:FB:03:DF:E7:C9:F7}"
 
 if [[ ! -x "$GCLOUD" ]]; then
@@ -206,7 +206,7 @@ Auth Platform UI / brand wizard first, or a different privileged API).
 Do this once in the browser, then re-run with IDs:
 
   1) https://console.cloud.google.com/auth/clients
-  2) Create Web + iOS (com.ezer.app) + Android (com.ezer.app + SHA-1)
+  2) Create Web + iOS (com.ezersaves.app) + Android (com.ezersaves.app + SHA-1)
   3) Paste IDs:
 
      ./scripts/write-google-env.sh \
