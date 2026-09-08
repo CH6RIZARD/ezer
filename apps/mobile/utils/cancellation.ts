@@ -21,7 +21,6 @@
 
 import { Linking, Alert } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { getMerchantById } from './demoData';
 
 const CACHE_KEY = '@ezer_cancel_urls';
 /** Per-request budget. Probing must never make a Cancel button feel hung. */
@@ -193,7 +192,11 @@ export function resolveCancellationUrlSync(
   merchantId?: string,
   merchantCancellationUrl?: string
 ): CancellationTarget | undefined {
-  const explicit = merchantCancellationUrl ?? getMerchantById(merchantId ?? '')?.cancellationUrl;
+  // The caller passes the merchant's cancellation URL straight from the API.
+  // This used to fall back to a lookup in the bundled demo merchant table,
+  // whose ids never match real Plaid merchants — so it only ever returned
+  // undefined while keeping demoData alive in the bundle.
+  const explicit = merchantCancellationUrl;
   if (explicit) return { url: explicit, source: 'merchant', merchantName };
 
   for (const candidate of [normalise(merchantId), normalise(merchantName)]) {
