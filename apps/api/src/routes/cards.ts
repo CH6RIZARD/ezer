@@ -8,19 +8,15 @@
 //        · mode 'plaid'    → bank-connected trust assessment, reveals a limit
 //        · mode 'waitlist' → plain early-access list, no limit yet
 //
-// PERSISTENCE: in-memory on purpose. There is no CardDesign / CardAccessList
-// model in packages/db/prisma/schema.prisma, and adding one needs a schema
-// change plus a migration that this module does not own.
-// TODO(production): replace the two Maps below with Prisma models —
-//   model CardDesign     { id, userId, finish, strokes Json, updatedAt }
-//   model CardAccessList { id, userId, designId, mode, status, limitCents,
-//                          trustScore, decidedAt }
-// and index CardAccessList by userId so a user has at most one live entry.
-// Everything else in this file (validation, scoring, response shapes) is
-// storage-agnostic and survives that swap unchanged.
+// PERSISTENCE: Prisma. This used to hold both records in process-local Maps,
+// which meant every deploy erased every saved design and every access-list
+// decision — and Railway deploys on each push to main. Validation, scoring and
+// the response shapes were written storage-agnostic and are unchanged by the
+// swap; only the four reads and writes below moved.
 // =============================================================================
 
 import { FastifyInstance, FastifyRequest } from 'fastify';
+import { prisma } from '@ezer/db';
 import { verifyJwt, extractTokenFromHeader } from '../utils/jwt';
 
 // -----------------------------------------------------------------------------
@@ -29,14 +25,6 @@ import { verifyJwt, extractTokenFromHeader } from '../utils/jwt';
 
 type CardStroke = { d: string; color: string; width: number };
 
-type CardDesignRecord = {
-  id: string;
-  userId: string;
-  finish: string;
-  strokes: CardStroke[];
-  updatedAt: string;
-  createdAt: string;
-};
 
 type AccessMode = 'plaid' | 'waitlist';
 
@@ -46,17 +34,6 @@ type AccessMode = 'plaid' | 'waitlist';
  */
 type AccessStatus = 'approved_pending_issuance' | 'manual_review' | 'waitlist';
 
-type AccessRecord = {
-  id: string;
-  userId: string;
-  designId: string | null;
-  mode: AccessMode;
-  status: AccessStatus;
-  /** Money is always integer cents. Absent for waitlist entries. */
-  limitCents?: number;
-  trustScore?: number;
-  createdAt: string;
-};
 
 /**
  * Plaid-derived inputs to the trust score. The real implementation reads these
@@ -74,20 +51,6 @@ export type TrustSignals = {
   overdraftsLast90d: number;
 };
 
-// -----------------------------------------------------------------------------
-// In-memory stores (see TODO at the top of the file)
-// -----------------------------------------------------------------------------
-
-const designs = new Map<string, CardDesignRecord>();
-const accessList = new Map<string, AccessRecord>();
-
-let seq = 0;
-function newId(prefix: string): string {
-  seq += 1;
-  // Not a UUID: ids only have to be unique within a process while this is
-  // in-memory. Prisma's cuid() takes over with the model swap.
-  return `${prefix}_${Date.now().toString(36)}_${seq.toString(36)}`;
-}
 
 /**
  * Auth is OPTIONAL on these routes, unlike /wallet or /plaid.
@@ -219,20 +182,18 @@ export async function cardRoutes(server: FastifyInstance) {
       return reply.status(413).send({ success: false, error: `too many strokes (max ${MAX_STROKES})` });
     }
 
-    const now = new Date().toISOString();
-    const record: CardDesignRecord = {
-      id: newId('cdsn'),
-      userId,
-      finish,
-      strokes: strokes as CardStroke[],
-      // Client clock is untrusted for ordering, but it IS the user's own "last
-      // edited" and the client echoes it back, so it is stored as given and
-      // only defaulted when absent.
-      updatedAt: typeof updatedAt === 'string' && updatedAt ? updatedAt : now,
-      createdAt: now,
-    };
-
-    designs.set(record.id, record);
+    // Client clock is untrusted for ordering, but it IS the user's own "last
+    // edited" and the client echoes it back, so it is stored as given and only
+    // defaulted when absent. createdAt is ours and is what ordering uses.
+    const edited = typeof updatedAt === 'string' && updatedAt ? new Date(updatedAt) : new Date();
+    const record = await prisma.cardDesign.create({
+      data: {
+        userId,
+        finish,
+        strokes: strokes as unknown as object,
+        updatedAt: isNaN(edited.getTime()) ? new Date() : edited,
+      },
+    });
 
     return { success: true, data: { id: record.id } };
   });
@@ -240,7 +201,7 @@ export async function cardRoutes(server: FastifyInstance) {
   // GET /cards/designs/:id
   server.get<{ Params: { id: string } }>('/designs/:id', async (request, reply) => {
     const userId = resolveUserId(request);
-    const record = designs.get(request.params.id);
+    const record = await prisma.cardDesign.findUnique({ where: { id: request.params.id } });
 
     if (!record) {
       return reply.status(404).send({ success: false, error: 'Card design not found' });
@@ -258,7 +219,7 @@ export async function cardRoutes(server: FastifyInstance) {
         id: record.id,
         finish: record.finish,
         strokes: record.strokes,
-        updatedAt: record.updatedAt,
+        updatedAt: record.updatedAt.toISOString(),
       },
     };
   });
@@ -278,21 +239,17 @@ export async function cardRoutes(server: FastifyInstance) {
 
     // A designId is optional (someone can join the waitlist without designing)
     // but if one is given it must exist, otherwise we'd print nothing later.
-    if (designId && !designs.has(designId)) {
-      return reply.status(404).send({ success: false, error: 'Card design not found' });
+    if (designId) {
+      const exists = await prisma.cardDesign.findUnique({ where: { id: designId }, select: { id: true } });
+      if (!exists) {
+        return reply.status(404).send({ success: false, error: 'Card design not found' });
+      }
     }
 
-    const base = {
-      id: newId('cacc'),
-      userId,
-      designId: designId || null,
-      mode,
-      createdAt: new Date().toISOString(),
-    };
-
     if (mode === 'waitlist') {
-      const record: AccessRecord = { ...base, mode: 'waitlist', status: 'waitlist' };
-      accessList.set(record.id, record);
+      const record = await prisma.cardAccessList.create({
+        data: { userId, designId: designId || null, mode: 'waitlist', status: 'waitlist' },
+      });
       return { success: true, data: { status: record.status } };
     }
 
@@ -304,14 +261,9 @@ export async function cardRoutes(server: FastifyInstance) {
     const limitCents = limitForScore(score);
     const status: AccessStatus = limitCents > 0 ? 'approved_pending_issuance' : 'manual_review';
 
-    const record: AccessRecord = {
-      ...base,
-      mode: 'plaid',
-      status,
-      limitCents,
-      trustScore: score,
-    };
-    accessList.set(record.id, record);
+    await prisma.cardAccessList.create({
+      data: { userId, designId: designId || null, mode: 'plaid', status, limitCents, trustScore: score },
+    });
 
     return {
       success: true,

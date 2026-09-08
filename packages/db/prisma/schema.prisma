@@ -715,3 +715,49 @@ model ProcessorWebhookEvent {
 
   @@index([receivedAt])
 }
+
+// ============================================================================
+// Card designer
+//
+// These replace two in-process Maps. Card designs and access-list decisions
+// were held in memory, so every deploy — and Railway deploys on every push —
+// silently erased every user's saved design and approval.
+//
+// userId is a plain String, not a relation, because designing a card is a
+// pre-account action: `resolveUserId` returns the literal "anonymous" when
+// there is no token, and a foreign key cannot point at a user that does not
+// exist yet.
+// ============================================================================
+
+model CardDesign {
+  id        String   @id @default(cuid())
+  userId    String
+  finish    String
+  /// Array of { d, color, width }. Validated in routes/cards.ts before write.
+  strokes   Json
+  /// The client's own "last edited" time, echoed back to it. Untrusted for
+  /// ordering, which is what createdAt is for.
+  updatedAt DateTime
+  createdAt DateTime @default(now())
+
+  accessLists CardAccessList[]
+
+  @@index([userId])
+}
+
+model CardAccessList {
+  id         String   @id @default(cuid())
+  userId     String
+  designId   String?
+  /// "plaid" | "waitlist"
+  mode       String
+  /// "waitlist" | "approved_pending_issuance" | "manual_review"
+  status     String
+  limitCents Int?
+  trustScore Int?
+  createdAt  DateTime @default(now())
+
+  design CardDesign? @relation(fields: [designId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+}
