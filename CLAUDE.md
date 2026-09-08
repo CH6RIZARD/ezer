@@ -75,8 +75,35 @@ style problem.
   must do the same or the account becomes unreachable.
 - **Migrations do not run on deploy.** `railway.json` runs `prisma generate`
   only — `migrate deploy` needs a session-mode connection (port 5432), not the
-  transaction pooler. Apply migrations manually. `20260907000000_add_consent_record`
-  is pending as of this writing.
+  transaction pooler. Apply migrations manually.
+  `20260907000000_add_consent_record` HAS been applied to the live Supabase
+  database; future migrations still need running by hand.
+
+## Routing and the app's front door
+
+- **`app/onboarding.tsx` is the entry point for signed-out users**, not
+  `app/index.tsx`. The flow ends in its own Apple / Google / email step, so
+  `index.tsx` is a pure gate that redirects into it; restoring provider buttons
+  there gives you two competing sign-in surfaces behind one tap. `index.tsx`
+  still owns the authenticated redirects, and onboarding skips its auth step
+  when `isAuthenticated` is already true.
+- **The onboarding reads `darkTokens` directly, not `useTheme().colors`.** The
+  flow is a committed dark design; the light palette washes out the gold and
+  coral that carry the meaning (a trial about to convert, money leaving).
+- **`inset: 0` is not implemented in React Native.** It is dropped silently, so
+  an absolutely positioned box written that way has no dimensions. Use
+  top/left/right/bottom.
+- **Figures in onboarding are labelled EXAMPLE on screen and must stay that
+  way.** They illustrate the product; they are not a claim about a user's
+  account. The invented "★ 4.9", "$4.8M caught" and "$34 a month on average"
+  from the design handoff are deliberately NOT in the build — there are no
+  members to average and no store rating to quote. Do not reinstate them here
+  or in `docs/index.html`.
+- **`utils/demoData.ts` is deleted and must not come back.** It shipped 508
+  lines of invented merchants into release bundles, which is how the Wallet
+  once listed subscriptions for a user with no bank connected. Everything
+  charge-shaped comes from the API; `DataContext` deliberately shows nothing
+  rather than substituting on a failed call.
 
 ## Secrets
 
