@@ -35,7 +35,7 @@
 // =============================================================================
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { View, Text, Animated, PanResponder, StyleSheet, Easing, type StyleProp, type ViewStyle } from 'react-native';
+import { View, Text, Animated, PanResponder, Platform, StyleSheet, Easing, type StyleProp, type ViewStyle } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useTheme } from '../../utils/ThemeContext';
 import { gradients } from '../../theme/tokens';
@@ -47,6 +47,22 @@ const CARD_H = 190;
 const CONTAINER_H = 250;
 /** Matches the prototype's perspective: 1100px. */
 const PERSPECTIVE = 1100;
+
+/**
+ * Native has no equivalent of CSS's parent `perspective` property — every RN
+ * transform, on every platform, only ever composes perspective as a function
+ * inside its OWN transform array, which is why it's there on the metal core
+ * and both faces below. On the web export that same per-child pattern maps to
+ * CSS's `perspective()` TRANSFORM FUNCTION rather than the `perspective`
+ * PROPERTY, and those are not the same thing: the function gives each of the
+ * three faces its own independent 3D space instead of one shared between
+ * them, and without a shared space `backfaceVisibility: hidden` has no
+ * consistent "which way is this facing" to resolve against — so more than
+ * one face can stay visible at once, which is what showed up as mirrored and
+ * doubled text. Web gets a real shared `perspective` on the parent instead,
+ * with `perspective` dropped from each child's own transform.
+ */
+const IS_WEB = Platform.OS === 'web';
 
 export interface SpinCardProps {
   front: React.ReactNode;
@@ -262,17 +278,19 @@ export function SpinCard({ front, back, style, onTap, onDragChange, hint = 'Drag
     outputRange: [0, motion.cardFloatTravel],
   });
 
-  const faceTransform = [
-    { perspective: PERSPECTIVE },
-    { rotateX: deg(rx) },
-    { rotateY: deg(ry) },
-  ];
+  const faceTransform = IS_WEB
+    ? [{ rotateX: deg(rx) }, { rotateY: deg(ry) }]
+    : [{ perspective: PERSPECTIVE }, { rotateX: deg(rx) }, { rotateY: deg(ry) }];
 
   return (
     <View style={[styles.container, style]}>
       <Animated.View
         {...panResponder.panHandlers}
-        style={[styles.card, { transform: [{ translateY: floatY }] }]}
+        style={[
+          styles.card,
+          IS_WEB ? ({ perspective: PERSPECTIVE } as unknown as ViewStyle) : null,
+          { transform: [{ translateY: floatY }] },
+        ]}
       >
         {/* Gold metal core — sits between the faces, seen only edge-on. */}
         <Animated.View style={[styles.face, { transform: faceTransform }]}>
@@ -313,7 +331,7 @@ export function SpinCard({ front, back, style, onTap, onDragChange, hint = 'Drag
       </Animated.View>
 
       {hint ? (
-        <Text style={[styles.hint, { color: colors.mut }]}>{hint}</Text>
+        <Text selectable={false} style={[styles.hint, { color: colors.mut }]}>{hint}</Text>
       ) : null}
     </View>
   );

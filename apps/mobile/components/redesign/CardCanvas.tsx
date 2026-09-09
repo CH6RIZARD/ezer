@@ -176,18 +176,18 @@ export function CardBackFace({ finish }: { finish: CardFinish }) {
       <View style={styles.backBody} pointerEvents="none">
         <View style={styles.rowBetween}>
           <View style={[styles.nameBox, { backgroundColor: 'rgba(255,255,255,.92)' }]}>
-            <Text style={styles.nameBoxText}>EZER MEMBER</Text>
+            <Text selectable={false} style={styles.nameBoxText}>EZER MEMBER</Text>
           </View>
           <View style={[styles.cvvBox, { backgroundColor: backBoxBg }]}>
-            <Text style={[styles.cvvLabel, { color: backInk }]}>CVV</Text>
-            <Text style={[styles.cvvValue, { color: backInk }]}>•••</Text>
+            <Text selectable={false} style={[styles.cvvLabel, { color: backInk }]}>CVV</Text>
+            <Text selectable={false} style={[styles.cvvValue, { color: backInk }]}>•••</Text>
           </View>
         </View>
         <View style={{ flex: 1 }} />
-        <Text style={[styles.backNumber, { color: backInk }]}>••••  ••••  ••••  8873</Text>
+        <Text selectable={false} style={[styles.backNumber, { color: backInk }]}>••••  ••••  ••••  8873</Text>
         <View style={styles.rowBetween}>
-          <Text style={[styles.backSub, { color: backSub }]}>PHYSICAL · YOUR DESIGN</Text>
-          <Text style={[styles.backWordmark, { color: backGold }]}>EZER</Text>
+          <Text selectable={false} style={[styles.backSub, { color: backSub }]}>PHYSICAL · YOUR DESIGN</Text>
+          <Text selectable={false} style={[styles.backWordmark, { color: backGold }]}>EZER</Text>
         </View>
       </View>
     </View>
