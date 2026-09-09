@@ -171,8 +171,8 @@ export type CardFinish = keyof typeof cardFinishes;
 /**
  * Card BACK finish, one shade darker/richer than the front per finish. The
  * Card Studio comp locks identifying details (name, number, CVV, expiry) to
- * this face — the front carries only the chip and contactless mark — so the
- * back needs its own gradient, not a reuse of `cardFinishes`.
+ * this face — the front carries only the chip — so the back needs its own
+ * gradient, not a reuse of `cardFinishes`.
  */
 export const cardBackFinishes = {
   amethyst: ['#3B1580', '#1E0B45', '#0E0724'] as const,

@@ -7,9 +7,9 @@
 // anything to be excited about is what kills conversion on card products, so
 // this screen never mentions limits — only the required approval disclosure.
 //
-// LOCKED layout (Card Studio comp): the front carries only the chip and the
-// contactless mark, no wording — name, masked number, CVV and expiry live on
-// the back, reached with the flip control. See CardCanvas.tsx.
+// LOCKED layout (Card Studio comp): the front carries only the chip, no
+// wording — name, masked number, CVV and expiry live on the back, reached
+// with the flip control. See CardCanvas.tsx.
 //
 // Ink is: gold foil, a custom mixer (hue + lightness, built on PanResponder —
 // no Reanimated in deps), and 20 named pigments — the comp's tool row, which

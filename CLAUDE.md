@@ -92,9 +92,10 @@ style problem.
 
 - **`CardFrontFace`/`CardBackFace`, exported from `components/redesign/CardCanvas.tsx`,
   are the ONLY place the physical card's locked layout is drawn** — front is
-  chip + contactless mark, no wording; identifying details (name, masked
-  number, CVV, expiry) are on the back. `PhysicalCardReview.tsx` renders a
-  finished design with these same two components rather than reimplementing
+  the chip only, no wording (the contactless mark that used to sit next to it
+  was removed on request); identifying details (name, masked number, CVV,
+  expiry) are on the back. `PhysicalCardReview.tsx` renders a finished design
+  with these same two components rather than reimplementing
   the layout, specifically so the two screens that show a design cannot drift
   apart the way the front once silently grew cardholder/number text back onto
   it. Add card visuals here, not in a screen file.

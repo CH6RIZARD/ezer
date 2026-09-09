@@ -12,8 +12,8 @@
 // (SpinCard.tsx) rather than the designer's controlled flip — this is a
 // finished object being shown off, not a drawing surface. Front/back content
 // comes from CardCanvas's own CardFrontFace/CardBackFace so the LOCKED layout
-// (chip+contactless front, identifying details back) can't drift between the
-// two screens that render a design.
+// (chip-only front, identifying details back) can't drift between the two
+// screens that render a design.
 // =============================================================================
 
 import React, { useEffect, useState } from 'react';

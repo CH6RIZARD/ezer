@@ -4,11 +4,12 @@
 // A 308x190 card face (the same geometry as VirtualCard) that doubles as a
 // freehand drawing canvas. Used by app/screens/PhysicalCard.tsx.
 //
-// LOCKED layout, per the Card Studio comp: the front carries ONLY the chip and
-// the contactless mark — no wording. Cardholder name, masked number, CVV and
-// expiry live on the back, which the user reaches with the flip control. Do
-// not put identifying text back on the front; that is the one thing the
-// design explicitly locks against.
+// LOCKED layout, per the Card Studio comp: the front carries ONLY the chip —
+// no wording. (The comp's original spec also put a contactless mark next to
+// it; removed on request, so the front is chip-only now.) Cardholder name,
+// masked number, CVV and expiry live on the back, which the user reaches with
+// the flip control. Do not put identifying text back on the front; that is
+// the one thing the design explicitly locks against.
 //
 // Why the strokes are SVG path strings and not point arrays:
 //   the design has to survive a JSON round-trip through AsyncStorage AND be
@@ -40,7 +41,6 @@ import {
 } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Ionicons } from '@expo/vector-icons';
 import { cardFinishes, cardBackFinishes, gradients, isDarkFinish, type CardFinish } from '../../theme/tokens';
 import { fontFamily, radius } from '../../theme/type';
 
@@ -83,7 +83,7 @@ const r1 = (v: number) => Math.round(v * 10) / 10;
 const FLIP_MS = 620;
 
 /**
- * The LOCKED front: chip + contactless mark + the artwork, no wording.
+ * The LOCKED front: chip + the artwork, no wording.
  * Exported so anywhere that shows a finished design read-only — currently
  * PhysicalCardReview.tsx's free-spin preview — renders exactly this and
  * cannot drift from what the live designer draws. `liveStroke` is for the
@@ -138,18 +138,16 @@ export function CardFrontFace({
           />
         ) : null}
       </Svg>
-      {/* Card furniture sits ABOVE the artwork so the chip/contactless stay
-          readable no matter how heavily the user draws. */}
+      {/* Card furniture sits ABOVE the artwork so the chip stays readable no
+          matter how heavily the user draws. Chip only — no contactless mark,
+          removed on request. */}
       <View style={styles.furniture} pointerEvents="none">
-        <View style={styles.rowBetween}>
-          <LinearGradient
-            colors={gradients.metalEdge as unknown as readonly [string, string, ...string[]]}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={styles.chip}
-          />
-          <Ionicons name="wifi" size={20} color="rgba(255,255,255,.85)" />
-        </View>
+        <LinearGradient
+          colors={gradients.metalEdge as unknown as readonly [string, string, ...string[]]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.chip}
+        />
       </View>
     </View>
   );
@@ -307,7 +305,7 @@ export function CardCanvas({
 
   return (
     <View style={[styles.perspective, style]}>
-      {/* --- Front: chip + contactless mark + the user's artwork. No wording. */}
+      {/* --- Front: chip + the user's artwork. No wording. */}
       <Animated.View
         style={[
           styles.face,
