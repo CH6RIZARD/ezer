@@ -73,11 +73,20 @@ style problem.
 - **The email unique index is case-sensitive.** `routes/auth.ts` lowercases and
   trims on both signup and login; anything that writes a `User` row directly
   must do the same or the account becomes unreachable.
+- **`apps/mobile/app.config.js` overrides `app.json`.** Expo loads the JS config
+  when both exist. It spreads `app.json`'s `expo` block for the static fields,
+  then REPLACES `plugins` wholesale — so build properties written into
+  `app.json` are read by nothing. `targetSdkVersion: 36` sat in `app.json` for a
+  full build cycle while Play kept rejecting the bundle for targeting API 35.
+  `app.json` no longer declares `plugins` at all; change `expo-build-properties`
+  in `app.config.js`. The same trap applies to `react-native-purchases`, which
+  `app.config.js` deliberately omits because it ships no config plugin.
 - **Migrations do not run on deploy.** `railway.json` runs `prisma generate`
   only — `migrate deploy` needs a session-mode connection (port 5432), not the
   transaction pooler. Apply migrations manually.
-  `20260907000000_add_consent_record` HAS been applied to the live Supabase
-  database; future migrations still need running by hand.
+  `20260907000000_add_consent_record` and `20260908000000_add_card_designer`
+  HAVE both been applied to the live Supabase database; future migrations still
+  need running by hand.
 
 ## Routing and the app's front door
 

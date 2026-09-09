@@ -46,22 +46,6 @@
       "backgroundColor": "#F7F3EA"
     },
     "scheme": "ezer",
-    "plugins": [
-      "expo-router",
-      "expo-image-picker",
-      [
-        "expo-build-properties",
-        {
-          "android": {
-            "minSdkVersion": 24,
-            "compileSdkVersion": 36,
-            "targetSdkVersion": 36,
-            "usesCleartextTraffic": true
-          }
-        }
-      ],
-      "react-native-purchases"
-    ],
     "extra": {
       "router": {
         "origin": false
