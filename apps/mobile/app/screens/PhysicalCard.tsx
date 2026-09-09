@@ -495,6 +495,16 @@ export default function PhysicalCardScreen() {
               <ScrollView
                 horizontal
                 showsHorizontalScrollIndicator={false}
+                // On the web export, a horizontal ScrollView with no width of
+                // its own sizes to its full unscrolled content (22 items:
+                // ~900px+) instead of the viewport, which widens the whole
+                // page rather than scrolling internally. Dragging this row
+                // then drags the entire document sideways with it — every
+                // other row's left edge shifts off-screen along with it,
+                // which is what "Base finish"/"Amethyst" losing their first
+                // few letters actually was. width: '100%' keeps the row's own
+                // box at the screen's width so only its content scrolls.
+                style={{ width: '100%' }}
                 contentContainerStyle={styles.inkRow}
               >
                 <PressScale onPress={() => setInk('foil')} scaleTo={0.94}>
