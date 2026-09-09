@@ -168,6 +168,19 @@ export const isDarkFinish = (f: CardFinish): boolean => f !== 'bone';
 
 export type CardFinish = keyof typeof cardFinishes;
 
+/**
+ * Card BACK finish, one shade darker/richer than the front per finish. The
+ * Card Studio comp locks identifying details (name, number, CVV, expiry) to
+ * this face — the front carries only the chip and contactless mark — so the
+ * back needs its own gradient, not a reuse of `cardFinishes`.
+ */
+export const cardBackFinishes = {
+  amethyst: ['#3B1580', '#1E0B45', '#0E0724'] as const,
+  onyx: ['#33303B', '#17151D', '#0B0A10'] as const,
+  rose: ['#D9317F', '#B0134F', '#6B0F3A'] as const,
+  bone: ['#F1E8D4', '#DFD2B6', '#CDBC98'] as const,
+} as const;
+
 /** Chart card foreground colors (fixed across themes). */
 export const chartColors = {
   line: '#E7C77E',

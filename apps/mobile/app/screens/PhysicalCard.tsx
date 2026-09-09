@@ -7,15 +7,37 @@
 // anything to be excited about is what kills conversion on card products, so
 // this screen never mentions limits — only the required approval disclosure.
 //
+// LOCKED layout (Card Studio comp): the front carries only the chip and the
+// contactless mark, no wording — name, masked number, CVV and expiry live on
+// the back, reached with the flip control. See CardCanvas.tsx.
+//
+// Ink is: gold foil, a custom mixer (hue + lightness, built on PanResponder —
+// no Reanimated in deps), and 20 named pigments. Nib is 5 sizes. Both match
+// the comp's tool rows; the swatch count is not decorative — Card Studio is
+// the flagship of the physical-card product and was cut down to 6 colors and
+// 3 nibs at some point without the comp being re-checked. This restores it.
+//
 // The saved payload is { finish, strokes: [{d,color,width}], updatedAt } and is
 // persisted through utils/cardDesignStore.ts (owned by another module). Strokes
 // are SVG path data in card-local 308x190 space — see components/redesign/
-// CardCanvas.tsx for why.
+// CardCanvas.tsx for why. Autosave debounces 700ms after the last stroke, same
+// as the comp's "Autosaved" indicator; the final CTA just flushes and moves on.
 // =============================================================================
 
-import React, { useCallback, useEffect, useState } from 'react';
-import { View, Text, ScrollView, StyleSheet, ActivityIndicator } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  View,
+  Text,
+  ScrollView,
+  Modal,
+  Pressable,
+  StyleSheet,
+  ActivityIndicator,
+  type GestureResponderEvent,
+  PanResponder,
+} from 'react-native';
 import { router } from 'expo-router';
+import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../../utils/ThemeContext';
@@ -39,15 +61,120 @@ const FINISHES: { key: CardFinish; label: string }[] = [
   { key: 'bone', label: 'Bone' },
 ];
 
-const WIDTHS = [
-  { key: 'fine', label: 'Fine', value: 2.5 },
-  { key: 'medium', label: 'Medium', value: 5 },
-  { key: 'bold', label: 'Bold', value: 9 },
-] as const;
+/** Dot sizes only — the comp shows no label under a nib, its size IS the label. */
+const NIBS = [1.5, 3, 5, 7.5, 11] as const;
+const NIB_A11Y = ['Extra fine', 'Fine', 'Medium', 'Bold', 'Extra bold'];
+const DEFAULT_NIB = NIBS[2]; // 5 — the same default the comp ships with.
+
+/** Flat pigment swatch, same 20 named inks as the comp. */
+const INKS: { key: string; hex: string }[] = [
+  { key: 'black', hex: '#111111' },
+  { key: 'white', hex: '#FFFFFF' },
+  { key: 'grey', hex: '#9CA3AF' },
+  { key: 'slate', hex: '#4B5563' },
+  { key: 'red', hex: '#E23D2E' },
+  { key: 'orange', hex: '#F97316' },
+  { key: 'yellow', hex: '#FACC15' },
+  { key: 'lime', hex: '#A3E635' },
+  { key: 'green', hex: '#22C55E' },
+  { key: 'teal', hex: '#14B8A6' },
+  { key: 'cyan', hex: '#06B6D4' },
+  { key: 'sky', hex: '#38BDF8' },
+  { key: 'blue', hex: '#2563EB' },
+  { key: 'indigo', hex: '#4F46E5' },
+  { key: 'violet', hex: '#8B5CF6' },
+  { key: 'pink', hex: '#EC4899' },
+  { key: 'rose', hex: '#F43F5E' },
+  { key: 'brown', hex: '#92400E' },
+  { key: 'tan', hex: '#D2A86A' },
+  { key: 'cream', hex: '#F5E9C9' },
+];
+
+/**
+ * Flat stand-in for the comp's shimmering SVG-gradient foil stroke. A true
+ * gradient stroke needs an SVG <linearGradient> wired through CardCanvas's
+ * Path per-stroke, which is a print-fidelity upgrade for later — this is the
+ * comp's own documented fallback color, not a placeholder guess.
+ */
+const FOIL_HEX = '#D6B36F';
+
+/** The comp's 7-stop rainbow hue track, as real gradient stops — not a fallback. */
+const HUE_STOPS = ['#E23D2E', '#F97316', '#FACC15', '#22C55E', '#06B6D4', '#2563EB', '#8B5CF6', '#EC4899', '#E23D2E'] as const;
+
+/** hsl(h, 78%, l%) → hex, matching the comp's custom-ink formula exactly. */
+function hslToHex(h: number, s: number, l: number): string {
+  const sf = s / 100;
+  const lf = l / 100;
+  const k = (n: number) => (n + h / 30) % 12;
+  const a = sf * Math.min(lf, 1 - lf);
+  const f = (n: number) => lf - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)));
+  const toHex = (x: number) => Math.round(x * 255).toString(16).padStart(2, '0');
+  return `#${toHex(f(0))}${toHex(f(8))}${toHex(f(4))}`;
+}
 
 /** Guard for restoring a persisted finish — storage is untyped at rest. */
 function isFinish(v: string): v is CardFinish {
   return Object.prototype.hasOwnProperty.call(cardFinishes, v);
+}
+
+/**
+ * A horizontal drag track (hue or lightness) built on PanResponder — no
+ * Reanimated in deps, so the thumb position is driven straight off state
+ * rather than an animated value; it is a discrete drag, not a spring.
+ */
+function SliderTrack({
+  pct,
+  onPct,
+  flatColor,
+  gradientColors,
+}: {
+  pct: number;
+  onPct: (pct: number) => void;
+  /** Solid track color — used for the lightness track (varies with hue). */
+  flatColor?: string;
+  /** Multi-stop track color — used for the hue rainbow. */
+  gradientColors?: readonly string[];
+}) {
+  const widthRef = useRef(1);
+  const fromEvent = useCallback((e: GestureResponderEvent) => {
+    const x = e.nativeEvent.locationX;
+    return Math.max(0, Math.min(1, x / widthRef.current));
+  }, []);
+
+  const responder = useMemo(
+    () =>
+      PanResponder.create({
+        onStartShouldSetPanResponder: () => true,
+        onMoveShouldSetPanResponder: () => true,
+        onPanResponderGrant: e => onPct(fromEvent(e)),
+        onPanResponderMove: e => onPct(fromEvent(e)),
+      }),
+    [fromEvent, onPct]
+  );
+
+  return (
+    <View
+      onLayout={ev => {
+        widthRef.current = Math.max(1, ev.nativeEvent.layout.width);
+      }}
+      style={styles.sliderTrack}
+      {...responder.panHandlers}
+    >
+      <View style={styles.sliderFill}>
+        {gradientColors ? (
+          <LinearGradient
+            colors={gradientColors as unknown as readonly [string, string, ...string[]]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={StyleSheet.absoluteFill}
+          />
+        ) : (
+          <View style={[StyleSheet.absoluteFill, { backgroundColor: flatColor }]} />
+        )}
+      </View>
+      <View style={[styles.sliderThumb, { left: `${pct * 100}%` }]} />
+    </View>
+  );
 }
 
 export default function PhysicalCardScreen() {
@@ -60,23 +187,22 @@ export default function PhysicalCardScreen() {
   // stack describes one linear history, and keeping it across a fresh stroke
   // would let redo resurrect artwork from a branch the user abandoned.
   const [undone, setUndone] = useState<Stroke[]>([]);
-  const [color, setColor] = useState<string>(colors.gold);
-  const [strokeWidth, setStrokeWidth] = useState<number>(WIDTHS[1].value);
+  const [ink, setInk] = useState<'foil' | 'custom' | string>('foil');
+  const [customHue, setCustomHue] = useState(265);
+  const [customLit, setCustomLit] = useState(55);
+  const [nib, setNib] = useState<number>(DEFAULT_NIB);
+  const [flipped, setFlipped] = useState(false);
+  const [mixerOpen, setMixerOpen] = useState(false);
   const [drawing, setDrawing] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [justSaved, setJustSaved] = useState(false);
 
-  // Ink options. Gold/accent/red/success come from the brand palette so they
-  // stay theme-correct; white and black are literal because they are pigments
-  // on a printed card, not UI colours that should flip with the theme.
-  const SWATCHES: { key: string; value: string }[] = [
-    { key: 'gold', value: colors.gold },
-    { key: 'accent', value: colors.accInk },
-    { key: 'white', value: '#FFFFFF' },
-    { key: 'black', value: '#111111' },
-    { key: 'red', value: colors.red },
-    { key: 'success', value: colors.success },
-  ];
+  const activeColor = useMemo(() => {
+    if (ink === 'foil') return FOIL_HEX;
+    if (ink === 'custom') return hslToHex(customHue, 78, customLit);
+    return INKS.find(i => i.key === ink)?.hex ?? FOIL_HEX;
+  }, [ink, customHue, customLit]);
 
   // Restore the last saved design so reopening the screen never loses artwork.
   useEffect(() => {
@@ -98,6 +224,30 @@ export default function PhysicalCardScreen() {
       alive = false;
     };
   }, []);
+
+  // Autosave, debounced — mirrors the comp's "Autosaved" indicator. Local
+  // write happens on every call inside saveCardDesign; the network POST is
+  // best-effort, so firing this on a timer rather than per-stroke is purely
+  // to avoid hammering the API while someone is doodling fast.
+  const autosaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (loading || strokes.length === 0) return;
+    if (autosaveTimer.current) clearTimeout(autosaveTimer.current);
+    autosaveTimer.current = setTimeout(() => {
+      saveCardDesign({ finish, strokes, updatedAt: new Date().toISOString() })
+        .then(() => {
+          setJustSaved(true);
+          setTimeout(() => setJustSaved(false), 1600);
+        })
+        .catch(() => {
+          // Best-effort — the next stroke or the final CTA retries.
+        });
+    }, 700);
+    return () => {
+      if (autosaveTimer.current) clearTimeout(autosaveTimer.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [strokes, finish, loading]);
 
   const handleStrokeEnd = useCallback((s: Stroke) => {
     setStrokes(prev => [...prev, s]);
@@ -130,8 +280,8 @@ export default function PhysicalCardScreen() {
     });
   }, []);
 
-  const save = useCallback(async () => {
-    if (saving) return;
+  const go = useCallback(async () => {
+    if (saving || strokes.length === 0) return;
     setSaving(true);
     try {
       await saveCardDesign({
@@ -170,15 +320,25 @@ export default function PhysicalCardScreen() {
                 <Ionicons name="chevron-back" size={18} color={colors.ink} />
               </View>
             </PressScale>
-            <Text style={[typeScale.screenTitle, { color: colors.ink, marginLeft: 12 }]}>
-              Design your card
-            </Text>
+            <View style={{ marginLeft: 12, flex: 1 }}>
+              <Text style={[typeScale.screenTitle, { color: colors.ink }]}>Design your card</Text>
+              <Body style={{ marginTop: 1 }}>
+                {flipped
+                  ? 'The back is fixed — flip over to draw.'
+                  : 'The front is all yours — details live on the back.'}
+              </Body>
+            </View>
+            {strokes.length > 0 ? (
+              <Text
+                style={[
+                  typeScale.labelSm,
+                  { color: justSaved ? colors.success : colors.mut2, marginLeft: 8 },
+                ]}
+              >
+                {justSaved ? 'Saved' : 'Autosaved'}
+              </Text>
+            ) : null}
           </View>
-
-          <Body style={{ marginBottom: 16 }}>
-            Draw straight onto the card. This is the artwork we print — take your
-            time, you can undo anything.
-          </Body>
 
           {/* --- Live preview / canvas ------------------------------------- */}
           <View style={styles.canvasWrap}>
@@ -190,8 +350,9 @@ export default function PhysicalCardScreen() {
               <CardCanvas
                 finish={finish}
                 strokes={strokes}
-                color={color}
-                width={strokeWidth}
+                color={activeColor}
+                width={nib}
+                flipped={flipped}
                 onStrokeEnd={handleStrokeEnd}
                 onDrawingChange={setDrawing}
               />
@@ -199,162 +360,209 @@ export default function PhysicalCardScreen() {
           </View>
 
           <View style={styles.historyRow}>
-            <PressScale onPress={undo} scaleTo={0.94} disabled={strokes.length === 0} style={styles.historyBtn}>
-              <View
-                style={[
-                  styles.historyInner,
-                  {
-                    borderColor: colors.line2,
-                    opacity: strokes.length === 0 ? 0.4 : 1,
-                  },
-                ]}
-              >
-                <Ionicons name="arrow-undo-outline" size={15} color={colors.ink} />
-                <Text style={[styles.historyText, { color: colors.ink }]}>Undo</Text>
-              </View>
-            </PressScale>
-
-            <PressScale onPress={clearAll} scaleTo={0.94} disabled={strokes.length === 0} style={styles.historyBtn}>
-              <View
-                style={[
-                  styles.historyInner,
-                  {
-                    borderColor: colors.line2,
-                    opacity: strokes.length === 0 ? 0.4 : 1,
-                  },
-                ]}
-              >
-                <Ionicons name="trash-outline" size={15} color={colors.red} />
-                <Text style={[styles.historyText, { color: colors.red }]}>Clear all</Text>
-              </View>
-            </PressScale>
-          </View>
-
-          {/* --- Ink -------------------------------------------------------- */}
-          <SectionHeader style={{ marginTop: 22 }}>Ink</SectionHeader>
-          <View style={styles.swatchRow}>
-            {SWATCHES.map(s => {
-              const active = s.value === color;
-              return (
-                <PressScale
-                  key={s.key}
-                  onPress={() => setColor(s.value)}
-                  scaleTo={0.9}
+            <View style={styles.historyLeft}>
+              <PressScale onPress={undo} scaleTo={0.92} disabled={strokes.length === 0}>
+                <View
                   style={[
-                    styles.swatch,
-                    {
-                      borderColor: active ? colors.ink : colors.line2,
-                      borderWidth: active ? 2.5 : 1,
-                    },
+                    styles.historyIcon,
+                    { borderColor: colors.line2, backgroundColor: colors.card, opacity: strokes.length === 0 ? 0.4 : 1 },
                   ]}
                 >
-                  {/* PressScale's inner wrapper is alignSelf:'stretch', so the
-                      dot needs its own centring box rather than relying on the
-                      Pressable's alignItems. */}
-                  <View style={styles.swatchCenter}>
-                    <View style={[styles.swatchFill, { backgroundColor: s.value }]} />
-                  </View>
-                </PressScale>
-              );
-            })}
+                  <Ionicons name="arrow-undo-outline" size={15} color={colors.ink} />
+                </View>
+              </PressScale>
+              <PressScale onPress={redo} scaleTo={0.92} disabled={undone.length === 0}>
+                <View
+                  style={[
+                    styles.historyIcon,
+                    { borderColor: colors.line2, backgroundColor: colors.card, opacity: undone.length === 0 ? 0.4 : 1 },
+                  ]}
+                >
+                  <Ionicons name="arrow-redo-outline" size={15} color={colors.ink} />
+                </View>
+              </PressScale>
+              <PressScale onPress={clearAll} scaleTo={0.94} disabled={strokes.length === 0}>
+                <View
+                  style={[
+                    styles.clearBtn,
+                    { borderColor: colors.line2, backgroundColor: colors.card, opacity: strokes.length === 0 ? 0.4 : 1 },
+                  ]}
+                >
+                  <Ionicons name="trash-outline" size={14} color={colors.red} />
+                  <Text style={[styles.historyText, { color: colors.red }]}>Clear</Text>
+                </View>
+              </PressScale>
+            </View>
+
+            <PressScale onPress={() => setFlipped(f => !f)} scaleTo={0.92}>
+              <View style={[styles.flipBtn, { backgroundColor: colors.ink }]}>
+                <Text style={[styles.historyText, { color: colors.bg }]}>
+                  {flipped ? 'Show front' : 'See the back'}
+                </Text>
+              </View>
+            </PressScale>
           </View>
 
-          {/* --- Nib -------------------------------------------------------- */}
-          <SectionHeader style={{ marginTop: 20 }}>Nib</SectionHeader>
-          <View style={styles.widthRow}>
-            {WIDTHS.map(w => {
-              const active = w.value === strokeWidth;
-              return (
-                <PressScale
-                  key={w.key}
-                  onPress={() => setStrokeWidth(w.value)}
-                  scaleTo={0.95}
-                  style={styles.widthBtn}
-                >
+          {flipped ? (
+            <Surface style={styles.flippedNote}>
+              <Body>
+                The back is fixed for security printing — name, number, CVV and
+                expiry live here.{' '}
+                <Text style={{ fontFamily: fontFamily.bold, color: colors.ink }}>
+                  Flip to the front to draw.
+                </Text>
+              </Body>
+            </Surface>
+          ) : (
+            <>
+              {/* --- Ink ---------------------------------------------------- */}
+              <SectionHeader style={{ marginTop: 22 }}>Ink</SectionHeader>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.inkRow}
+              >
+                <PressScale onPress={() => setInk('foil')} scaleTo={0.94}>
                   <View
                     style={[
-                      styles.widthInner,
+                      styles.foilChip,
+                      { borderColor: ink === 'foil' ? colors.ink : 'transparent' },
+                    ]}
+                  >
+                    <Text style={styles.foilChipText}>Gold foil</Text>
+                  </View>
+                </PressScale>
+
+                <PressScale onPress={() => setMixerOpen(true)} scaleTo={0.94}>
+                  <View
+                    style={[
+                      styles.mixChip,
                       {
-                        backgroundColor: active ? colors.accSoft : colors.card,
-                        borderColor: active ? colors.accInk : colors.line,
+                        backgroundColor: colors.card,
+                        borderColor: ink === 'custom' ? colors.ink : colors.line,
                       },
                     ]}
                   >
-                    {/* The dot is the actual stroke width, so the control shows
-                        what it does instead of describing it. */}
-                    <View
-                      style={{
-                        width: w.value * 2,
-                        height: w.value * 2,
-                        borderRadius: w.value,
-                        backgroundColor: colors.ink,
-                      }}
-                    />
-                    <Text
-                      style={[
-                        styles.widthText,
-                        { color: active ? colors.accInk : colors.mut },
-                      ]}
-                    >
-                      {w.label}
-                    </Text>
+                    <View style={styles.mixSwatch} />
+                    <Text style={[styles.historyText, { color: colors.ink }]}>Mix</Text>
                   </View>
                 </PressScale>
-              );
-            })}
-          </View>
 
-          {/* --- Finish ----------------------------------------------------- */}
-          <SectionHeader style={{ marginTop: 20 }}>Base finish</SectionHeader>
-          <View style={styles.finishRow}>
-            {FINISHES.map(f => {
-              const active = f.key === finish;
-              return (
-                <PressScale
-                  key={f.key}
-                  onPress={() => setFinish(f.key)}
-                  scaleTo={0.95}
-                  style={styles.finishBtn}
-                >
-                  <View
-                    style={[
-                      styles.finishInner,
-                      { borderColor: active ? colors.accInk : colors.line, borderWidth: active ? 2 : 1 },
-                    ]}
-                  >
-                    <View
-                      style={[
-                        styles.finishSwatch,
-                        { backgroundColor: cardFinishes[f.key][1] },
-                      ]}
-                    />
-                    <Text
-                      style={[
-                        styles.finishText,
-                        { color: active ? colors.ink : colors.mut },
-                      ]}
+                {INKS.map(i => {
+                  const active = ink === i.key;
+                  const needsRing = i.hex === '#FFFFFF' || i.hex === '#F5E9C9';
+                  return (
+                    <PressScale key={i.key} onPress={() => setInk(i.key)} scaleTo={0.88}>
+                      <View
+                        style={[
+                          styles.swatch,
+                          {
+                            backgroundColor: i.hex,
+                            borderColor: active ? colors.ink : needsRing ? colors.line2 : 'transparent',
+                            borderWidth: active ? 2.5 : needsRing ? 1.5 : 0,
+                          },
+                        ]}
+                      />
+                    </PressScale>
+                  );
+                })}
+              </ScrollView>
+
+              {/* --- Nib ------------------------------------------------------ */}
+              <SectionHeader style={{ marginTop: 18 }}>Nib</SectionHeader>
+              <View style={styles.nibRow}>
+                {NIBS.map((n, idx) => {
+                  const active = n === nib;
+                  return (
+                    <PressScale key={n} onPress={() => setNib(n)} scaleTo={0.9} style={{ flex: 1 }}>
+                      <View
+                        style={[
+                          styles.nibBtn,
+                          {
+                            backgroundColor: active ? colors.accSoft : colors.card,
+                            borderColor: active ? colors.accInk : colors.line,
+                          },
+                        ]}
+                        accessibilityLabel={NIB_A11Y[idx]}
+                      >
+                        <View
+                          style={{
+                            width: Math.max(3, n * 1.7),
+                            height: Math.max(3, n * 1.7),
+                            borderRadius: Math.max(3, n * 1.7) / 2,
+                            backgroundColor: active ? colors.accInk : colors.ink,
+                          }}
+                        />
+                      </View>
+                    </PressScale>
+                  );
+                })}
+              </View>
+
+              {/* --- Finish ----------------------------------------------------- */}
+              <SectionHeader style={{ marginTop: 20 }}>Base finish</SectionHeader>
+              <View style={styles.finishRow}>
+                {FINISHES.map(f => {
+                  const active = f.key === finish;
+                  return (
+                    <PressScale
+                      key={f.key}
+                      onPress={() => setFinish(f.key)}
+                      scaleTo={0.95}
+                      style={styles.finishBtn}
                     >
-                      {f.label}
-                    </Text>
-                  </View>
-                </PressScale>
-              );
-            })}
-          </View>
+                      <View
+                        style={[
+                          styles.finishInner,
+                          { borderColor: active ? colors.accInk : colors.line, borderWidth: active ? 2 : 1 },
+                        ]}
+                      >
+                        <View
+                          style={[
+                            styles.finishSwatch,
+                            { backgroundColor: cardFinishes[f.key][1] },
+                          ]}
+                        />
+                        <Text
+                          style={[
+                            styles.finishText,
+                            { color: active ? colors.ink : colors.mut },
+                          ]}
+                        >
+                          {f.label}
+                        </Text>
+                      </View>
+                    </PressScale>
+                  );
+                })}
+              </View>
+            </>
+          )}
 
-          {/* --- Save ------------------------------------------------------- */}
-          <PressScale onPress={save} scaleTo={0.97} disabled={saving} style={{ marginTop: 26 }}>
+          {/* --- Continue ----------------------------------------------------- */}
+          <PressScale
+            onPress={go}
+            scaleTo={0.97}
+            disabled={saving || strokes.length === 0}
+            style={{ marginTop: 26 }}
+          >
             <View
               style={[
                 styles.cta,
-                { backgroundColor: colors.goldBg, opacity: saving ? 0.6 : 1 },
+                {
+                  backgroundColor: colors.goldBg,
+                  opacity: saving ? 0.6 : strokes.length === 0 ? 0.5 : 1,
+                },
               ]}
             >
               <Text style={styles.ctaText}>
-                {saving ? 'Saving…' : 'Save my design'}
+                {saving ? 'Saving…' : strokes.length === 0 ? 'Draw something first' : 'Continue'}
               </Text>
             </View>
           </PressScale>
+          <Body style={{ textAlign: 'center', marginTop: 9 }}>
+            Nothing is printed until you confirm at the end.
+          </Body>
 
           <Surface style={styles.note}>
             <Ionicons name="information-circle-outline" size={16} color={colors.mut} />
@@ -369,6 +577,55 @@ export default function PhysicalCardScreen() {
           </Surface>
         </ScreenBody>
       </ScrollView>
+
+      {/* --- Mix your own ink -------------------------------------------------- */}
+      <Modal visible={mixerOpen} transparent animationType="slide" onRequestClose={() => setMixerOpen(false)}>
+        <Pressable style={StyleSheet.absoluteFill} onPress={() => setMixerOpen(false)}>
+          <View style={[StyleSheet.absoluteFill, { backgroundColor: colors.scrim }]} />
+        </Pressable>
+        <View style={styles.sheetWrap} pointerEvents="box-none">
+          <View style={[styles.sheet, { backgroundColor: colors.bg }]}>
+            <View style={[styles.grabber, { backgroundColor: colors.line2 }]} />
+            <View style={styles.mixHead}>
+              <View style={[styles.mixPreview, { backgroundColor: hslToHex(customHue, 78, customLit) }]} />
+              <Text style={[typeScale.cardTitle, { color: colors.ink }]}>Mix your own ink</Text>
+            </View>
+
+            <Label style={{ marginTop: 16, marginBottom: 6 }}>Hue</Label>
+            <SliderTrack
+              pct={customHue / 360}
+              onPct={p => {
+                setCustomHue(p * 360);
+                setInk('custom');
+              }}
+              gradientColors={HUE_STOPS}
+            />
+
+            <Label style={{ marginTop: 16, marginBottom: 6 }}>Lightness</Label>
+            <SliderTrack
+              pct={(customLit - 15) / 70}
+              onPct={p => {
+                setCustomLit(15 + p * 70);
+                setInk('custom');
+              }}
+              flatColor={hslToHex(customHue, 78, 50)}
+            />
+
+            <PressScale
+              onPress={() => {
+                setInk('custom');
+                setMixerOpen(false);
+              }}
+              scaleTo={0.97}
+              style={{ marginTop: 22 }}
+            >
+              <View style={[styles.cta, { backgroundColor: colors.accent }]}>
+                <Text style={styles.ctaText}>Use this ink</Text>
+              </View>
+            </PressScale>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -376,7 +633,7 @@ export default function PhysicalCardScreen() {
 const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     marginBottom: 14,
   },
   back: {
@@ -400,70 +657,98 @@ const styles = StyleSheet.create({
   },
   historyRow: {
     flexDirection: 'row',
-    justifyContent: 'center',
-    gap: 10,
+    alignItems: 'center',
+    justifyContent: 'space-between',
     marginTop: 14,
   },
-  historyBtn: {
-    minWidth: 108,
-  },
-  historyInner: {
+  historyLeft: {
     flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    paddingVertical: 9,
-    paddingHorizontal: 14,
+    gap: 7,
+  },
+  historyIcon: {
+    width: 38,
+    height: 36,
     borderRadius: radius.buttonSm,
     borderWidth: 1.5,
-    minHeight: 38,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  clearBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    height: 36,
+    paddingHorizontal: 13,
+    borderRadius: radius.buttonSm,
+    borderWidth: 1.5,
+  },
+  flipBtn: {
+    height: 36,
+    paddingHorizontal: 14,
+    borderRadius: radius.buttonSm,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   historyText: {
     fontFamily: fontFamily.bold,
-    fontSize: 12,
+    fontSize: 11.5,
   },
-  swatchRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 10,
-    marginTop: 10,
+  flippedNote: {
+    marginTop: 14,
+    padding: 14,
   },
-  swatch: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  swatchCenter: {
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  swatchFill: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-  },
-  widthRow: {
+  inkRow: {
     flexDirection: 'row',
     gap: 8,
     marginTop: 10,
+    paddingRight: 4,
+    alignItems: 'center',
   },
-  widthBtn: {
-    flex: 1,
-  },
-  widthInner: {
+  foilChip: {
+    height: 34,
+    paddingHorizontal: 13,
+    borderRadius: 17,
+    borderWidth: 2.5,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 6,
-    paddingVertical: 12,
-    borderRadius: radius.chip,
-    borderWidth: 1,
-    minHeight: 66,
+    backgroundColor: '#C49A4E',
   },
-  widthText: {
-    fontFamily: fontFamily.semibold,
-    fontSize: 11.5,
+  foilChipText: {
+    fontFamily: fontFamily.bold,
+    fontSize: 10.5,
+    color: '#3E2C08',
+  },
+  mixChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+    height: 34,
+    paddingHorizontal: 13,
+    borderRadius: 17,
+    borderWidth: 2,
+  },
+  mixSwatch: {
+    width: 15,
+    height: 15,
+    borderRadius: 8,
+    backgroundColor: '#8B5CF6',
+  },
+  swatch: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+  },
+  nibRow: {
+    flexDirection: 'row',
+    gap: 7,
+    marginTop: 10,
+  },
+  nibBtn: {
+    height: 40,
+    borderRadius: radius.chip,
+    borderWidth: 1.5,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   finishRow: {
     flexDirection: 'row',
@@ -508,5 +793,54 @@ const styles = StyleSheet.create({
     gap: 10,
     padding: 14,
     marginTop: 14,
+  },
+  sheetWrap: {
+    flex: 1,
+    justifyContent: 'flex-end',
+  },
+  sheet: {
+    borderTopLeftRadius: 26,
+    borderTopRightRadius: 26,
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    paddingBottom: 34,
+  },
+  grabber: {
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    alignSelf: 'center',
+    marginBottom: 14,
+  },
+  mixHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  mixPreview: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+  },
+  sliderTrack: {
+    height: 24,
+    justifyContent: 'center',
+  },
+  sliderFill: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: 12,
+    overflow: 'hidden',
+  },
+  sliderThumb: {
+    position: 'absolute',
+    top: '50%',
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    marginLeft: -13,
+    marginTop: -13,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 3,
+    borderColor: '#241A38',
   },
 });
