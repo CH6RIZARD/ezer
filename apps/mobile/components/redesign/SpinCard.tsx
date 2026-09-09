@@ -21,6 +21,17 @@
 // with setValue on every move (see the comment at onPanResponderMove below for
 // why NOT a fresh timing animation per move event). backfaceVisibility:
 // 'hidden' is what makes `front`/`back` swap correctly as it turns.
+//
+// Move handling is throttled to one update per animation frame (see
+// scheduleMove below). On native this changes nothing — the native driver was
+// already running at the display's own rate. On the web export, a mouse fires
+// far more pointermove events per second than 60, and this component used to
+// apply a direct style write for every single one on the ONE thread the
+// browser also has to use for everything else. The visible symptom was not
+// mere jank but a hang right at release: the settle animation could not even
+// start until the main thread had chewed through however many queued moves
+// had piled up during the drag. Collapsing to one applied move per frame is
+// the standard fix for that class of bug.
 // =============================================================================
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -75,6 +86,59 @@ export function SpinCard({ front, back, style, onTap, onDragChange, hint = 'Drag
     const b = ry.addListener(({ value }) => { ryVal.current = value; });
     return () => { rx.removeListener(a); ry.removeListener(b); };
   }, [rx, ry]);
+
+  // --- move throttle ------------------------------------------------------
+  // At most one applied rotation update per animation frame, however many
+  // raw pointer/touch move events actually arrived. See the header comment.
+  const pendingMove = useRef<{ dx: number; dy: number } | null>(null);
+  const rafId = useRef<number | null>(null);
+
+  const applyMove = useCallback(
+    (m: { dx: number; dy: number }) => {
+      const nextRy = startRy.current + m.dx * motion.cardRotatePerPx;
+      const nextRx = startRx.current - m.dy * motion.cardRotatePerPx;
+      // setValue, NOT a per-move timing — a fresh Animated.timing per move
+      // event is dozens of overlapping animations a second fighting each
+      // other, which is its own, different stutter. The finger/cursor
+      // already supplies a smooth stream of positions; tracking it directly
+      // is both correct and far cheaper. The soft feel lives in the release
+      // settle instead.
+      ry.setValue(nextRy);
+      rx.setValue(nextRx);
+    },
+    [rx, ry]
+  );
+
+  const scheduleMove = useCallback(
+    (m: { dx: number; dy: number }) => {
+      pendingMove.current = m;
+      if (rafId.current != null) return; // a frame is already pending
+      rafId.current = requestAnimationFrame(() => {
+        rafId.current = null;
+        if (pendingMove.current) applyMove(pendingMove.current);
+      });
+    },
+    [applyMove]
+  );
+
+  /** Cancel any queued frame and, if one was pending, apply it right now —
+   * called on release so the snap target is never one frame stale. */
+  const flushMove = useCallback(() => {
+    if (rafId.current != null) {
+      cancelAnimationFrame(rafId.current);
+      rafId.current = null;
+    }
+    if (pendingMove.current) {
+      applyMove(pendingMove.current);
+      pendingMove.current = null;
+    }
+  }, [applyMove]);
+
+  useEffect(() => {
+    return () => {
+      if (rafId.current != null) cancelAnimationFrame(rafId.current);
+    };
+  }, []);
 
   // --- idle float -------------------------------------------------------------
   const float = useRef(new Animated.Value(0)).current;
@@ -133,31 +197,30 @@ export function SpinCard({ front, back, style, onTap, onDragChange, hint = 'Drag
 
         onPanResponderGrant: () => {
           freezeFloat();
+          pendingMove.current = null;
+          if (rafId.current != null) {
+            cancelAnimationFrame(rafId.current);
+            rafId.current = null;
+          }
           startRx.current = rxVal.current;
           startRy.current = ryVal.current;
           onDragChange?.(true);
         },
 
         onPanResponderMove: (_evt, g) => {
-          const nextRy = startRy.current + g.dx * motion.cardRotatePerPx;
-          const nextRx = startRx.current - g.dy * motion.cardRotatePerPx;
-
-          // setValue, NOT a per-move timing — see VirtualCard's original
-          // comment history: a fresh 120ms Animated.timing per move event is
-          // ~120 overlapping animations a second fighting each other, which is
-          // the stutter that made the drag feel broken. The finger already
-          // supplies a smooth stream of positions; tracking it directly is
-          // both correct and far cheaper. The soft feel lives in the release
-          // settle instead.
-          ry.setValue(nextRy);
-          rx.setValue(nextRx);
+          scheduleMove({ dx: g.dx, dy: g.dy });
         },
 
         onPanResponderTerminate: () => {
+          flushMove();
           onDragChange?.(false);
         },
 
         onPanResponderRelease: (_evt, g) => {
+          // Apply whatever move was still queued for the next frame BEFORE
+          // reading rxVal/ryVal below, or the snap target could be one frame
+          // behind where the card visually stopped.
+          flushMove();
           onDragChange?.(false);
           const moved = Math.hypot(g.dx, g.dy);
 
@@ -187,7 +250,7 @@ export function SpinCard({ front, back, style, onTap, onDragChange, hint = 'Drag
           ]).start();
         },
       }),
-    [freezeFloat, rx, ry, onDragChange, onTap]
+    [freezeFloat, scheduleMove, flushMove, rx, ry, onDragChange, onTap]
   );
 
   // --- transforms -------------------------------------------------------------

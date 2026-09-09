@@ -14,8 +14,9 @@
 // Ink is: gold foil, a custom mixer (hue + lightness, built on PanResponder —
 // no Reanimated in deps), and 20 named pigments — the comp's tool row, which
 // had been cut down to 6 colors at some point without being re-checked
-// against it. Nib is a continuous 1.5-11 drag instead of the comp's 5 fixed
-// stops, which reads more like a real pen than snapping between presets.
+// against it. Line weight is a continuous 1.5-11 drag instead of the comp's
+// 5 fixed stops, which reads more like a real pen than snapping between
+// presets.
 //
 // The saved payload is { finish, strokes: [{d,color,width}], updatedAt } and is
 // persisted through utils/cardDesignStore.ts (owned by another module). Strokes
@@ -63,13 +64,13 @@ const FINISHES: { key: CardFinish; label: string }[] = [
 ];
 
 /**
- * Nib is a continuous drag, not the comp's 5 fixed stops — sliding to an
- * in-between width reads as more of a real pen than snapping to one of five
- * presets does. Range and the default (5) still match the comp.
+ * Line weight is a continuous drag, not the comp's 5 fixed stops — sliding to
+ * an in-between width reads as more of a real pen than snapping to one of
+ * five presets does. Range and the default (5) still match the comp.
  */
-const NIB_MIN = 1.5;
-const NIB_MAX = 11;
-const DEFAULT_NIB = 5;
+const WEIGHT_MIN = 1.5;
+const WEIGHT_MAX = 11;
+const DEFAULT_WEIGHT = 5;
 
 /** Flat pigment swatch, same 20 named inks as the comp. */
 const INKS: { key: string; hex: string }[] = [
@@ -183,19 +184,27 @@ function SliderTrack({
 }
 
 /**
- * Continuous nib width, dragged along a thin→thick wedge rather than picked
- * from fixed stops. The wedge is drawn in a fixed-ratio viewBox stretched to
- * the row's real width (preserveAspectRatio="none") so the triangle always
- * fills the track; pointer math still needs the row's measured pixel width,
+ * Continuous line weight, dragged along a thin→thick wedge rather than picked
+ * from fixed stops. Built on the same pill-track shell as the ink mixer's
+ * sliders (styles.sliderTrack/sliderFill/sliderThumb) so it reads as the same
+ * control family instead of a foreign shape dropped on bare background — the
+ * wedge sits inset inside that pill, and the thumb is the same fixed-size
+ * white/dark ring as Hue and Lightness, carrying an inner dot sized to the
+ * current weight instead of resizing the whole thumb (which is what made the
+ * old version look inconsistent).
+ *
+ * The wedge is drawn in a fixed-ratio viewBox stretched to the row's real
+ * width (preserveAspectRatio="none") so it always fills the inset regardless
+ * of screen width; pointer math still needs the row's measured pixel width,
  * tracked separately via onLayout.
  */
-function NibSlider({ value, onChange }: { value: number; onChange: (v: number) => void }) {
+function LineWeightSlider({ value, onChange }: { value: number; onChange: (v: number) => void }) {
   const { colors } = useTheme();
   const widthRef = useRef(1);
 
   const fromEvent = useCallback((e: GestureResponderEvent) => {
     const pct = Math.max(0, Math.min(1, e.nativeEvent.locationX / widthRef.current));
-    return NIB_MIN + pct * (NIB_MAX - NIB_MIN);
+    return WEIGHT_MIN + pct * (WEIGHT_MAX - WEIGHT_MIN);
   }, []);
 
   const responder = useMemo(
@@ -209,34 +218,25 @@ function NibSlider({ value, onChange }: { value: number; onChange: (v: number) =
     [fromEvent, onChange]
   );
 
-  const pct = (value - NIB_MIN) / (NIB_MAX - NIB_MIN);
-  const thumbSize = Math.max(14, Math.min(30, value * 2.4));
+  const pct = (value - WEIGHT_MIN) / (WEIGHT_MAX - WEIGHT_MIN);
+  const dotSize = Math.max(3, Math.min(13, value * 1.3));
 
   return (
     <View
       onLayout={ev => {
         widthRef.current = Math.max(1, ev.nativeEvent.layout.width);
       }}
-      style={styles.nibTrack}
+      style={styles.sliderTrack}
       {...responder.panHandlers}
     >
-      <Svg width="100%" height="100%" viewBox="0 0 100 28" preserveAspectRatio="none" style={StyleSheet.absoluteFill}>
-        <Polygon points="2,25 98,6 98,25" fill={colors.line2} />
-      </Svg>
-      <View
-        style={[
-          styles.nibThumb,
-          {
-            left: `${pct * 100}%`,
-            width: thumbSize,
-            height: thumbSize,
-            borderRadius: thumbSize / 2,
-            marginLeft: -thumbSize / 2,
-            marginTop: -thumbSize / 2,
-            backgroundColor: colors.accInk,
-          },
-        ]}
-      />
+      <View style={[styles.sliderFill, { backgroundColor: colors.card, borderWidth: 1, borderColor: colors.line }]}>
+        <Svg width="100%" height="100%" viewBox="0 0 100 24" preserveAspectRatio="none" style={StyleSheet.absoluteFill}>
+          <Polygon points="10,19 90,10 90,19" fill={colors.line2} />
+        </Svg>
+      </View>
+      <View style={[styles.sliderThumb, { left: `${pct * 100}%`, borderColor: colors.accInk }]}>
+        <View style={{ width: dotSize, height: dotSize, borderRadius: dotSize / 2, backgroundColor: colors.accInk }} />
+      </View>
     </View>
   );
 }
@@ -254,7 +254,7 @@ export default function PhysicalCardScreen() {
   const [ink, setInk] = useState<'foil' | 'custom' | string>('foil');
   const [customHue, setCustomHue] = useState(265);
   const [customLit, setCustomLit] = useState(55);
-  const [nib, setNib] = useState<number>(DEFAULT_NIB);
+  const [lineWeight, setLineWeight] = useState<number>(DEFAULT_WEIGHT);
   const [flipped, setFlipped] = useState(false);
   const [mixerOpen, setMixerOpen] = useState(false);
   const [drawing, setDrawing] = useState(false);
@@ -426,7 +426,7 @@ export default function PhysicalCardScreen() {
                 finish={finish}
                 strokes={strokes}
                 color={activeColor}
-                width={nib}
+                width={lineWeight}
                 flipped={flipped}
                 onStrokeEnd={handleStrokeEnd}
                 onDrawingChange={setDrawing}
@@ -543,9 +543,9 @@ export default function PhysicalCardScreen() {
                 })}
               </ScrollView>
 
-              {/* --- Nib ------------------------------------------------------ */}
-              <SectionHeader style={{ marginTop: 18 }}>Nib</SectionHeader>
-              <NibSlider value={nib} onChange={setNib} />
+              {/* --- Line weight ------------------------------------------------ */}
+              <SectionHeader style={{ marginTop: 18 }}>Line weight</SectionHeader>
+              <LineWeightSlider value={lineWeight} onChange={setLineWeight} />
 
               {/* --- Finish ----------------------------------------------------- */}
               <SectionHeader style={{ marginTop: 20 }}>Base finish</SectionHeader>
@@ -786,17 +786,6 @@ const styles = StyleSheet.create({
     height: 34,
     borderRadius: 17,
   },
-  nibTrack: {
-    height: 44,
-    marginTop: 12,
-    justifyContent: 'center',
-  },
-  nibThumb: {
-    position: 'absolute',
-    top: '50%',
-    borderWidth: 3,
-    borderColor: '#FFFFFF',
-  },
   finishRow: {
     flexDirection: 'row',
     gap: 8,
@@ -889,5 +878,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     borderWidth: 3,
     borderColor: '#241A38',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });

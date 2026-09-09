@@ -107,10 +107,19 @@ style problem.
   (`useCardFlowStatus`) to decide whether tapping it opens the raw designer or
   the finished-design review. Losing either branch reopens the blank canvas on
   someone who already finished the flow — the exact complaint this fixed.
-- **Nib width is a continuous 1.5–11 drag** (`NibSlider` in
-  `app/screens/PhysicalCard.tsx`), not the design comp's 5 fixed stops. This
-  was a deliberate departure from the comp, not a miss — asked for directly.
-  Don't "restore" the comp's 5-button version thinking it's a bug fix.
+- **Line weight is a continuous 1.5–11 drag** (`LineWeightSlider` in
+  `app/screens/PhysicalCard.tsx`, labelled "Line weight" on screen — not
+  "Nib", which read as jargon), not the design comp's 5 fixed stops. Both were
+  deliberate departures from the comp, asked for directly. Don't "restore" the
+  comp's 5-button version or the "Nib" label thinking either is a bug fix.
+- **`components/redesign/SpinCard.tsx` throttles drag-move handling to one
+  update per animation frame** (`scheduleMove`/`flushMove`). This exists for
+  the web export specifically: a mouse fires far more `pointermove` events per
+  second than a touchscreen does, and without the throttle the card would
+  visibly hang right at release while the main thread — the only thread RN Web
+  has — worked through however many queued moves had piled up during the
+  drag. Removing the throttle to "simplify" reintroduces that hang on web; it
+  is a no-op on native, where the native driver already ran at display rate.
 - **The Pay in 4 card's free-drag spin physics live in
   `components/redesign/SpinCard.tsx`**, not in `VirtualCard.tsx` — extracted
   so `PhysicalCardReview.tsx`'s finished-design preview gets the exact same
