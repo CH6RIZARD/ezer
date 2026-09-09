@@ -12,10 +12,10 @@
 // the back, reached with the flip control. See CardCanvas.tsx.
 //
 // Ink is: gold foil, a custom mixer (hue + lightness, built on PanResponder —
-// no Reanimated in deps), and 20 named pigments. Nib is 5 sizes. Both match
-// the comp's tool rows; the swatch count is not decorative — Card Studio is
-// the flagship of the physical-card product and was cut down to 6 colors and
-// 3 nibs at some point without the comp being re-checked. This restores it.
+// no Reanimated in deps), and 20 named pigments — the comp's tool row, which
+// had been cut down to 6 colors at some point without being re-checked
+// against it. Nib is a continuous 1.5-11 drag instead of the comp's 5 fixed
+// stops, which reads more like a real pen than snapping between presets.
 //
 // The saved payload is { finish, strokes: [{d,color,width}], updatedAt } and is
 // persisted through utils/cardDesignStore.ts (owned by another module). Strokes
@@ -38,6 +38,7 @@ import {
 } from 'react-native';
 import { router } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
+import Svg, { Polygon } from 'react-native-svg';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../../utils/ThemeContext';
@@ -52,7 +53,7 @@ import {
 } from '../../components/redesign/Primitives';
 import CardCanvas, { CARD_W, type Stroke } from '../../components/redesign/CardCanvas';
 import { cardFinishes, type CardFinish } from '../../theme/tokens';
-import { saveCardDesign, loadCardDesign } from '../../utils/cardDesignStore';
+import { saveCardDesign, loadCardDesign, getCardAccessOutcome } from '../../utils/cardDesignStore';
 
 const FINISHES: { key: CardFinish; label: string }[] = [
   { key: 'amethyst', label: 'Amethyst' },
@@ -61,10 +62,14 @@ const FINISHES: { key: CardFinish; label: string }[] = [
   { key: 'bone', label: 'Bone' },
 ];
 
-/** Dot sizes only — the comp shows no label under a nib, its size IS the label. */
-const NIBS = [1.5, 3, 5, 7.5, 11] as const;
-const NIB_A11Y = ['Extra fine', 'Fine', 'Medium', 'Bold', 'Extra bold'];
-const DEFAULT_NIB = NIBS[2]; // 5 — the same default the comp ships with.
+/**
+ * Nib is a continuous drag, not the comp's 5 fixed stops — sliding to an
+ * in-between width reads as more of a real pen than snapping to one of five
+ * presets does. Range and the default (5) still match the comp.
+ */
+const NIB_MIN = 1.5;
+const NIB_MAX = 11;
+const DEFAULT_NIB = 5;
 
 /** Flat pigment swatch, same 20 named inks as the comp. */
 const INKS: { key: string; hex: string }[] = [
@@ -173,6 +178,65 @@ function SliderTrack({
         )}
       </View>
       <View style={[styles.sliderThumb, { left: `${pct * 100}%` }]} />
+    </View>
+  );
+}
+
+/**
+ * Continuous nib width, dragged along a thin→thick wedge rather than picked
+ * from fixed stops. The wedge is drawn in a fixed-ratio viewBox stretched to
+ * the row's real width (preserveAspectRatio="none") so the triangle always
+ * fills the track; pointer math still needs the row's measured pixel width,
+ * tracked separately via onLayout.
+ */
+function NibSlider({ value, onChange }: { value: number; onChange: (v: number) => void }) {
+  const { colors } = useTheme();
+  const widthRef = useRef(1);
+
+  const fromEvent = useCallback((e: GestureResponderEvent) => {
+    const pct = Math.max(0, Math.min(1, e.nativeEvent.locationX / widthRef.current));
+    return NIB_MIN + pct * (NIB_MAX - NIB_MIN);
+  }, []);
+
+  const responder = useMemo(
+    () =>
+      PanResponder.create({
+        onStartShouldSetPanResponder: () => true,
+        onMoveShouldSetPanResponder: () => true,
+        onPanResponderGrant: e => onChange(fromEvent(e)),
+        onPanResponderMove: e => onChange(fromEvent(e)),
+      }),
+    [fromEvent, onChange]
+  );
+
+  const pct = (value - NIB_MIN) / (NIB_MAX - NIB_MIN);
+  const thumbSize = Math.max(14, Math.min(30, value * 2.4));
+
+  return (
+    <View
+      onLayout={ev => {
+        widthRef.current = Math.max(1, ev.nativeEvent.layout.width);
+      }}
+      style={styles.nibTrack}
+      {...responder.panHandlers}
+    >
+      <Svg width="100%" height="100%" viewBox="0 0 100 28" preserveAspectRatio="none" style={StyleSheet.absoluteFill}>
+        <Polygon points="2,25 98,6 98,25" fill={colors.line2} />
+      </Svg>
+      <View
+        style={[
+          styles.nibThumb,
+          {
+            left: `${pct * 100}%`,
+            width: thumbSize,
+            height: thumbSize,
+            borderRadius: thumbSize / 2,
+            marginLeft: -thumbSize / 2,
+            marginTop: -thumbSize / 2,
+            backgroundColor: colors.accInk,
+          },
+        ]}
+      />
     </View>
   );
 }
@@ -289,10 +353,21 @@ export default function PhysicalCardScreen() {
         strokes,
         updatedAt: new Date().toISOString(),
       });
-      router.push('/screens/PhysicalCardApproval');
+      // Already been through approval once (this is a re-edit reached from
+      // PhysicalCardReview's "Edit design") → go straight back to the review
+      // screen instead of re-running the connect-bank-or-skip choice on
+      // someone who already made it. saveCardDesign carries the outcome
+      // forward on its own, so nothing further needs writing here. First time
+      // through still pushes to Approval, unchanged.
+      const access = await getCardAccessOutcome();
+      if (access) {
+        router.replace('/screens/PhysicalCardReview');
+      } else {
+        router.push('/screens/PhysicalCardApproval');
+      }
     } catch {
       // Keep the user on the screen with their artwork intact rather than
-      // navigating on to approval with nothing persisted behind it.
+      // navigating on with nothing persisted behind it.
       setSaving(false);
     }
   }, [finish, strokes, saving]);
@@ -470,34 +545,7 @@ export default function PhysicalCardScreen() {
 
               {/* --- Nib ------------------------------------------------------ */}
               <SectionHeader style={{ marginTop: 18 }}>Nib</SectionHeader>
-              <View style={styles.nibRow}>
-                {NIBS.map((n, idx) => {
-                  const active = n === nib;
-                  return (
-                    <PressScale key={n} onPress={() => setNib(n)} scaleTo={0.9} style={{ flex: 1 }}>
-                      <View
-                        style={[
-                          styles.nibBtn,
-                          {
-                            backgroundColor: active ? colors.accSoft : colors.card,
-                            borderColor: active ? colors.accInk : colors.line,
-                          },
-                        ]}
-                        accessibilityLabel={NIB_A11Y[idx]}
-                      >
-                        <View
-                          style={{
-                            width: Math.max(3, n * 1.7),
-                            height: Math.max(3, n * 1.7),
-                            borderRadius: Math.max(3, n * 1.7) / 2,
-                            backgroundColor: active ? colors.accInk : colors.ink,
-                          }}
-                        />
-                      </View>
-                    </PressScale>
-                  );
-                })}
-              </View>
+              <NibSlider value={nib} onChange={setNib} />
 
               {/* --- Finish ----------------------------------------------------- */}
               <SectionHeader style={{ marginTop: 20 }}>Base finish</SectionHeader>
@@ -738,17 +786,16 @@ const styles = StyleSheet.create({
     height: 34,
     borderRadius: 17,
   },
-  nibRow: {
-    flexDirection: 'row',
-    gap: 7,
-    marginTop: 10,
-  },
-  nibBtn: {
-    height: 40,
-    borderRadius: radius.chip,
-    borderWidth: 1.5,
-    alignItems: 'center',
+  nibTrack: {
+    height: 44,
+    marginTop: 12,
     justifyContent: 'center',
+  },
+  nibThumb: {
+    position: 'absolute',
+    top: '50%',
+    borderWidth: 3,
+    borderColor: '#FFFFFF',
   },
   finishRow: {
     flexDirection: 'row',

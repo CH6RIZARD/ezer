@@ -88,6 +88,36 @@ style problem.
   HAVE both been applied to the live Supabase database; future migrations still
   need running by hand.
 
+## Card Studio
+
+- **`CardFrontFace`/`CardBackFace`, exported from `components/redesign/CardCanvas.tsx`,
+  are the ONLY place the physical card's locked layout is drawn** — front is
+  chip + contactless mark, no wording; identifying details (name, masked
+  number, CVV, expiry) are on the back. `PhysicalCardReview.tsx` renders a
+  finished design with these same two components rather than reimplementing
+  the layout, specifically so the two screens that show a design cannot drift
+  apart the way the front once silently grew cardholder/number text back onto
+  it. Add card visuals here, not in a screen file.
+- **Card Studio's "Continue" branches on whether a `CardAccessOutcome` already
+  exists** (`utils/cardDesignStore.ts`): first time through a saved design
+  goes to `PhysicalCardApproval`; re-editing an already-approved design (via
+  `PhysicalCardReview`'s "Edit design") goes straight back to
+  `PhysicalCardReview` instead of re-running connect-bank-or-skip on someone
+  who already chose. Home's card tile makes the same check
+  (`useCardFlowStatus`) to decide whether tapping it opens the raw designer or
+  the finished-design review. Losing either branch reopens the blank canvas on
+  someone who already finished the flow — the exact complaint this fixed.
+- **Nib width is a continuous 1.5–11 drag** (`NibSlider` in
+  `app/screens/PhysicalCard.tsx`), not the design comp's 5 fixed stops. This
+  was a deliberate departure from the comp, not a miss — asked for directly.
+  Don't "restore" the comp's 5-button version thinking it's a bug fix.
+- **The Pay in 4 card's free-drag spin physics live in
+  `components/redesign/SpinCard.tsx`**, not in `VirtualCard.tsx` — extracted
+  so `PhysicalCardReview.tsx`'s finished-design preview gets the exact same
+  interaction (idle float, drag-rotate, half-turn settle) instead of a second
+  hand-copied implementation. Edit the physics there; `VirtualCard.tsx` and
+  `PhysicalCardReview.tsx` should only ever supply front/back content to it.
+
 ## Routing and the app's front door
 
 - **`app/onboarding.tsx` is the entry point for signed-out users**, not

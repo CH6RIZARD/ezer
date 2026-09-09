@@ -82,6 +82,120 @@ const r1 = (v: number) => Math.round(v * 10) / 10;
 
 const FLIP_MS = 620;
 
+/**
+ * The LOCKED front: chip + contactless mark + the artwork, no wording.
+ * Exported so anywhere that shows a finished design read-only — currently
+ * PhysicalCardReview.tsx's free-spin preview — renders exactly this and
+ * cannot drift from what the live designer draws. `liveStroke` is for the
+ * designer's in-progress path only; omit it everywhere else.
+ */
+export function CardFrontFace({
+  finish,
+  strokes,
+  liveStroke,
+}: {
+  finish: CardFinish;
+  strokes: Stroke[];
+  liveStroke?: Stroke;
+}) {
+  return (
+    <View style={StyleSheet.absoluteFill}>
+      <LinearGradient
+        colors={cardFinishes[finish] as unknown as readonly [string, string, ...string[]]}
+        locations={
+          gradients.cardFrontLocations as unknown as readonly [number, number, ...number[]]
+        }
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={StyleSheet.absoluteFill}
+      />
+      <Svg
+        width={CARD_W}
+        height={CARD_H}
+        viewBox={`0 0 ${CARD_W} ${CARD_H}`}
+        style={StyleSheet.absoluteFill}
+        pointerEvents="none"
+      >
+        {strokes.map((s, i) => (
+          <Path
+            key={i}
+            d={s.d}
+            stroke={s.color}
+            strokeWidth={s.width}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            fill="none"
+          />
+        ))}
+        {liveStroke ? (
+          <Path
+            d={liveStroke.d}
+            stroke={liveStroke.color}
+            strokeWidth={liveStroke.width}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            fill="none"
+          />
+        ) : null}
+      </Svg>
+      {/* Card furniture sits ABOVE the artwork so the chip/contactless stay
+          readable no matter how heavily the user draws. */}
+      <View style={styles.furniture} pointerEvents="none">
+        <View style={styles.rowBetween}>
+          <LinearGradient
+            colors={gradients.metalEdge as unknown as readonly [string, string, ...string[]]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.chip}
+          />
+          <Ionicons name="wifi" size={20} color="rgba(255,255,255,.85)" />
+        </View>
+      </View>
+    </View>
+  );
+}
+
+/** The LOCKED back: security printing — name, masked number, CVV, expiry. */
+export function CardBackFace({ finish }: { finish: CardFinish }) {
+  const backDark = isDarkFinish(finish);
+  const backInk = backDark ? 'rgba(255,255,255,.92)' : '#241A38';
+  const backSub = backDark ? 'rgba(255,255,255,.55)' : 'rgba(36,26,56,.55)';
+  const backBoxBg = backDark ? 'rgba(255,255,255,.18)' : 'rgba(36,26,56,.12)';
+  const backGold = backDark ? '#D6B36F' : '#A87D2F';
+
+  return (
+    <View style={StyleSheet.absoluteFill}>
+      <LinearGradient
+        colors={cardBackFinishes[finish] as unknown as readonly [string, string, ...string[]]}
+        locations={
+          gradients.cardFrontLocations as unknown as readonly [number, number, ...number[]]
+        }
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={StyleSheet.absoluteFill}
+      />
+      <View style={styles.stripe} />
+      <View style={styles.backBody} pointerEvents="none">
+        <View style={styles.rowBetween}>
+          <View style={[styles.nameBox, { backgroundColor: 'rgba(255,255,255,.92)' }]}>
+            <Text style={styles.nameBoxText}>EZER MEMBER</Text>
+          </View>
+          <View style={[styles.cvvBox, { backgroundColor: backBoxBg }]}>
+            <Text style={[styles.cvvLabel, { color: backInk }]}>CVV</Text>
+            <Text style={[styles.cvvValue, { color: backInk }]}>•••</Text>
+          </View>
+        </View>
+        <View style={{ flex: 1 }} />
+        <Text style={[styles.backNumber, { color: backInk }]}>••••  ••••  ••••  8873</Text>
+        <View style={styles.rowBetween}>
+          <Text style={[styles.backSub, { color: backSub }]}>PHYSICAL · YOUR DESIGN</Text>
+          <Text style={[styles.backWordmark, { color: backGold }]}>EZER</Text>
+        </View>
+      </View>
+    </View>
+  );
+}
+
 export function CardCanvas({
   finish,
   strokes,
@@ -191,12 +305,6 @@ export function CardCanvas({
     [color, flipped, onDrawingChange, onStrokeEnd, readPoint, width]
   );
 
-  const backDark = isDarkFinish(finish);
-  const backInk = backDark ? 'rgba(255,255,255,.92)' : '#241A38';
-  const backSub = backDark ? 'rgba(255,255,255,.55)' : 'rgba(36,26,56,.55)';
-  const backBoxBg = backDark ? 'rgba(255,255,255,.18)' : 'rgba(36,26,56,.12)';
-  const backGold = backDark ? '#D6B36F' : '#A87D2F';
-
   return (
     <View style={[styles.perspective, style]}>
       {/* --- Front: chip + contactless mark + the user's artwork. No wording. */}
@@ -207,61 +315,11 @@ export function CardCanvas({
         ]}
         pointerEvents={flipped ? 'none' : 'auto'}
       >
-        <LinearGradient
-          colors={cardFinishes[finish] as unknown as readonly [string, string, ...string[]]}
-          locations={
-            gradients.cardFrontLocations as unknown as readonly [number, number, ...number[]]
-          }
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={StyleSheet.absoluteFill}
+        <CardFrontFace
+          finish={finish}
+          strokes={strokes}
+          liveStroke={liveD ? { d: liveD, color, width } : undefined}
         />
-
-        {/* Artwork layer. pointerEvents none so the PanResponder overlay wins. */}
-        <Svg
-          width={CARD_W}
-          height={CARD_H}
-          viewBox={`0 0 ${CARD_W} ${CARD_H}`}
-          style={StyleSheet.absoluteFill}
-          pointerEvents="none"
-        >
-          {strokes.map((s, i) => (
-            <Path
-              key={i}
-              d={s.d}
-              stroke={s.color}
-              strokeWidth={s.width}
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              fill="none"
-            />
-          ))}
-          {liveD ? (
-            <Path
-              d={liveD}
-              stroke={color}
-              strokeWidth={width}
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              fill="none"
-            />
-          ) : null}
-        </Svg>
-
-        {/* Card furniture sits ABOVE the artwork so the chip/contactless stay
-            readable no matter how heavily the user draws. */}
-        <View style={styles.furniture} pointerEvents="none">
-          <View style={styles.rowBetween}>
-            <LinearGradient
-              colors={gradients.metalEdge as unknown as readonly [string, string, ...string[]]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={styles.chip}
-            />
-            <Ionicons name="wifi" size={20} color="rgba(255,255,255,.85)" />
-          </View>
-        </View>
-
         {/* Touch layer, last child so it is on top of everything above. */}
         <View style={StyleSheet.absoluteFill} {...panResponder.panHandlers} />
       </Animated.View>
@@ -275,36 +333,7 @@ export function CardCanvas({
         ]}
         pointerEvents="none"
       >
-        <LinearGradient
-          colors={cardBackFinishes[finish] as unknown as readonly [string, string, ...string[]]}
-          locations={
-            gradients.cardFrontLocations as unknown as readonly [number, number, ...number[]]
-          }
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={StyleSheet.absoluteFill}
-        />
-        <View style={styles.stripe} />
-
-        <View style={styles.backBody} pointerEvents="none">
-          <View style={styles.rowBetween}>
-            <View style={[styles.nameBox, { backgroundColor: 'rgba(255,255,255,.92)' }]}>
-              <Text style={styles.nameBoxText}>EZER MEMBER</Text>
-            </View>
-            <View style={[styles.cvvBox, { backgroundColor: backBoxBg }]}>
-              <Text style={[styles.cvvLabel, { color: backInk }]}>CVV</Text>
-              <Text style={[styles.cvvValue, { color: backInk }]}>•••</Text>
-            </View>
-          </View>
-
-          <View style={{ flex: 1 }} />
-
-          <Text style={[styles.backNumber, { color: backInk }]}>••••  ••••  ••••  8873</Text>
-          <View style={styles.rowBetween}>
-            <Text style={[styles.backSub, { color: backSub }]}>PHYSICAL · YOUR DESIGN</Text>
-            <Text style={[styles.backWordmark, { color: backGold }]}>EZER</Text>
-          </View>
-        </View>
+        <CardBackFace finish={finish} />
       </Animated.View>
     </View>
   );

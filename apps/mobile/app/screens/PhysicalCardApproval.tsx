@@ -34,7 +34,7 @@ import {
   PressScale,
   ScreenBody,
 } from '../../components/redesign/Primitives';
-import { getCardDesignId } from '../../utils/cardDesignStore';
+import { getCardDesignId, saveCardAccessOutcome } from '../../utils/cardDesignStore';
 import { usePlaid } from '../../utils/usePlaid';
 import { api } from '../../utils/api';
 
@@ -155,10 +155,12 @@ export default function PhysicalCardApprovalScreen() {
     if (cents && cents > 0) {
       setLimitCents(cents);
       setPhase('approved');
+      void saveCardAccessOutcome({ status: 'approved', limitCents: cents, joinedAt: new Date().toISOString() });
     } else {
       // A thin file is not a decline. It goes to a human.
       setLimitCents(null);
       setPhase('review');
+      void saveCardAccessOutcome({ status: 'review', limitCents: null, joinedAt: new Date().toISOString() });
     }
   }, [joinAccessList, wait]);
 
@@ -201,6 +203,7 @@ export default function PhysicalCardApprovalScreen() {
     if (!alive.current) return;
     setLimitCents(null);
     setPhase('waitlist');
+    void saveCardAccessOutcome({ status: 'waitlist', limitCents: null, joinedAt: new Date().toISOString() });
     setBusy(false);
   }, [busy, joinAccessList]);
 
@@ -371,7 +374,16 @@ export default function PhysicalCardApprovalScreen() {
                   </View>
                 </PressScale>
               )}
-              <PressScale onPress={() => router.back()} scaleTo={0.97} style={{ marginTop: 12 }}>
+              {/* Replace, not push-back: the raw designer sits underneath this
+                  screen on the stack, and popping back into it after the flow
+                  is exactly the "reopens the edit screen" problem this avoids.
+                  Landing on the review screen also means the back gesture from
+                  here goes straight to wherever launched Card Studio. */}
+              <PressScale
+                onPress={() => router.replace('/screens/PhysicalCardReview')}
+                scaleTo={0.97}
+                style={{ marginTop: 12 }}
+              >
                 <View style={[styles.ctaGhost, { borderColor: colors.line2 }]}>
                   <Text style={[styles.ctaGhostText, { color: colors.ink }]}>Done</Text>
                 </View>

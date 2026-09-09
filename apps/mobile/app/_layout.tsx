@@ -103,6 +103,7 @@ function RootLayoutNav() {
           <Stack.Screen name="screens/DrainReview" />
           <Stack.Screen name="screens/PhysicalCard" />
           <Stack.Screen name="screens/PhysicalCardApproval" />
+          <Stack.Screen name="screens/PhysicalCardReview" />
           <Stack.Screen name="savings" />
           <Stack.Screen name="screens/Paywall" options={{ presentation: 'fullScreenModal', animation: 'slide_from_bottom' }} />
         </Stack>

@@ -39,6 +39,7 @@ import NfcTapIcon from '../../components/redesign/NfcTapIcon';
 import { useSavingsGoals } from '../../utils/SavingsGoalsContext';
 import { projectMonthEvents, groupEventsByDay } from '../../utils/calendarEvents';
 import { useConnectBank } from '../../utils/useConnectBank';
+import { useCardFlowStatus } from '../../utils/useCardFlowStatus';
 
 const WEEKDAYS = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
 /** Handoff: spending power is a fixed $400 in the prototype. */
@@ -58,6 +59,7 @@ export default function HomeScreen() {
   const { homeSummary, risks, subscriptions, instruments } = useData();
   const { goals } = useSavingsGoals();
   const connectBank = useConnectBank();
+  const { hasCompletedFlow: hasCardDesign } = useCardFlowStatus();
 
   const [view, setView] = useState<'calendar' | 'list'>('calendar');
   const [monthOffset, setMonthOffset] = useState(0);
@@ -394,12 +396,16 @@ export default function HomeScreen() {
                 },
                 {
                   key: 'physical-card',
-                  onPress: () => router.push('/screens/PhysicalCard'),
+                  // Already been through the flow once → show the finished
+                  // design (with an explicit edit affordance there), not the
+                  // blank/edit canvas someone already finished with.
+                  onPress: () =>
+                    router.push(hasCardDesign ? '/screens/PhysicalCardReview' : '/screens/PhysicalCard'),
                   render: () => (
                     <View style={styles.slide}>
                       <NfcTapIcon size={28} />
                       <Label numberOfLines={2} adjustsFontSizeToFit style={styles.slideLabel}>
-                        Get your physical card
+                        {hasCardDesign ? 'Your physical card' : 'Get your physical card'}
                       </Label>
                       <Text
                         style={[styles.slideCta, { color: colors.accInk }]}
@@ -407,7 +413,7 @@ export default function HomeScreen() {
                         adjustsFontSizeToFit
                         minimumFontScale={0.75}
                       >
-                        Design it →
+                        {hasCardDesign ? 'View it →' : 'Design it →'}
                       </Text>
                     </View>
                   ),
