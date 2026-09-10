@@ -110,7 +110,20 @@ export function usePlaid() {
           },
         });
       } catch (err: any) {
+        // Thrown here means the link-token request failed before Plaid Link
+        // ever had a chance to open. None of the five call sites read
+        // `state.error` for this path — they only check the onExit error Plaid
+        // Link itself reports once it's open — so without this Alert, tapping
+        // "Connect Bank" against a misconfigured or unreachable API silently
+        // does nothing.
         console.log('[usePlaid] error:', err.message);
+        // api.ts throws a plain Error whose message is already the server's
+        // `error` field (or a network-reachability message) — there is no
+        // separate `.data` to unwrap.
+        Alert.alert(
+          'Bank Linking Unavailable',
+          err?.message || 'Could not start bank linking. Please try again.'
+        );
         setState(prev => ({ ...prev, isLoading: false, error: err.message }));
       }
     },
