@@ -81,6 +81,13 @@ style problem.
   `app.json` no longer declares `plugins` at all; change `expo-build-properties`
   in `app.config.js`. The same trap applies to `react-native-purchases`, which
   `app.config.js` deliberately omits because it ships no config plugin.
+- **`packageManager` must stay at `pnpm@9.x` or later.** Pinned at `8.15.0`,
+  Railway's Nixpacks builder (on its current `nodejs_24` base image) produced
+  `prisma generate` binaries with the execute bit missing —
+  `ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL ... spawn prisma EACCES` — and every
+  deploy failed at the build step. `apps/mobile`'s EAS builds already pinned
+  `pnpm@9.15.0` with no such issue; matching that at the repo root fixed it.
+  The lockfile (`lockfileVersion: '6.0'`) is unaffected — pnpm 9 reads it fine.
 - **Migrations do not run on deploy.** `railway.json` runs `prisma generate`
   only — `migrate deploy` needs a session-mode connection (port 5432), not the
   transaction pooler. Apply migrations manually.
