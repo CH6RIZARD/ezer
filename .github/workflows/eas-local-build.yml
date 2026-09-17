@@ -1,0 +1,51 @@
+name: EAS local Android build
+
+# Runs `eas build --local` on GitHub's runner instead of Expo's build queue,
+# so it doesn't draw from the account's EAS Build plan/quota. Needs the
+# EXPO_TOKEN repo secret (an Expo access token from expo.dev → Account
+# settings → Access tokens) so eas-cli can authenticate non-interactively.
+on:
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: "EAS build profile (apps/mobile/eas.json)"
+        required: false
+        default: production
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/mobile
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20.18.0
+
+      - name: Enable pnpm via corepack
+        run: |
+          corepack enable
+          corepack prepare pnpm@9.15.0 --activate
+
+      - name: Install dependencies
+        working-directory: .
+        run: pnpm install --frozen-lockfile=false
+
+      - name: Install eas-cli
+        run: npm install -g eas-cli
+
+      - name: Build (eas build --local)
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          eas build --platform android --profile ${{ github.event.inputs.profile }} \
+            --local --non-interactive --output ezer.aab
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ezer-aab
+          path: apps/mobile/ezer.aab
+          retention-days: 14
