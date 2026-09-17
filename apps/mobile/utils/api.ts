@@ -53,7 +53,14 @@ export const TOKEN_KEY = '@ezer_jwt';
 
 async function request<T>(method: string, path: string, body?: any): Promise<T> {
   const token = await AsyncStorage.getItem(TOKEN_KEY);
-  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  const headers: Record<string, string> = {};
+  // Fastify's body parser rejects a request outright — 400, before the route
+  // handler runs — when Content-Type: application/json arrives with no body.
+  // Every bodyless POST (create-link-token, sync, ...) hit exactly this: the
+  // header was sent unconditionally regardless of whether `body` existed, so
+  // the Plaid Link button's "Bad Request" was this parser refusing the
+  // request, not anything Plaid ever saw.
+  if (body !== undefined) headers['Content-Type'] = 'application/json';
   if (token) headers['Authorization'] = `Bearer ${token}`;
 
   let res: Response;
@@ -81,7 +88,17 @@ async function request<T>(method: string, path: string, body?: any): Promise<T> 
     // Carry the status so callers can tell "your session is dead" (401/404)
     // from "the server is unhappy" or "the network is down". Signing someone
     // out because their train went through a tunnel is its own bug.
-    const err = new Error(json?.error || `API ${res.status}`) as Error & { status?: number };
+    //
+    // Our own routes put the specific problem in `error` (e.g. "Plaid not
+    // configured on this server"). Fastify's own framework-level rejections —
+    // a body-parser or validation failure before any route handler runs — put
+    // only the generic HTTP reason phrase there ("Bad Request") and the actual
+    // detail in `message`. Prefer whichever one isn't just that generic phrase.
+    const detail =
+      json?.error && json.error !== json?.message && !/^(Bad Request|Not Found|Internal Server Error)$/.test(json.error)
+        ? json.error
+        : json?.message || json?.error;
+    const err = new Error(detail || `API ${res.status}`) as Error & { status?: number };
     err.status = res.status;
     throw err;
   }

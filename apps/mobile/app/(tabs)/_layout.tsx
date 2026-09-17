@@ -12,10 +12,9 @@
 // =============================================================================
 
 import React from 'react';
-import { View, Text, Platform, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet } from 'react-native';
 import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { BlurView } from 'expo-blur';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../../utils/ThemeContext';
 import { fontFamily, radius } from '../../theme/type';
@@ -62,7 +61,7 @@ function TabItem({
 }
 
 export default function TabLayout() {
-  const { colors, isDark } = useTheme();
+  const { colors } = useTheme();
   const insets = useSafeAreaInsets();
 
   return (
@@ -93,20 +92,12 @@ export default function TabLayout() {
           height: BAR_HEIGHT,
           paddingVertical: 8,
         },
-        tabBarBackground: () =>
-          Platform.OS === 'web' ? (
-            // BlurView has no effect on react-native-web; a solid tinted fill
-            // reads closer to the design than an unblurred translucent one.
-            <View style={[StyleSheet.absoluteFill, { backgroundColor: colors.card }]} />
-          ) : (
-            <BlurView
-              intensity={14}
-              tint={isDark ? 'dark' : 'light'}
-              style={StyleSheet.absoluteFill}
-            >
-              <View style={[StyleSheet.absoluteFill, { backgroundColor: colors.tabBg }]} />
-            </BlurView>
-          ),
+        // A solid fill, not a blur over content — `tabBg` is fully opaque now.
+        // The handoff called for a blurred glass bar, but scrolled content
+        // showing through the tab labels read as a bug, not a design choice.
+        tabBarBackground: () => (
+          <View style={[StyleSheet.absoluteFill, { backgroundColor: colors.tabBg }]} />
+        ),
       }}
     >
       <Tabs.Screen
