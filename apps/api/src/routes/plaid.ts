@@ -29,6 +29,32 @@ function mapAccountType(type: string): 'card' | 'bank' {
   return type === 'credit' ? 'card' : 'bank';
 }
 
+/**
+ * Plaid's SDK throws a plain Axios error on any non-2xx response. Left
+ * unhandled, that error's `.message` is just "Request failed with status
+ * code 400" — Axios's own generic wording, not anything Plaid said — and an
+ * uncaught throw in an async route handler falls through to Fastify's
+ * default error response, which serializes exactly that useless string. The
+ * real reason (an `error_code` like PRODUCTS_NOT_SUPPORTED, PLAID_ENV
+ * misconfigured against these keys, the production application not yet
+ * approved for a requested product, ...) lives in `err.response.data` and
+ * was being discarded. Call this from a catch block so it reaches the
+ * client instead.
+ */
+function plaidErrorReply(err: any): { status: number; error: string } {
+  const data = err?.response?.data;
+  const status = typeof err?.response?.status === 'number' ? err.response.status : 502;
+  if (data?.error_code) {
+    return {
+      status,
+      error: `Plaid ${data.error_code}${data.error_message ? `: ${data.error_message}` : ''}`,
+    };
+  }
+  // No structured Plaid response at all — network failure or Plaid itself
+  // down, not a request Plaid rejected.
+  return { status: 502, error: err?.message || 'Plaid request failed' };
+}
+
 // ---------------------------------------------------------------------------
 // Subscription eligibility and recurrence live in @ezer/shared.
 //
@@ -64,15 +90,21 @@ export async function plaidRoutes(server: FastifyInstance) {
     }
 
     const plaid = getPlaidClient();
-    const res = await plaid.linkTokenCreate({
-      user: { client_user_id: userId },
-      client_name: 'EZER',
-      products: [Products.Transactions],
-      country_codes: [CountryCode.Us],
-      language: 'en',
-    });
+    try {
+      const res = await plaid.linkTokenCreate({
+        user: { client_user_id: userId },
+        client_name: 'EZER',
+        products: [Products.Transactions],
+        country_codes: [CountryCode.Us],
+        language: 'en',
+      });
 
-    return { success: true, data: { linkToken: res.data.link_token } };
+      return { success: true, data: { linkToken: res.data.link_token } };
+    } catch (err: any) {
+      const { status, error } = plaidErrorReply(err);
+      request.log.error({ err: err?.response?.data || err?.message }, 'linkTokenCreate failed');
+      return reply.status(status).send({ success: false, error });
+    }
   });
 
   // POST /plaid/exchange-public-token
@@ -87,8 +119,15 @@ export async function plaidRoutes(server: FastifyInstance) {
       const plaid = getPlaidClient();
 
       // Exchange public token for access token
-      const exchangeRes = await plaid.itemPublicTokenExchange({ public_token: publicToken });
-      const { access_token, item_id } = exchangeRes.data;
+      let access_token: string, item_id: string;
+      try {
+        const exchangeRes = await plaid.itemPublicTokenExchange({ public_token: publicToken });
+        ({ access_token, item_id } = exchangeRes.data);
+      } catch (err: any) {
+        const { status, error } = plaidErrorReply(err);
+        request.log.error({ err: err?.response?.data || err?.message }, 'itemPublicTokenExchange failed');
+        return reply.status(status).send({ success: false, error });
+      }
 
       // Accounts come from PLAID, not from the client.
       //
