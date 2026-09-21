@@ -103,8 +103,29 @@ export default function PhysicalCardReviewScreen() {
         scrollEnabled={!dragging}
       >
         <ScreenBody>
+          {/*
+            This screen's own back button, and its Edit design button below,
+            both push and replace their way through PhysicalCard and
+            PhysicalCardApproval depending on how someone arrived here —
+            fresh from Approval's Done, back in to redraw, arriving again
+            from Home's tile. That is exactly the kind of stack that is easy
+            to get subtly wrong and hard to fully verify without a device in
+            hand, and it was: "Edit design" pushes back into the designer
+            (correctly, so a genuine edit can itself replace forward again),
+            but anyone who reached this screen by a DIFFERENT path first — an
+            extra Approval or Review still sitting underneath from an earlier
+            attempt — could still find Back landing on something that looks
+            like the flow starting over instead of exiting.
+            This screen is the finished object, and the reasonable
+            expectation once someone is looking at their finished card is
+            that every way out of it goes home — not "back through however
+            many screens it took to get here." So both the header chevron and
+            the explicit "Done" button below replace straight to Home,
+            unconditionally, regardless of what is sitting underneath on the
+            stack.
+          */}
           <View style={styles.header}>
-            <PressScale onPress={() => router.back()} scaleTo={0.9}>
+            <PressScale onPress={() => router.replace('/(tabs)/home')} scaleTo={0.9}>
               <View style={[styles.back, { borderColor: colors.line, backgroundColor: colors.card }]}>
                 <Ionicons name="chevron-back" size={18} color={colors.ink} />
               </View>
@@ -161,6 +182,15 @@ export default function PhysicalCardReviewScreen() {
               </View>
             </PressScale>
           )}
+
+          {/* Explicit, unconditional exit — see the header chevron's comment
+              above. This is the one control on the screen whose destination
+              never depends on how the stack got built. */}
+          <PressScale onPress={() => router.replace('/(tabs)/home')} scaleTo={0.97} style={{ marginTop: 12 }}>
+            <View style={[styles.cta, { backgroundColor: colors.card, borderWidth: 1.5, borderColor: colors.line2 }]}>
+              <Text style={[styles.ctaText, { color: colors.ink }]}>Done</Text>
+            </View>
+          </PressScale>
 
           <SectionHeader style={{ marginTop: 26 }}>Not quite right?</SectionHeader>
           <PressScale onPress={() => router.push('/screens/PhysicalCard')} scaleTo={0.97} style={{ marginTop: 10 }}>
