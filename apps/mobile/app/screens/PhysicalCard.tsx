@@ -357,14 +357,17 @@ export default function PhysicalCardScreen() {
       // PhysicalCardReview's "Edit design") → go straight back to the review
       // screen instead of re-running the connect-bank-or-skip choice on
       // someone who already made it. saveCardDesign carries the outcome
-      // forward on its own, so nothing further needs writing here. First time
-      // through still pushes to Approval, unchanged.
+      // forward on its own, so nothing further needs writing here.
+      //
+      // First time through also replaces, not pushes: Approval itself
+      // replaces to Review once the user picks connect-bank or "Skip for
+      // now" (see PhysicalCardApproval.tsx), but that only removes Approval
+      // from the stack — this designer screen stayed underneath it. Back
+      // from the finished review then resurrected a blank canvas the user
+      // was done with, instead of exiting, and took a second Back press to
+      // actually leave.
       const access = await getCardAccessOutcome();
-      if (access) {
-        router.replace('/screens/PhysicalCardReview');
-      } else {
-        router.push('/screens/PhysicalCardApproval');
-      }
+      router.replace(access ? '/screens/PhysicalCardReview' : '/screens/PhysicalCardApproval');
     } catch {
       // Keep the user on the screen with their artwork intact rather than
       // navigating on with nothing persisted behind it.
