@@ -132,6 +132,27 @@ export default function SettingsScreen() {
             </View>
           </Surface>
 
+          {/* Data export and account deletion live on their own screen
+              (settings/account.tsx) — it already calls GET /account/export
+              and DELETE /account correctly, and DELETE /account already
+              revokes every Plaid item before erasing anything. It simply had
+              no way in: nothing in the app navigated to it, so the rights
+              the published privacy policy promises "from inside the app"
+              were unreachable, and Apple requires in-app account deletion
+              for any app that offers account creation (Guideline 5.1.1(v)). */}
+          <PressScale onPress={() => router.push('/settings/account')} style={{ marginTop: 10 }}>
+            <Surface style={styles.connectRow}>
+              <View style={[styles.connectIcon, { backgroundColor: colors.accSoft }]}>
+                <Ionicons name="person-outline" size={19} color={colors.accInk} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.kvValue, { color: colors.ink }]}>Manage account</Text>
+                <Body style={{ marginTop: 2 }}>Download your data, or delete your account</Body>
+              </View>
+              <Ionicons name="chevron-forward" size={16} color={colors.mut2} />
+            </Surface>
+          </PressScale>
+
           {/* --- linked banks -------------------------------------------------- */}
           {/*
             Real Plaid instruments, not a hardcoded list.
