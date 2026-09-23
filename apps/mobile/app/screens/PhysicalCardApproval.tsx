@@ -34,7 +34,7 @@ import {
   PressScale,
   ScreenBody,
 } from '../../components/redesign/Primitives';
-import { getCardDesignId, saveCardAccessOutcome } from '../../utils/cardDesignStore';
+import { getCardDesignId, loadCardDesign, saveCardAccessOutcome } from '../../utils/cardDesignStore';
 import { usePlaid } from '../../utils/usePlaid';
 import { api } from '../../utils/api';
 
@@ -378,9 +378,23 @@ export default function PhysicalCardApprovalScreen() {
                   screen on the stack, and popping back into it after the flow
                   is exactly the "reopens the edit screen" problem this avoids.
                   Landing on the review screen also means the back gesture from
-                  here goes straight to wherever launched Card Studio. */}
+                  here goes straight to wherever launched Card Studio.
+                  This screen's own header comment says it is "reached ONLY
+                  after the design is saved" — that contract broke the day
+                  Home's Spending Power tile started pushing here directly
+                  (home.tsx, the `linked` branch of the spendingPower tile) to
+                  run the same trust assessment without ever visiting the
+                  designer. PhysicalCardReview has no design to show in that
+                  case and immediately redirects to the blank designer itself
+                  — so someone who only tapped "Spending Power" landed on a
+                  card-drawing canvas they never asked for. Check for a saved
+                  design before deciding where Done goes, instead of assuming
+                  the contract held. */}
               <PressScale
-                onPress={() => router.replace('/screens/PhysicalCardReview')}
+                onPress={async () => {
+                  const design = await loadCardDesign();
+                  router.replace(design ? '/screens/PhysicalCardReview' : '/(tabs)/home');
+                }}
                 scaleTo={0.97}
                 style={{ marginTop: 12 }}
               >
