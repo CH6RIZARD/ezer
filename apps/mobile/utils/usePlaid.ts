@@ -53,7 +53,7 @@ export function usePlaid() {
         const res: any = await api.post('/plaid/create-link-token');
         const linkToken: string = res.data.linkToken;
 
-        if (!PlaidLink || !PlaidLink.open) {
+        if (!PlaidLink || !PlaidLink.open || !PlaidLink.create) {
           // Running in Expo Go — can't open native Plaid Link
           Alert.alert(
             'Bank Linking',
@@ -64,11 +64,21 @@ export function usePlaid() {
           return;
         }
 
+        // react-native-plaid-link-sdk 11.6+ split the old single open({
+        // tokenConfig, ... }) call into create({ token }) followed by open({
+        // onSuccess, onExit }) — open() now throws natively
+        // ("LinkException: Create must be called before open.") if create()
+        // was never called. This crashed the whole app the first time a
+        // request actually reached this point, because every earlier attempt
+        // failed at create-link-token on our own server before Plaid Link
+        // ever opened — nothing had exercised this code path until Plaid
+        // approved production access.
+        PlaidLink.create({
+          token: linkToken,
+          noLoadingState: false,
+        });
+
         PlaidLink.open({
-          tokenConfig: {
-            token: linkToken,
-            noLoadingState: false,
-          },
           onSuccess: async (success: any) => {
             const accounts: PlaidAccount[] = (success.metadata?.accounts || []).map((a: any) => ({
               id: a.id,
