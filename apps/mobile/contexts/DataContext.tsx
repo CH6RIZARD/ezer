@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useCallback, useEffect, ReactNode } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { api } from '../utils/api';
 import { useAuth } from '../utils/AuthContext';
 // demoDataAdapter is intentionally NOT imported any more — see the note above
@@ -105,6 +106,11 @@ const DataContext = createContext<DataContextType | undefined>(undefined);
 // tells the user to do.
 // =============================================================================
 
+const LAST_BG_SYNC_KEY = '@ezer_last_bg_sync';
+// An hour is enough to pick up same-day activity without calling Plaid on
+// every app relaunch — most sessions in one day would otherwise all fire it.
+const BG_SYNC_THROTTLE_MS = 60 * 60 * 1000;
+
 const EMPTY_STATE: DataState = {
   homeSummary: null,
   risks: [],
@@ -206,8 +212,47 @@ export function DataProvider({ children }: { children: ReactNode }) {
   // Load data when the user authenticates. Called unconditionally so the
   // unauthenticated preview path seeds demo data too; refresh() returns early
   // without a session, so this never fires a request it shouldn't.
+  //
+  // Once loaded, opportunistically resync any already-linked banks. Before
+  // this, the ONLY thing that ever called POST /plaid/sync was the moment a
+  // bank was first connected (useConnectBank) — nothing ever re-synced it
+  // afterward. A user who linked a bank and came back a week later saw
+  // exactly the transactions Plaid had on link day, forever, because nothing
+  // asked Plaid again. Real subscription activity that started billing after
+  // link day was invisible not because detection failed, but because it was
+  // never given new data to detect anything from.
+  //
+  // Throttled locally (AsyncStorage, not server state) so relaunching the
+  // app repeatedly doesn't refire this on every cold start — a missed window
+  // just waits for the next app open past the hour mark. Silent on failure:
+  // the user did not ask for this sync, so it must not interrupt them with
+  // an error for something they don't know is happening.
   useEffect(() => {
-    refresh();
+    let cancelled = false;
+
+    (async () => {
+      await refresh();
+      if (cancelled || !isAuthenticated) return;
+
+      try {
+        const last = await AsyncStorage.getItem(LAST_BG_SYNC_KEY);
+        const due = !last || Date.now() - Number(last) > BG_SYNC_THROTTLE_MS;
+        if (!due) return;
+
+        await AsyncStorage.setItem(LAST_BG_SYNC_KEY, String(Date.now()));
+
+        // 404s harmlessly when nothing is linked yet — a normal state, not a
+        // failure worth surfacing.
+        await api.post('/plaid/sync');
+        if (!cancelled) await refresh();
+      } catch {
+        // Next app open past the throttle window retries.
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
   }, [isAuthenticated, refresh]);
 
   return (
