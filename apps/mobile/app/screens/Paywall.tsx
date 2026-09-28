@@ -203,6 +203,21 @@ export default function PaywallScreen() {
           </View>
         ) : null}
 
+        {/* The only other state this screen renders for is 'expired' — and
+            until now it said nothing about that. Someone whose trial just
+            ran out saw the exact same generic "Locked" headline as someone
+            previewing the product cold, permanently, with no close button
+            (see canDismiss above) and no stated reason why. Both facts are
+            true at once — the lock is intentional, but it still has to say
+            why it's there. */}
+        {status === 'expired' ? (
+          <View style={{ alignSelf: 'center', marginTop: 14, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999, backgroundColor: '#F6EBD3', borderWidth: 1, borderColor: '#E2C892' }}>
+            <Text style={{ fontSize: 10, fontFamily: UI_SEMI, letterSpacing: 0.5, color: GOLD, textTransform: 'uppercase' }}>
+              Your free trial has ended
+            </Text>
+          </View>
+        ) : null}
+
         <View style={{ marginTop: 24, gap: 10 }}>
           {FEATURES.map(f => (
             <View
