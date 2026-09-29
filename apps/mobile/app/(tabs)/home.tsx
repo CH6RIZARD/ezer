@@ -59,7 +59,7 @@ export default function HomeScreen() {
   const { homeSummary, risks, subscriptions, instruments } = useData();
   const { goals } = useSavingsGoals();
   const connectBank = useConnectBank();
-  const { hasCompletedFlow: hasCardDesign } = useCardFlowStatus();
+  const { hasCompletedFlow: hasCardDesign, access: cardAccess } = useCardFlowStatus();
 
   const [view, setView] = useState<'calendar' | 'list'>('calendar');
   const [monthOffset, setMonthOffset] = useState(0);
@@ -244,9 +244,35 @@ export default function HomeScreen() {
       };
     }
 
-    // Linked but not yet assessed. Still shown as a value — the limit is simply
-    // not known until the Pay-in-4 trust assessment runs
-    // (POST /cards/access-list returns limitCents).
+    // The assessment already ran (POST /cards/access-list) and produced a
+    // real, terminal outcome. Before this branch existed, "assessed, no
+    // limit for now" and "never assessed at all" rendered as the exact same
+    // pulsing "—" — indistinguishable, which read as the tile being
+    // permanently stuck rather than as an actual answer having been given.
+    if (cardAccess?.status === 'approved' && cardAccess.limitCents) {
+      return {
+        value: formatCents(cardAccess.limitCents),
+        label: 'Spending Power',
+        icon: 'cash-outline' as const,
+        isAmount: true,
+        pulse: false,
+        onPress: () => router.push('/screens/PhysicalCardReview'),
+      };
+    }
+    if (cardAccess?.status === 'review') {
+      return {
+        value: 'Under review',
+        label: 'Spending Power',
+        icon: 'time-outline' as const,
+        isAmount: false,
+        pulse: false,
+        onPress: () => router.push('/screens/PhysicalCardReview'),
+      };
+    }
+
+    // Linked but not yet assessed (or on the waitlist, which never ran the
+    // assessment). Still shown as a value — the limit is simply not known
+    // until the Pay-in-4 trust assessment runs.
     return {
       value: '—',
       label: 'Spending Power',
@@ -255,7 +281,7 @@ export default function HomeScreen() {
       pulse: true,
       onPress: () => router.push('/screens/PhysicalCardApproval'),
     };
-  }, [instruments.length, subscriptions.length, connectBank]);
+  }, [instruments.length, subscriptions.length, connectBank, cardAccess]);
 
   /** Top three subscriptions by cost, for the "Top ticket" rotation. */
   const topTicket = useMemo(() => {

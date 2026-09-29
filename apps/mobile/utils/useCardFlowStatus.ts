@@ -14,16 +14,24 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { useFocusEffect } from 'expo-router';
-import { loadCardDesign, getCardAccessOutcome } from './cardDesignStore';
+import { loadCardDesign, getCardAccessOutcome, type CardAccessOutcome } from './cardDesignStore';
 
 export function useCardFlowStatus() {
   const [hasCompletedFlow, setHasCompletedFlow] = useState(false);
+  // Home's Spending Power tile needs the actual outcome, not just whether
+  // the flow finished — "assessed, no limit yet" and "never assessed at
+  // all" were rendering identically (both a bare "—"), which read as the
+  // tile being permanently broken to anyone who had actually gone through
+  // approval and landed on manual_review.
+  const [access, setAccess] = useState<CardAccessOutcome | null>(null);
 
   const refresh = useCallback(() => {
     let alive = true;
     (async () => {
-      const [design, access] = await Promise.all([loadCardDesign(), getCardAccessOutcome()]);
-      if (alive) setHasCompletedFlow(!!design && !!access);
+      const [design, outcome] = await Promise.all([loadCardDesign(), getCardAccessOutcome()]);
+      if (!alive) return;
+      setHasCompletedFlow(!!design && !!outcome);
+      setAccess(outcome);
     })();
     return () => {
       alive = false;
@@ -33,5 +41,5 @@ export function useCardFlowStatus() {
   useEffect(refresh, [refresh]);
   useFocusEffect(refresh);
 
-  return { hasCompletedFlow };
+  return { hasCompletedFlow, access };
 }
