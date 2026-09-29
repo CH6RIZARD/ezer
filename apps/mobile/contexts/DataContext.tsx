@@ -35,6 +35,9 @@ export interface FundingInstrument {
   last4: string;
   issuerColorHint?: string;
   networkArt?: string;
+  /** The BANK's name ("PNC Bank"), distinct from displayName (the account's
+   *  own nickname, e.g. "Spend") — a real card shows the bank's name. */
+  institutionName?: string;
   isDefault: boolean;
 }
 

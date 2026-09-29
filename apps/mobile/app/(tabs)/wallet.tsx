@@ -122,6 +122,9 @@ const WEB_SNAP_CHILD = IS_WEB ? ({ scrollSnapAlign: 'center' } as any) : null;
 interface WalletCard {
   id: string;
   name: string;
+  /** The account's own nickname ("Spend"), shown smaller than `name` — a
+   *  real card leads with the bank's name, not the account nickname. */
+  accountLabel?: string;
   network: string;
   last4: string;
   gradient: readonly string[];
@@ -226,16 +229,26 @@ export default function WalletScreen() {
           : BANK_CARD_SKINS[i % BANK_CARD_SKINS.length];
         return {
           id: inst.id,
-          name: inst.displayName || 'Account',
+          // The bank's name leads, matching every real card in existence —
+          // the account nickname ("Spend") used to sit here instead, which
+          // is why the card read as generic even with the right color and a
+          // real chip: no real card's top line is an internal account label.
+          name: inst.institutionName || inst.displayName || 'Account',
+          accountLabel: inst.institutionName ? inst.displayName : undefined,
           network: inst.brand?.toUpperCase() || 'CARD',
           last4: inst.last4 ?? '',
           gradient: skin.gradient,
           fg: skin.fg,
           fgDim: skin.fgDim,
           logoUri: inst.networkArt,
-          // Derived from this card's own charges, so the face count agrees with
-          // the breakdown underneath it.
-          // Filled from the API breakdown once it loads (see subsByCard).
+          // Real count filled in at render time from `merchants` (the API
+          // breakdown) for whichever card is currently active — see the
+          // `subsCount` lookup below. This used to be hardcoded to 0 with a
+          // comment promising it would be "filled in from the API
+          // breakdown," which never actually happened: nothing ever wrote
+          // back into this field, so the carousel always read "0 subs" no
+          // matter how many charges the "Where it goes" list right below it
+          // showed for the exact same card.
           subs: 0,
         };
       }),
@@ -466,10 +479,21 @@ export default function WalletScreen() {
                       card kept getting reported as fake. */}
                   <Text style={[styles.bankHolder, { color: c.fgDim }]} numberOfLines={1}>
                     {(user?.name || 'EZER MEMBER').toUpperCase()}
+                    {c.accountLabel ? `  ·  ${c.accountLabel.toUpperCase()}` : ''}
                   </Text>
                   <View style={[styles.subsPill, { backgroundColor: c.fg === '#FFFFFF' ? 'rgba(255,255,255,0.16)' : 'rgba(36,26,56,0.12)' }]}>
                     <Text style={[styles.bankSubs, { color: c.fg }]}>
-                      {c.subs} sub{c.subs === 1 ? '' : 's'}
+                      {(() => {
+                        // `merchants` is the API breakdown fetched for
+                        // whichever card is currently focused (see the
+                        // effect keyed on active?.id above) — the only card
+                        // this component actually has a real count for. A
+                        // card that isn't focused yet shows "…" rather than
+                        // a wrong "0 subs" it hasn't fetched data for.
+                        if (c.id !== active?.id) return '…';
+                        const n = merchants.length;
+                        return `${n} sub${n === 1 ? '' : 's'}`;
+                      })()}
                     </Text>
                   </View>
                 </View>

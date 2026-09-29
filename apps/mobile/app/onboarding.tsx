@@ -263,52 +263,54 @@ function SpinCard() {
   // dropped silently and the face never fills the card.
   const face: any = { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, borderRadius: 20, overflow: 'hidden' };
 
-  // `backfaceVisibility: 'hidden'` goes on a plain core View, not on the
-  // LinearGradient (or on a View that has a LinearGradient as a sibling).
-  // expo-linear-gradient renders its own native view on Android, and that
-  // native view does not reliably honour backfaceVisibility the way a plain
-  // RN View does — with it set on the gradient itself (or split across two
-  // silbing layers, one of which never had it at all), the back face simply
-  // never hid on Android: it painted on top for the ENTIRE rotation, so the
-  // card appeared to show the back twice and never actually flip. Wrapping
-  // each whole face — gradients and all — in one plain View with
-  // backfaceVisibility set on THAT View is what Android actually respects.
+  // `backfaceVisibility: 'hidden'` has to sit on the SAME native view that
+  // carries the `rotateY` transform, not a child nested underneath it.
+  // Android's culling check reads that view's own local transform matrix —
+  // a child with no transform of its own, merely inheriting the rotation
+  // visually from an ancestor, has an identity matrix as far as that check
+  // is concerned, so it is never culled. Putting it one level up on the
+  // gradient/child instead "mostly" worked (the card visibly went edge-on)
+  // but still let the back face's own REAR show through as a mirrored
+  // double past 180° — because that view, too, had no transform of its
+  // own. The Animated.View that actually owns `transform: [...rotateY]`
+  // below is the one this has to live on.
   const faceHidden: any = { ...face, backfaceVisibility: 'hidden' };
 
   return (
     <Animated.View style={{ width: 300, height: 188, transform: [{ translateY }] }}>
-      <Animated.View style={{ width: 300, height: 188, transform: [{ perspective: 1200 }, { rotateY }] }}>
-        <View style={faceHidden}>
-          <LinearGradient colors={['#E7C77E', '#A87D2F']} style={StyleSheet.absoluteFillObject} />
-          <View style={{ position: 'absolute', top: 2, left: 2, right: 2, bottom: 2, borderRadius: 18, overflow: 'hidden' }}>
-            <LinearGradient colors={['#33303B', '#17151D', '#0B0A10']} locations={[0, 0.55, 1]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ flex: 1, borderRadius: 18, padding: 18 }}>
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                <LinearGradient colors={['#E7C77E', '#A87D2F']} style={{ width: 42, height: 31, borderRadius: 7 }} />
-                <Text style={{ fontSize: 14, fontFamily: UI_BOLD, letterSpacing: 2.5, color: T.gold }}>EZER</Text>
+      <Animated.View style={[faceHidden, { width: 300, height: 188, transform: [{ perspective: 1200 }, { rotateY }] }]}>
+        <LinearGradient colors={['#E7C77E', '#A87D2F']} style={StyleSheet.absoluteFillObject} />
+        <View style={{ position: 'absolute', top: 2, left: 2, right: 2, bottom: 2, borderRadius: 18, overflow: 'hidden' }}>
+          <LinearGradient colors={['#33303B', '#17151D', '#0B0A10']} locations={[0, 0.55, 1]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ flex: 1, borderRadius: 18, padding: 18 }}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+              <LinearGradient colors={['#E7C77E', '#A87D2F']} style={{ width: 42, height: 31, borderRadius: 7 }} />
+              <Text style={{ fontSize: 14, fontFamily: UI_BOLD, letterSpacing: 2.5, color: T.gold }}>EZER</Text>
+            </View>
+            <View style={{ flex: 1, justifyContent: 'flex-end' }}>
+              <Text style={{ fontSize: 17, letterSpacing: 2, color: 'rgba(255,255,255,0.92)' }}>••••  ••••  ••••  ••••</Text>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 11 }}>
+                <Text style={{ fontSize: 10, fontFamily: UI_BOLD, letterSpacing: 1, color: 'rgba(255,255,255,0.55)' }}>EZER MEMBER</Text>
+                <Text style={{ fontSize: 10, fontFamily: UI_BOLD, letterSpacing: 1, color: 'rgba(255,255,255,0.55)' }}>PAY IN 4</Text>
               </View>
-              <View style={{ flex: 1, justifyContent: 'flex-end' }}>
-                <Text style={{ fontSize: 17, letterSpacing: 2, color: 'rgba(255,255,255,0.92)' }}>••••  ••••  ••••  ••••</Text>
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 11 }}>
-                  <Text style={{ fontSize: 10, fontFamily: UI_BOLD, letterSpacing: 1, color: 'rgba(255,255,255,0.55)' }}>EZER MEMBER</Text>
-                  <Text style={{ fontSize: 10, fontFamily: UI_BOLD, letterSpacing: 1, color: 'rgba(255,255,255,0.55)' }}>PAY IN 4</Text>
-                </View>
-              </View>
-            </LinearGradient>
-          </View>
+            </View>
+          </LinearGradient>
         </View>
       </Animated.View>
 
-      <Animated.View style={{ position: 'absolute', width: 300, height: 188, transform: [{ perspective: 1200 }, { rotateY: rotateYBack }] }}>
-        <View style={[faceHidden, { backgroundColor: '#1E0B45' }]}>
-          <LinearGradient colors={['#3B1580', '#1E0B45', '#0E0724']} locations={[0, 0.55, 1]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFillObject} />
-          <View style={{ position: 'absolute', top: 24, left: 0, right: 0, height: 40, backgroundColor: '#0B0812' }} />
-          <View style={{ position: 'absolute', top: 84, left: 22, right: 22, height: 32, borderRadius: 7, backgroundColor: 'rgba(255,255,255,0.9)', alignItems: 'flex-end', justifyContent: 'center', paddingHorizontal: 13 }}>
-            <Text style={{ fontSize: 14, letterSpacing: 2, color: '#241A38' }}>•••</Text>
-          </View>
-          <Text style={{ position: 'absolute', bottom: 17, left: 22, fontSize: 9, fontFamily: UI_BOLD, letterSpacing: 1, color: 'rgba(255,255,255,0.45)' }}>
-            SINGLE-USE VIRTUAL CARD
-          </Text>
+      <Animated.View
+        style={[
+          faceHidden,
+          { position: 'absolute', width: 300, height: 188, backgroundColor: '#1E0B45', transform: [{ perspective: 1200 }, { rotateY: rotateYBack }] },
+        ]}
+      >
+        <LinearGradient colors={['#3B1580', '#1E0B45', '#0E0724']} locations={[0, 0.55, 1]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFillObject} />
+        <View style={{ position: 'absolute', top: 24, left: 0, right: 0, height: 40, backgroundColor: '#0B0812' }} />
+        <View style={{ position: 'absolute', top: 84, left: 22, right: 22, height: 32, borderRadius: 7, backgroundColor: 'rgba(255,255,255,0.9)', alignItems: 'flex-end', justifyContent: 'center', paddingHorizontal: 13 }}>
+          <Text style={{ fontSize: 14, letterSpacing: 2, color: '#241A38' }}>•••</Text>
         </View>
+        <Text style={{ position: 'absolute', bottom: 17, left: 22, fontSize: 9, fontFamily: UI_BOLD, letterSpacing: 1, color: 'rgba(255,255,255,0.45)' }}>
+          SINGLE-USE VIRTUAL CARD
+        </Text>
       </Animated.View>
     </Animated.View>
   );

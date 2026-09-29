@@ -154,6 +154,11 @@ model FundingInstrument {
   last4           String
   networkArt      String? // URL or identifier for card network logo
   issuerColorHint String? // Hex color for card UI
+  // The BANK's name ("PNC Bank"), from Plaid's institution lookup at link
+  // time — distinct from displayName, which is the account's own nickname
+  // ("Spend", "Checking Plus"). The wallet card shows this as the primary
+  // issuer label; a real card says the bank's name, not the account's.
+  institutionName String?
   isDefault       Boolean               @default(false)
   createdAt       DateTime              @default(now())
   updatedAt       DateTime              @updatedAt

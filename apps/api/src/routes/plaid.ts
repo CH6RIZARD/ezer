@@ -243,9 +243,10 @@ export async function plaidRoutes(server: FastifyInstance) {
               isDefault: false,
               issuerColorHint,
               networkArt,
+              institutionName,
             },
           });
-        } else if (issuerColorHint || networkArt) {
+        } else if (issuerColorHint || networkArt || institutionName) {
           // Re-linking an account that predates this feature: backfill the
           // branding onto the existing row instead of leaving it stuck with
           // the generic skin forever.
@@ -254,6 +255,7 @@ export async function plaidRoutes(server: FastifyInstance) {
             data: {
               issuerColorHint: existing.issuerColorHint ?? issuerColorHint,
               networkArt: existing.networkArt ?? networkArt,
+              institutionName: existing.institutionName ?? institutionName,
             },
           });
         }
