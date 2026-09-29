@@ -29,6 +29,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../utils/ThemeContext';
+import { useAuth } from '../../utils/AuthContext';
 import { usePremiumGate } from '../../utils/usePremiumGate';
 import { usePremium } from '../../utils/PremiumContext';
 import { useData } from '../../contexts/DataContext';
@@ -159,6 +160,7 @@ export default function WalletScreen() {
   const { colors } = useTheme();
   const { status: premiumStatus } = usePremium();
   const { instruments, getMerchants } = useData();
+  const { user } = useAuth();
 
   usePremiumGate();
 
@@ -378,7 +380,15 @@ export default function WalletScreen() {
                 <Text style={[styles.bankLast4, { color: c.fg }]}>{'••••'}  {c.last4}</Text>
 
                 <View style={styles.bankBottom}>
-                  <Text style={[styles.bankHolder, { color: c.fgDim }]}>EZER MEMBER</Text>
+                  {/* The account holder's actual name, not a generic "EZER
+                      MEMBER" label — a real linked bank card branded with the
+                      app's own name instead of the person who owns it reads
+                      as a demo/mock card even though the number and balance
+                      behind it are entirely real. That confusion is why this
+                      card kept getting reported as fake. */}
+                  <Text style={[styles.bankHolder, { color: c.fgDim }]} numberOfLines={1}>
+                    {(user?.name || 'EZER MEMBER').toUpperCase()}
+                  </Text>
                   <Text style={[styles.bankSubs, { color: c.fg }]}>
                     {c.subs} sub{c.subs === 1 ? '' : 's'}
                   </Text>
