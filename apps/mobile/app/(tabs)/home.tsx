@@ -317,7 +317,12 @@ export default function HomeScreen() {
         contentContainerStyle={{
           paddingTop: insets.top + 10,
           paddingHorizontal: layout.screenX,
-          paddingBottom: layout.contentBottom,
+          // Every other screen adds insets.bottom on top of the fixed
+          // contentBottom constant (Wallet, Settings, ...) — this one
+          // didn't, so on a device with a real gesture-nav inset the last
+          // row in List view sat behind the floating tab bar instead of
+          // above it.
+          paddingBottom: insets.bottom + layout.contentBottom,
         }}
         showsVerticalScrollIndicator={false}
         bounces={false}

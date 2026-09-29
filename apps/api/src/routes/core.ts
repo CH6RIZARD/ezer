@@ -331,16 +331,27 @@ export async function coreRoutes(server: FastifyInstance) {
       },
     });
 
-    // The Subscription model has no amountCents column of its own — a
-    // subscription's price is tracked month-by-month in PriceHistory, which
-    // this endpoint never included in its query. Every caller of GET
-    // /subscriptions therefore received subscriptions with no price on
-    // them at all: Home's "Top ticket" panel filters on `s.amountCents`
-    // truthiness and silently rendered nothing, the monthly-cost map built
-    // from this same list was empty for every merchant. The rows always
-    // had a real price sitting in PriceHistory; this just never read it.
+    // Two things the client type (mobile/contexts/DataContext.tsx
+    // Subscription) expects flat that this raw Prisma shape never provided:
+    //
+    // - merchantName / logo. Prisma's `include: { merchant: true }` nests
+    //   them at s.merchant.canonicalName / s.merchant.logo; this endpoint
+    //   returned that nested shape directly. Every caller reading
+    //   `sub.merchantName` got undefined — the calendar day popover, for
+    //   one, rendered a blank name for every event because of exactly
+    //   this, which is what "doesn't show what subscription it actually
+    //   is" was.
+    // - amountCents. The Subscription model has no price column of its
+    //   own — price is tracked month-by-month in PriceHistory, which this
+    //   query never even included. Home's "Top ticket" panel filters on
+    //   `s.amountCents` truthiness and silently rendered nothing.
+    //
+    // Both prices were always sitting in the database; this endpoint just
+    // never surfaced them in the shape every client-side consumer expected.
     const data = subscriptions.map(s => ({
       ...s,
+      merchantName: s.merchant.canonicalName,
+      logo: s.merchant.logo ?? undefined,
       amountCents: s.priceHistory[0]?.amountCents ?? 0,
     }));
 
