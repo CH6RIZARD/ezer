@@ -157,6 +157,39 @@ export async function plaidRoutes(server: FastifyInstance) {
         request.log.warn({ err }, 'accountsGet failed; falling back to client-supplied accounts');
       }
 
+      // Real institution branding, not an invented skin.
+      //
+      // Plaid has no product that returns what a specific physical card
+      // looks like — no photo, no card-product artwork, and no other bank
+      // data aggregator exposes that either. What Plaid DOES have for known
+      // institutions is /institutions/get with include_optional_metadata:
+      // the bank's actual logo and brand color. FundingInstrument already
+      // had issuerColorHint and networkArt columns sitting unused — this is
+      // what they were for. A card tinted in the real bank's own color with
+      // the real bank's own logo is the closest honest approximation to
+      // "looks like the card you have" that any of this data can support;
+      // genuinely reproducing the card's own artwork is not something any
+      // of it can do.
+      let issuerColorHint: string | null = null;
+      let networkArt: string | null = null;
+      if (institutionId) {
+        try {
+          const instRes = await plaid.institutionsGetById({
+            institution_id: institutionId,
+            country_codes: [CountryCode.Us],
+            options: { include_optional_metadata: true },
+          });
+          const inst = instRes.data.institution;
+          if (inst.primary_color) issuerColorHint = inst.primary_color;
+          if (inst.logo) networkArt = `data:image/png;base64,${inst.logo}`;
+        } catch (err) {
+          // Plaid does not have branding for every institution — a smaller
+          // credit union may simply have none. Falling back to the generic
+          // skin is correct there, not a failure worth surfacing.
+          request.log.warn({ err, institutionId }, 'institutionsGetById failed; using generic card skin');
+        }
+      }
+
       // Save encrypted access token
       const accessTokenEnc = encrypt(access_token);
       await prisma.plaidItem.upsert({
@@ -191,6 +224,19 @@ export async function plaidRoutes(server: FastifyInstance) {
               brand: account.type === 'credit' ? 'Unknown' : 'Bank',
               last4: account.mask || '****',
               isDefault: false,
+              issuerColorHint,
+              networkArt,
+            },
+          });
+        } else if (issuerColorHint || networkArt) {
+          // Re-linking an account that predates this feature: backfill the
+          // branding onto the existing row instead of leaving it stuck with
+          // the generic skin forever.
+          await prisma.fundingInstrument.update({
+            where: { id: existing.id },
+            data: {
+              issuerColorHint: existing.issuerColorHint ?? issuerColorHint,
+              networkArt: existing.networkArt ?? networkArt,
             },
           });
         }
