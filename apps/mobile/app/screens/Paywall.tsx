@@ -266,7 +266,7 @@ export default function PaywallScreen() {
               <ActivityIndicator color="#FFFFFF" />
             ) : (
               <Text style={{ fontSize: 15, fontFamily: UI_BOLD, color: '#FFFFFF' }}>
-                Lock {FOUNDING_PRICE_LABEL}/{BILLING_PERIOD_LABEL}
+                Start your free 7-day trial
               </Text>
             )}
           </LinearGradient>
@@ -282,13 +282,19 @@ export default function PaywallScreen() {
           </Pressable>
         </View>
 
-        {/* Required disclosure. Auto-renewal and cancellation must be stated on
-            the screen that takes the money — a store review checks for exactly
-            this, and its absence is a rejection. */}
+        {/* Required disclosure. Auto-renewal, the trial-to-paid transition and
+            cancellation must all be stated on the screen that takes the money
+            — a store review checks for exactly this, and its absence is a
+            rejection. The trial itself is real now: a 7-day free-trial offer
+            on the ezer_premium_monthly:monthly base plan, new-subscriber
+            eligibility only (Play Console). It is not guaranteed for every
+            tap — someone who has already had this subscription before is
+            charged immediately instead, which is normal store behavior, not
+            a bug in this copy. */}
         <Text style={{ textAlign: 'center', fontSize: 10.5, color: INK_FAINT, marginTop: 12, lineHeight: 16 }}>
-          Renews every {BILLING_PERIOD_LABEL} at {FOUNDING_PRICE_LABEL} until cancelled. Cancel any time in your
-          App Store or Google Play account settings. Your founding rate stays {FOUNDING_PRICE_LABEL} for as long
-          as the subscription remains active.
+          Free for 7 days, then {FOUNDING_PRICE_LABEL}/{BILLING_PERIOD_LABEL}. Renews automatically until cancelled
+          — cancel any time before the trial ends in your App Store or Google Play account settings to avoid being
+          charged. Your founding rate stays {FOUNDING_PRICE_LABEL} for as long as the subscription remains active.
         </Text>
       </ScrollView>
     </View>
