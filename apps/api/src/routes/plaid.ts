@@ -189,6 +189,19 @@ export async function plaidRoutes(server: FastifyInstance) {
           request.log.warn({ err, institutionId }, 'institutionsGetById failed; using generic card skin');
         }
       }
+      // Plaid has no logo for this institution specifically (confirmed for
+      // PNC — real brand color, no logo in their institution data). Guess
+      // one from the bank's own name via the same public favicon CDN
+      // MerchantMark falls back to for merchants: most banks really are at
+      // their own name dot com ("PNC" -> pnc.com, "Bank of America" ->
+      // bankofamerica.com), and a wrong or dead guess just renders the
+      // CDN's generic globe icon on-device rather than failing loudly.
+      if (!networkArt && institutionName) {
+        const guess = institutionName.toLowerCase().replace(/[^a-z0-9]/g, '');
+        if (guess.length >= 2) {
+          networkArt = `https://www.google.com/s2/favicons?domain=${guess}.com&sz=128`;
+        }
+      }
 
       // Save encrypted access token
       const accessTokenEnc = encrypt(access_token);

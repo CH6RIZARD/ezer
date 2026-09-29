@@ -162,6 +162,15 @@ export async function walletRoutes(server: FastifyInstance) {
       }
     >();
 
+    // A SubscriptionCharge only ever carries merchantId, not the Subscription
+    // row's own id — nothing in this response ever gave the client a real
+    // subscription id to navigate with. wallet.tsx sent merchantId to
+    // SubscriptionDetail labeled as subscriptionId on the theory that "it
+    // resolves on the detail screen" — it never did; GET /subscriptions/:id
+    // looks up by the Subscription's own primary key, which a merchant id
+    // can never match, so every tap 404'd as "Subscription not found."
+    const subscriptionIdByMerchant = new Map<string, string>();
+
     for (const charge of charges) {
       const existing = merchantMap.get(charge.merchantId);
       if (existing) {
@@ -181,6 +190,19 @@ export async function walletRoutes(server: FastifyInstance) {
       }
     }
 
+    // One batched lookup for every merchant's real Subscription id, rather
+    // than a query per row. A merchant can have at most one active/trial
+    // Subscription per user (see the findFirst in cards.ts), so this is a
+    // clean id, not a guess.
+    const merchantIds = Array.from(merchantMap.keys());
+    if (merchantIds.length > 0) {
+      const subs = await prisma.subscription.findMany({
+        where: { userId, merchantId: { in: merchantIds }, status: { in: ['active', 'trial'] } },
+        select: { id: true, merchantId: true },
+      });
+      for (const s of subs) subscriptionIdByMerchant.set(s.merchantId, s.id);
+    }
+
     // Convert to array and calculate monthly equivalent
     const merchants = Array.from(merchantMap.values()).map((m) => {
       let monthlyEquivalentCents = m.totalDrainedCents;
@@ -196,6 +218,7 @@ export async function walletRoutes(server: FastifyInstance) {
         m.confidenceScore >= 0.9 ? 'high' : m.confidenceScore >= 0.7 ? 'medium' : 'low';
 
       return {
+        subscriptionId: subscriptionIdByMerchant.get(m.merchantId) ?? null,
         ...m,
         monthlyEquivalentCents,
         confidenceBadge,
