@@ -92,6 +92,8 @@ export default function DrainReviewScreen() {
           name: sub.merchantName?.trim() || null,
           logo: sub.logo,
           amountCents: sub.amountCents ?? priceBySubId.get(sub.id) ?? 0,
+          website: sub.website,
+          cancellationUrl: sub.cancellationUrl,
           ...usage,
         };
       })
@@ -119,23 +121,31 @@ export default function DrainReviewScreen() {
    * anything, so sending them to the page is the whole point. Un-toggling opens
    * nothing.
    */
-  const toggleCut = async (row: { id: string; name: string; merchantId: string }) => {
+  const toggleCut = async (row: {
+    id: string;
+    name: string;
+    merchantId: string;
+    website?: string;
+    cancellationUrl?: string;
+  }) => {
     const nowCut = !cut[row.id];
     setCut(c => ({ ...c, [row.id]: nowCut }));
     if (!nowCut || busyId) return;
 
 
     // Instant when the merchant record or the curated table already knows it.
-    const quick = resolveCancellationUrlSync(row.name, row.merchantId);
+    const quick = resolveCancellationUrlSync(row.name, row.merchantId, row.cancellationUrl);
     if (quick) {
       void openCancellation(quick);
       return;
     }
 
-    // Otherwise fall through to auto-discovery against the merchant's domain.
+    // Otherwise fall through to auto-discovery against the merchant's domain
+    // — using Plaid's own `website` for this merchant when we have one, not
+    // just the small curated table baked into the app bundle.
     setBusyId(row.id);
     try {
-      const target = await resolveCancellationUrl(row.name, row.merchantId);
+      const target = await resolveCancellationUrl(row.name, row.merchantId, row.cancellationUrl, row.website);
       await openCancellation(target);
     } finally {
       setBusyId(null);

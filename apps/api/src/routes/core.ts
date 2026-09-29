@@ -348,12 +348,22 @@ export async function coreRoutes(server: FastifyInstance) {
     //
     // Both prices were always sitting in the database; this endpoint just
     // never surfaced them in the shape every client-side consumer expected.
-    const data = subscriptions.map(s => ({
-      ...s,
-      merchantName: s.merchant.canonicalName,
-      logo: s.merchant.logo ?? undefined,
-      amountCents: s.priceHistory[0]?.amountCents ?? 0,
-    }));
+    const data = subscriptions.map(s => {
+      const playbook = s.merchant.cancellationPlaybook as { url?: string } | null | undefined;
+      return {
+        ...s,
+        merchantName: s.merchant.canonicalName,
+        logo: s.merchant.logo ?? undefined,
+        amountCents: s.priceHistory[0]?.amountCents ?? 0,
+        // Same two fields GET /subscriptions/:id exposes — DrainReview.tsx
+        // lists rows straight from this endpoint and cancels straight from
+        // it, so without these it never had a merchant-supplied URL or a
+        // domain to auto-discover against, only the small curated table
+        // baked into the app bundle.
+        website: s.merchant.website ?? undefined,
+        cancellationUrl: playbook?.url ?? undefined,
+      };
+    });
 
     return {
       success: true,
@@ -406,6 +416,17 @@ export async function coreRoutes(server: FastifyInstance) {
       monthsElapsed
     );
 
+    // The merchant record carries a real cancellation URL for merchants we've
+    // curated a playbook for (see packages/db/seed.ts). This was being
+    // computed in cancel.ts's POST /subscriptions/:id/cancel but never
+    // surfaced here, so the client had nothing but the curated table baked
+    // into the app bundle to work with — which is why merchants without a
+    // bundled entry fell all the way through to a search-engine query.
+    const playbook = subscription.merchant.cancellationPlaybook as
+      | { url?: string }
+      | null
+      | undefined;
+
     return {
       success: true,
       data: {
@@ -413,10 +434,12 @@ export async function coreRoutes(server: FastifyInstance) {
         merchantId: subscription.merchantId,
         merchantName: subscription.merchant.canonicalName,
         logo: subscription.merchant.logo,
+        website: subscription.merchant.website,
         status: subscription.status,
         cadence: subscription.cadence,
         renewalDate: subscription.renewalDate,
         startedAt: subscription.startedAt,
+        cancellationUrl: playbook?.url ?? undefined,
         cancellationDifficulty: subscription.merchant.cancellationDifficulty,
         difficultyLabel: getDifficultyLabel(subscription.merchant.cancellationDifficulty),
         charges: charges.map((c) => ({

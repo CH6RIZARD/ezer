@@ -29,6 +29,7 @@ import {
   resolveCancellationUrl,
   resolveCancellationUrlSync,
   openCancellation,
+  appStoreFallbackHint,
 } from '../../utils/cancellation';
 import type { Subscription } from '../../types';
 import { gradients, chartColors } from '../../theme/tokens';
@@ -44,10 +45,12 @@ interface SubscriptionDetailResponse {
   merchantId: string;
   merchantName: string;
   logo?: string | null;
+  website?: string | null;
   status: string;
   cadence: string;
   renewalDate?: string | null;
   startedAt?: string | null;
+  cancellationUrl?: string | null;
   cancellationDifficulty?: number;
   difficultyLabel?: string;
   charges: {
@@ -246,8 +249,9 @@ export default function SubscriptionDetailScreen() {
     if (cancelBusy) return;
 
     // Fast path: a record URL or a curated one resolves with no network, so the
-    // 8 demo merchants that carry real URLs open instantly.
-    const quick = resolveCancellationUrlSync(name, sub.merchantId);
+    // demo merchants that carry real URLs — plus any merchant whose record has
+    // a cancellationUrl from the API — open instantly.
+    const quick = resolveCancellationUrlSync(name, sub.merchantId, sub.cancellationUrl ?? undefined);
     if (quick) {
       setCancelStarted(true);
       setCancelNote(null);
@@ -259,11 +263,18 @@ export default function SubscriptionDetailScreen() {
     // cancellation actually lives behind, so it needs a pending state.
     setCancelBusy(true);
     try {
-      const target = await resolveCancellationUrl(name, sub.merchantId);
-      setCancelStarted(true);
+      const target = await resolveCancellationUrl(
+        name,
+        sub.merchantId,
+        sub.cancellationUrl ?? undefined,
+        sub.website ?? undefined
+      );
+      setCancelStarted(target.source !== 'unknown');
+      // 'unknown' gets no note here — openCancellation already shows an
+      // honest alert in that case, so this stays quiet instead of doubling up.
       setCancelNote(
-        target.source === 'search'
-          ? `Opening a search for how to cancel ${name} — we could not confirm an official cancellation page.`
+        target.source === 'homepage'
+          ? `We couldn't confirm the exact cancellation page — opening ${name}'s site instead. ${appStoreFallbackHint()}`
           : null
       );
       await openCancellation(target);

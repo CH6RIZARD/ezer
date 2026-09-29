@@ -73,6 +73,11 @@ export interface Subscription {
    * 30-day risk window — there is nothing to show against the date.
    */
   amountCents?: number;
+  /** Plaid-supplied domain for this merchant, when it has one — feeds
+   *  utils/cancellation.ts's auto-discovery step. */
+  website?: string;
+  /** A curated real cancellation URL from the merchant's own playbook. */
+  cancellationUrl?: string;
 }
 
 // ─── Context ──────────────────────────────────────────────────────────────────

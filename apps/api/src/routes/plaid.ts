@@ -461,6 +461,13 @@ async function syncTransactionsForItem(userId: string, itemId: string, accessTok
     // Raw transactions are already persisted for every synced transaction,
     // subscription-qualifying or not — see the createMany above.
 
+    // Plaid supplies `website` per transaction for many, not all, merchants —
+    // this is the domain apps/mobile/utils/cancellation.ts's auto-discovery
+    // step probes for a real cancel page, so it's the thing that makes
+    // cancellation work for the long tail of merchants nobody hand-curated
+    // a URL for. Take the first transaction in this group that has one.
+    const website = txs.find(t => (t as any).website)?.website as string | undefined;
+
     // Find or create merchant
     let merchant = await prisma.merchant.findUnique({ where: { canonicalName } });
     if (!merchant) {
@@ -469,7 +476,16 @@ async function syncTransactionsForItem(userId: string, itemId: string, accessTok
           canonicalName,
           fingerprintKeys: { patterns: [canonicalName.toLowerCase()] },
           cancellationDifficulty: 3,
+          website,
         },
+      });
+    } else if (website && !merchant.website) {
+      // Re-syncing an existing merchant that predates this column, or that
+      // was first created from a transaction without a website — backfill
+      // rather than leave it stuck with no discoverable domain forever.
+      merchant = await prisma.merchant.update({
+        where: { id: merchant.id },
+        data: { website },
       });
     }
 

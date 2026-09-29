@@ -40,6 +40,7 @@ import { useSavingsGoals } from '../../utils/SavingsGoalsContext';
 import { projectMonthEvents, groupEventsByDay } from '../../utils/calendarEvents';
 import { useConnectBank } from '../../utils/useConnectBank';
 import { useCardFlowStatus } from '../../utils/useCardFlowStatus';
+import { loadCardDesign } from '../../utils/cardDesignStore';
 
 const WEEKDAYS = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
 /** Handoff: spending power is a fixed $400 in the prototype. */
@@ -279,7 +280,24 @@ export default function HomeScreen() {
       icon: 'cash-outline' as const,
       isAmount: true,
       pulse: true,
-      onPress: () => router.push('/screens/PhysicalCardApproval'),
+      // PhysicalCardApproval.tsx's saveCardAccessOutcome() is a silent no-op
+      // when there is no CardDesign saved yet — access is stored attached to
+      // the design record, and there is only one record. Jumping straight to
+      // Approval from here (as this used to do) meant the assessment ran,
+      // POST /cards/access-list succeeded server-side, but the result never
+      // persisted on-device: Home kept showing this same "not yet assessed"
+      // tile forever, no matter how many times someone completed the flow,
+      // because nothing was ever there for the outcome to attach to. Route
+      // through the designer first when there's no design yet — same as the
+      // "Get your physical card" tile already does — so approval always has
+      // a record to write onto. When a design already exists, go straight to
+      // Approval as before.
+      onPress: () => {
+        void (async () => {
+          const design = await loadCardDesign();
+          router.push(design ? '/screens/PhysicalCardApproval' : '/screens/PhysicalCard');
+        })();
+      },
     };
   }, [instruments.length, subscriptions.length, connectBank, cardAccess]);
 

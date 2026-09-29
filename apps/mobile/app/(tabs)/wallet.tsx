@@ -364,7 +364,7 @@ export default function WalletScreen() {
       <ScrollView
         contentContainerStyle={{
           paddingTop: insets.top + 10,
-          paddingBottom: layout.contentBottom,
+          paddingBottom: insets.bottom + layout.contentBottom,
         }}
         showsVerticalScrollIndicator={false}
         bounces={false}
@@ -411,10 +411,19 @@ export default function WalletScreen() {
                 end={{ x: 1, y: 1 }}
                 style={[styles.bankCard, WEB_SNAP_CHILD]}
               >
-                {/* Three rows, space-between, exactly as the prototype builds it:
-                    bank + network / masked number / holder + subs count. The
-                    previous version collapsed rows 2 and 3 into one block and
-                    invented a "Linked account" line that does not exist. */}
+                {/* Diagonal foil sheen — the one thing a flat gradient can
+                    never fake: a real card's laminate catches light unevenly.
+                    Decorative only, so it sits above everything else but
+                    intercepts no touches. */}
+                <LinearGradient
+                  pointerEvents="none"
+                  colors={['rgba(255,255,255,0.16)', 'rgba(255,255,255,0)', 'rgba(255,255,255,0.05)']}
+                  locations={[0, 0.5, 1]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0.9 }}
+                  style={StyleSheet.absoluteFillObject}
+                />
+
                 <View style={styles.bankTop}>
                   <Text style={[styles.bankName, { color: c.fg }]} numberOfLines={1}>
                     {c.name}
@@ -429,7 +438,24 @@ export default function WalletScreen() {
                   )}
                 </View>
 
-                <Text style={[styles.bankLast4, { color: c.fg }]}>{'••••'}  {c.last4}</Text>
+                {/* EMV chip — the single detail that reads "physical card" at
+                    a glance more than any color choice does. Same metal-foil
+                    gradient as the EZER card's own chip (CardCanvas.tsx), so
+                    the two don't look like they came from different apps. */}
+                <LinearGradient
+                  colors={gradients.metalEdge as unknown as readonly [string, string, ...string[]]}
+                  locations={gradients.metalEdgeLocations as unknown as readonly [number, number, ...number[]]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.emvChip}
+                />
+
+                {/* Full masked PAN, not just the last 4 — "•••• 1234" reads as
+                    a placeholder; sixteen digits in four groups reads as a
+                    card. */}
+                <Text style={[styles.bankLast4, { color: c.fg }]}>
+                  {'•••• •••• •••• '}{c.last4}
+                </Text>
 
                 <View style={styles.bankBottom}>
                   {/* The account holder's actual name, not a generic "EZER
@@ -441,9 +467,11 @@ export default function WalletScreen() {
                   <Text style={[styles.bankHolder, { color: c.fgDim }]} numberOfLines={1}>
                     {(user?.name || 'EZER MEMBER').toUpperCase()}
                   </Text>
-                  <Text style={[styles.bankSubs, { color: c.fg }]}>
-                    {c.subs} sub{c.subs === 1 ? '' : 's'}
-                  </Text>
+                  <View style={[styles.subsPill, { backgroundColor: c.fg === '#FFFFFF' ? 'rgba(255,255,255,0.16)' : 'rgba(36,26,56,0.12)' }]}>
+                    <Text style={[styles.bankSubs, { color: c.fg }]}>
+                      {c.subs} sub{c.subs === 1 ? '' : 's'}
+                    </Text>
+                  </View>
                 </View>
               </LinearGradient>
             ))}
@@ -629,10 +657,15 @@ const styles = StyleSheet.create({
     width: 34,
     height: 22,
   },
+  emvChip: {
+    width: 36,
+    height: 26,
+    borderRadius: 5,
+  },
   bankLast4: {
     fontFamily: fontFamily.semibold,
-    fontSize: 17,
-    letterSpacing: 2.5,
+    fontSize: 15.5,
+    letterSpacing: 1.8,
   },
   bankBottom: {
     flexDirection: 'row',
@@ -643,9 +676,14 @@ const styles = StyleSheet.create({
     fontFamily: fontFamily.regular,
     fontSize: 11,
   },
+  subsPill: {
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    borderRadius: radius.pill,
+  },
   bankSubs: {
     fontFamily: fontFamily.bold,
-    fontSize: 12,
+    fontSize: 11,
   },
   dots: {
     flexDirection: 'row',

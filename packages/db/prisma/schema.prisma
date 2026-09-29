@@ -173,6 +173,12 @@ model Merchant {
   canonicalName             String    @unique
   fingerprintKeys           Json // { domains: [], descriptors: [], patterns: [] }
   logo                      String? // URL or path
+  // Plaid's own `transaction.website` for this merchant, when it supplies
+  // one — the domain source that makes cancellation auto-discovery
+  // (apps/mobile/utils/cancellation.ts) work for the long tail of
+  // merchants nobody hand-curated a cancel URL for. Nullable: Plaid does
+  // not return a website for every merchant.
+  website                   String?
   cancellationDifficulty    Int       @default(3) // 1-5
   difficultyLastUpdatedAt   DateTime  @default(now())
   cancellationPlaybook      Json? // { url, steps, expectedEndState, retentionSteps, requiresLogin }
