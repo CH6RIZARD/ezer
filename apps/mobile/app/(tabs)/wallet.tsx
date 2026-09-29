@@ -21,6 +21,7 @@ import {
   Platform,
   Pressable,
   StyleSheet,
+  Image,
   type NativeSyntheticEvent,
   type NativeScrollEvent,
 } from 'react-native';
@@ -126,6 +127,7 @@ interface WalletCard {
   gradient: readonly string[];
   fg: string;
   fgDim: string;
+  logoUri?: string;
   /** Distinct subscriptions billed to this card (derived, not hard-coded). */
   subs: number;
 }
@@ -155,6 +157,41 @@ const BANK_CARD_SKINS = [
   },
 ] as const;
 
+/**
+ * Real institution branding, when Plaid has it — see apps/api/src/routes/
+ * plaid.ts for where issuerColorHint/networkArt get fetched. No data source
+ * anywhere returns what a specific physical card looks like; a card tinted
+ * in the bank's own real brand color (and carrying its real logo when Plaid
+ * has one) is the closest honest approximation of that, not a fabrication
+ * standing in for one.
+ */
+function hexToRgb(hex: string): [number, number, number] {
+  const h = hex.replace('#', '');
+  const full = h.length === 3 ? h.split('').map(c => c + c).join('') : h;
+  return [parseInt(full.slice(0, 2), 16), parseInt(full.slice(2, 4), 16), parseInt(full.slice(4, 6), 16)];
+}
+
+function darken(hex: string, amount: number): string {
+  const [r, g, b] = hexToRgb(hex);
+  const d = (v: number) => Math.max(0, Math.round(v * (1 - amount)));
+  return `#${[d(r), d(g), d(b)].map(v => v.toString(16).padStart(2, '0')).join('')}`;
+}
+
+/** Perceived luminance — decides whether card text should be light or dark. */
+function isLightColor(hex: string): boolean {
+  const [r, g, b] = hexToRgb(hex);
+  return 0.299 * r + 0.587 * g + 0.114 * b > 170;
+}
+
+function brandSkin(hex: string) {
+  const light = isLightColor(hex);
+  return {
+    gradient: [hex, darken(hex, 0.45)] as const,
+    fg: light ? '#241A38' : '#FFFFFF',
+    fgDim: light ? 'rgba(36,26,56,.6)' : 'rgba(255,255,255,.65)',
+  };
+}
+
 export default function WalletScreen() {
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
@@ -182,7 +219,11 @@ export default function WalletScreen() {
   const cards = useMemo<WalletCard[]>(
     () =>
       instruments.map((inst, i) => {
-        const skin = BANK_CARD_SKINS[i % BANK_CARD_SKINS.length];
+        // Prefer the real bank's own brand color over the generic cycling
+        // skin — see brandSkin() above.
+        const skin = inst.issuerColorHint
+          ? brandSkin(inst.issuerColorHint)
+          : BANK_CARD_SKINS[i % BANK_CARD_SKINS.length];
         return {
           id: inst.id,
           name: inst.displayName || 'Account',
@@ -191,6 +232,7 @@ export default function WalletScreen() {
           gradient: skin.gradient,
           fg: skin.fg,
           fgDim: skin.fgDim,
+          logoUri: inst.networkArt,
           // Derived from this card's own charges, so the face count agrees with
           // the breakdown underneath it.
           // Filled from the API breakdown once it loads (see subsByCard).
@@ -374,7 +416,14 @@ export default function WalletScreen() {
                   <Text style={[styles.bankName, { color: c.fg }]} numberOfLines={1}>
                     {c.name}
                   </Text>
-                  <Text style={[styles.bankNetwork, { color: c.fgDim }]}>{c.network}</Text>
+                  {/* The bank's real logo when Plaid has one for this
+                      institution; the generic network/type label otherwise.
+                      Not every institution has a logo available. */}
+                  {c.logoUri ? (
+                    <Image source={{ uri: c.logoUri }} style={styles.bankLogo} resizeMode="contain" />
+                  ) : (
+                    <Text style={[styles.bankNetwork, { color: c.fgDim }]}>{c.network}</Text>
+                  )}
                 </View>
 
                 <Text style={[styles.bankLast4, { color: c.fg }]}>{'••••'}  {c.last4}</Text>
@@ -568,6 +617,10 @@ const styles = StyleSheet.create({
   bankNetwork: {
     fontFamily: fontFamily.semibold,
     fontSize: 11,
+  },
+  bankLogo: {
+    width: 34,
+    height: 22,
   },
   bankLast4: {
     fontFamily: fontFamily.semibold,
