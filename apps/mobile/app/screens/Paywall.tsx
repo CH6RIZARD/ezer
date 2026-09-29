@@ -195,25 +195,27 @@ export default function PaywallScreen() {
           <Text style={{ fontFamily: SERIF, color: PURPLE }}>Locked.</Text>
         </Text>
 
+        {/* "Trial" is two different things on this screen and they must not
+            share the word. `status` here is the local, device-only APP
+            PREVIEW window (PremiumContext's AsyncStorage timer) — it has
+            nothing to do with the subscription's own free-trial OFFER
+            (configured on the Play product itself, advertised on the CTA
+            below as "Start your free 7-day trial"). Both calling themselves
+            "trial" put "your trial has ended" directly above a button
+            reading "start your free trial" — true at once, but it reads as
+            the screen contradicting itself. This says "preview" instead. */}
         {status === 'trial' && typeof daysRemaining === 'number' && daysRemaining > 0 ? (
           <View style={{ alignSelf: 'center', marginTop: 14, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999, backgroundColor: '#F6EBD3', borderWidth: 1, borderColor: '#E2C892' }}>
             <Text style={{ fontSize: 10, fontFamily: UI_SEMI, letterSpacing: 0.5, color: GOLD, textTransform: 'uppercase' }}>
-              {daysRemaining} {daysRemaining === 1 ? 'day' : 'days'} left in trial
+              {daysRemaining} {daysRemaining === 1 ? 'day' : 'days'} left in your free preview
             </Text>
           </View>
         ) : null}
 
-        {/* The only other state this screen renders for is 'expired' — and
-            until now it said nothing about that. Someone whose trial just
-            ran out saw the exact same generic "Locked" headline as someone
-            previewing the product cold, permanently, with no close button
-            (see canDismiss above) and no stated reason why. Both facts are
-            true at once — the lock is intentional, but it still has to say
-            why it's there. */}
         {status === 'expired' ? (
           <View style={{ alignSelf: 'center', marginTop: 14, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999, backgroundColor: '#F6EBD3', borderWidth: 1, borderColor: '#E2C892' }}>
             <Text style={{ fontSize: 10, fontFamily: UI_SEMI, letterSpacing: 0.5, color: GOLD, textTransform: 'uppercase' }}>
-              Your free trial has ended
+              Your free preview has ended
             </Text>
           </View>
         ) : null}
