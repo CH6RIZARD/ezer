@@ -24,6 +24,11 @@ model User {
   /// have no record — writing a default would fabricate evidence of consent.
   consentedAt      DateTime?
   consentVersion   String?
+  /// Set by POST /account/dev-unlock when a valid, unexpired code is
+  /// redeemed. The expiry stored here is fixed server-side at code-creation
+  /// time — every check compares against the SERVER's clock, never the
+  /// device's, so changing the phone's local time cannot extend or fake it.
+  devUnlockedUntil DateTime?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 

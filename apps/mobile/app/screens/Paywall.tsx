@@ -18,7 +18,7 @@
 // =============================================================================
 
 import React, { useState } from 'react';
-import { View, Text, ScrollView, Pressable, ActivityIndicator, Alert } from 'react-native';
+import { View, Text, ScrollView, Pressable, ActivityIndicator, Alert, TextInput } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -66,10 +66,31 @@ export default function PaywallScreen() {
     daysRemaining,
     purchasePremium,
     restorePurchases,
+    redeemDevCode,
     isPurchaseNativeAvailable,
   } = usePremium();
   const [isPurchasing, setIsPurchasing] = useState(false);
   const [isRestoring, setIsRestoring] = useState(false);
+  const [showDevCodeInput, setShowDevCodeInput] = useState(false);
+  const [devCode, setDevCode] = useState('');
+  const [isRedeeming, setIsRedeeming] = useState(false);
+  const [devCodeError, setDevCodeError] = useState<string | null>(null);
+
+  const handleRedeemDevCode = async () => {
+    if (!devCode.trim()) return;
+    setIsRedeeming(true);
+    setDevCodeError(null);
+    try {
+      const error = await redeemDevCode(devCode.trim());
+      if (error) {
+        setDevCodeError(error);
+      } else {
+        router.back();
+      }
+    } finally {
+      setIsRedeeming(false);
+    }
+  };
 
   // An expired user has nothing behind this screen to return to, so the close
   // affordance is hidden rather than shown-and-inert.
@@ -273,6 +294,67 @@ export default function PaywallScreen() {
             )}
           </LinearGradient>
         </Pressable>
+
+        {/* Private, server-checked bypass — not a client-side toggle. See
+            POST /account/dev-unlock: the code is validated and the expiry
+            enforced entirely server-side, against the server's clock, so it
+            cannot be extended by changing this phone's date and cannot be
+            found by decompiling the app (the real code is a Railway
+            environment variable, never shipped in this bundle). */}
+        {!showDevCodeInput ? (
+          <Pressable onPress={() => setShowDevCodeInput(true)} hitSlop={8} style={{ marginTop: 14, alignSelf: 'center' }}>
+            <Text style={{ fontSize: 12, color: INK_MUTED, textDecorationLine: 'underline' }}>
+              Enter developer code
+            </Text>
+          </Pressable>
+        ) : (
+          <View style={{ marginTop: 14, gap: 8 }}>
+            <TextInput
+              value={devCode}
+              onChangeText={t => {
+                setDevCode(t);
+                setDevCodeError(null);
+              }}
+              placeholder="Developer code"
+              placeholderTextColor={INK_FAINT}
+              autoCapitalize="characters"
+              autoCorrect={false}
+              editable={!isRedeeming}
+              style={{
+                height: 46,
+                borderRadius: 12,
+                borderWidth: 1,
+                borderColor: devCodeError ? '#B3402A' : PAPER_EDGE,
+                backgroundColor: '#FFFFFF',
+                paddingHorizontal: 14,
+                fontSize: 14,
+                color: INK,
+                textAlign: 'center',
+              }}
+            />
+            {devCodeError ? (
+              <Text style={{ fontSize: 11, color: '#B3402A', textAlign: 'center' }}>{devCodeError}</Text>
+            ) : null}
+            <Pressable
+              onPress={handleRedeemDevCode}
+              disabled={isRedeeming || !devCode.trim()}
+              style={{
+                height: 42,
+                borderRadius: 12,
+                alignItems: 'center',
+                justifyContent: 'center',
+                backgroundColor: INK,
+                opacity: isRedeeming || !devCode.trim() ? 0.5 : 1,
+              }}
+            >
+              {isRedeeming ? (
+                <ActivityIndicator color="#FFFFFF" size="small" />
+              ) : (
+                <Text style={{ fontSize: 13, fontFamily: UI_SEMI, color: '#FFFFFF' }}>Unlock</Text>
+              )}
+            </Pressable>
+          </View>
+        )}
 
         <View style={{ flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 14, marginTop: 14 }}>
           <Pressable onPress={handleRestore} disabled={busy} hitSlop={8}>

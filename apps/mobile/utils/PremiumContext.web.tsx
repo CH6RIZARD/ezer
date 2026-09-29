@@ -12,6 +12,7 @@ import {
   ASYNC_STORAGE_KEYS,
 } from './revenueCatConfig';
 import type { PremiumStatus } from '../types';
+import { api } from './api';
 
 interface PremiumContextType {
   status: PremiumStatus;
@@ -25,6 +26,7 @@ interface PremiumContextType {
   getCashAdvanceLimit: () => number;
   purchasePremium: () => Promise<boolean>;
   restorePurchases: () => Promise<boolean>;
+  redeemDevCode: (code: string) => Promise<string | null>;
   devCycleStatus: () => void;
 }
 
@@ -39,6 +41,15 @@ export function PremiumProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const loadTrialState = async () => {
       try {
+        try {
+          const devRes: any = await api.get('/account/dev-status');
+          if (devRes?.data?.devUnlocked) {
+            setStatus('premium');
+            setIsLoading(false);
+            return;
+          }
+        } catch {}
+
         const trialStart = await AsyncStorage.getItem(ASYNC_STORAGE_KEYS.TRIAL_START_DATE);
 
         if (!trialStart) {
@@ -96,6 +107,16 @@ export function PremiumProvider({ children }: { children: ReactNode }) {
     return false;
   };
 
+  const redeemDevCode = async (code: string): Promise<string | null> => {
+    try {
+      await api.post('/account/dev-unlock', { code });
+      setStatus('premium');
+      return null;
+    } catch (err: any) {
+      return err?.message || 'Could not verify that code. Try again.';
+    }
+  };
+
   const devCycleStatus = useCallback(() => {
     if (!__DEV__) return;
     const states: PremiumStatus[] = ['trial', 'expired', 'premium'];
@@ -119,6 +140,7 @@ export function PremiumProvider({ children }: { children: ReactNode }) {
         getCashAdvanceLimit,
         purchasePremium,
         restorePurchases,
+        redeemDevCode,
         devCycleStatus,
       }}
     >

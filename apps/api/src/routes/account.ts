@@ -64,6 +64,59 @@ export async function accountRoutes(server: FastifyInstance) {
     });
   });
 
+  // POST /account/dev-unlock
+  //
+  // A private bypass for one person to keep testing past the local device
+  // trial window — see apps/mobile/app/screens/Paywall.tsx for the link that
+  // calls this. It intentionally does NOT compare against anything the
+  // client sends except the code itself: no client-supplied date, no
+  // client-computed "is this expired" boolean. Expiry is this fixed
+  // constant, checked against `new Date()` on THIS server, which is the
+  // only clock a phone's local time (settable to whatever, including
+  // backward to defeat an expiry check) cannot touch.
+  //
+  // DEV_UNLOCK_CODE must be set on Railway; it is never present in the
+  // mobile bundle, unlike a hardcoded client-side bypass would be — anyone
+  // who decompiled the APK would find nothing to extract.
+  const DEV_UNLOCK_EXPIRES_AT = new Date('2026-10-06T23:59:59Z');
+
+  server.post<{ Body: { code?: string } }>('/dev-unlock', async (request, reply) => {
+    const userId = (request as any).userId;
+    const code = request.body?.code;
+
+    if (!process.env.DEV_UNLOCK_CODE) {
+      return reply.status(503).send({ success: false, error: 'Not configured on this server' });
+    }
+    if (!code || code !== process.env.DEV_UNLOCK_CODE) {
+      return reply.status(401).send({ success: false, error: 'Invalid code' });
+    }
+    if (new Date() > DEV_UNLOCK_EXPIRES_AT) {
+      return reply.status(410).send({ success: false, error: 'This code has expired' });
+    }
+
+    await prisma.user.update({
+      where: { id: userId },
+      data: { devUnlockedUntil: DEV_UNLOCK_EXPIRES_AT },
+    });
+
+    return { success: true, data: { unlockedUntil: DEV_UNLOCK_EXPIRES_AT.toISOString() } };
+  });
+
+  // GET /account/dev-status — computed fresh on every call against THIS
+  // server's clock, never cached as a raw expiry timestamp for the client to
+  // evaluate itself. The client only ever learns a boolean.
+  server.get('/dev-status', async (request, reply) => {
+    const userId = (request as any).userId;
+
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { devUnlockedUntil: true },
+    });
+
+    const devUnlocked = !!user?.devUnlockedUntil && new Date() < user.devUnlockedUntil;
+    return { success: true, data: { devUnlocked } };
+  });
+
   // GET /account/export — the access half of the same right.
   server.get('/export', async (request, reply) => {
     const userId = (request as any).userId;

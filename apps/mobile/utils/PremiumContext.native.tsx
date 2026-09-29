@@ -16,6 +16,7 @@ try {
 type CustomerInfo = any;
 type PurchasesPackage = any;
 import { useAuth } from './AuthContext';
+import { api } from './api';
 import {
   REVENUECAT_API_KEY,
   ENTITLEMENT_ID,
@@ -39,6 +40,11 @@ interface PremiumContextType {
   getCashAdvanceLimit: () => number;
   purchasePremium: () => Promise<boolean>;
   restorePurchases: () => Promise<boolean>;
+  /** Server-checked private bypass — see POST /account/dev-unlock. Resolves
+   *  to an error string on failure (invalid/expired code, unreachable
+   *  server), or null on success, at which point status is already
+   *  'premium' — no separate refresh needed. */
+  redeemDevCode: (code: string) => Promise<string | null>;
   /** DEV only: cycle through states for testing */
   devCycleStatus: () => void;
 }
@@ -103,6 +109,20 @@ export function PremiumProvider({ children }: { children: ReactNode }) {
         setIsLoading(false);
         return;
       }
+
+      // A dev-unlock persists across app restarts server-side, so it has to
+      // be checked before falling through to the local trial timer, not
+      // just at the moment the code is redeemed. This 401s harmlessly if
+      // there is no session yet (cold boot, not logged in) — that is not an
+      // error worth surfacing, just "not applicable yet".
+      try {
+        const devRes: any = await api.get('/account/dev-status');
+        if (devRes?.data?.devUnlocked) {
+          setStatus('premium');
+          setIsLoading(false);
+          return;
+        }
+      } catch {}
 
       const trialStart = await AsyncStorage.getItem(ASYNC_STORAGE_KEYS.TRIAL_START_DATE);
 
@@ -197,6 +217,18 @@ export function PremiumProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const redeemDevCode = async (code: string): Promise<string | null> => {
+    try {
+      await api.post('/account/dev-unlock', { code });
+      // The server already validated and persisted the unlock; no need to
+      // round-trip through /account/dev-status to confirm what we just did.
+      setStatus('premium');
+      return null;
+    } catch (err: any) {
+      return err?.message || 'Could not verify that code. Try again.';
+    }
+  };
+
   const devCycleStatus = useCallback(() => {
     if (!__DEV__) return;
     const states: PremiumStatus[] = ['trial', 'expired', 'premium'];
@@ -221,6 +253,7 @@ export function PremiumProvider({ children }: { children: ReactNode }) {
         getCashAdvanceLimit,
         purchasePremium,
         restorePurchases,
+        redeemDevCode,
         devCycleStatus,
       }}
     >
