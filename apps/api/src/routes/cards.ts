@@ -366,4 +366,36 @@ export async function cardRoutes(server: FastifyInstance) {
       },
     };
   });
+
+  // GET /cards/access-list — read back the decision POST /cards/access-list
+  // already made. The client mirrors that decision into on-device storage
+  // (utils/cardDesignStore.ts's CardAccessOutcome) so Home's Spending Power
+  // tile doesn't need a network call on every render, but that mirror is the
+  // ONLY copy — there was no way to read it back from here at all. A
+  // reinstall, a cleared app, or a second device wipes the local copy while
+  // this exact row still sits in Postgres, and the person is right back to
+  // "not yet assessed" for a decision the server already made. This is what
+  // useCardFlowStatus.ts reconciles against when local storage comes back
+  // empty.
+  server.get('/access-list', async (request, reply) => {
+    const userId = resolveUserId(request);
+
+    const latest = await prisma.cardAccessList.findFirst({
+      where: { userId },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    if (!latest) {
+      return { success: true, data: null };
+    }
+
+    return {
+      success: true,
+      data: {
+        status: latest.status,
+        ...(latest.limitCents && latest.limitCents > 0 ? { limitCents: latest.limitCents } : {}),
+        joinedAt: latest.createdAt.toISOString(),
+      },
+    };
+  });
 }

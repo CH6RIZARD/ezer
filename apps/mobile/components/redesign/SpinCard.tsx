@@ -292,8 +292,20 @@ export function SpinCard({ front, back, style, onTap, onDragChange, hint = 'Drag
           { transform: [{ translateY: floatY }] },
         ]}
       >
-        {/* Gold metal core — sits between the faces, seen only edge-on. */}
-        <Animated.View style={[styles.face, { transform: faceTransform }]}>
+        {/* Gold metal core — sits between the faces, seen only edge-on.
+            renderToHardwareTextureAndroid forces each of these three
+            near-coplanar layers onto its own GPU texture on Android; without
+            it, the platform composites them by paint order rather than true
+            depth, and at grazing/edge-on angles — where all three are
+            visually thinnest and closest together — that shows up as a
+            flickering, jagged tear between the core and whichever face is
+            mid-rotation, which read as glitchy digital artifacting rather
+            than a real card's edge. No-op on iOS/web, which don't have this
+            failure mode. */}
+        <Animated.View
+          renderToHardwareTextureAndroid
+          style={[styles.face, { transform: faceTransform }]}
+        >
           <LinearGradient
             colors={gradients.metalEdge as unknown as readonly [string, string, ...string[]]}
             locations={gradients.metalEdgeLocations as unknown as readonly [number, number, ...number[]]}
@@ -301,9 +313,19 @@ export function SpinCard({ front, back, style, onTap, onDragChange, hint = 'Drag
             end={{ x: 1, y: 1 }}
             style={styles.fill}
           />
+          {/* A single flat plane read as a card's shape compressed to zero
+              width at exactly 90°/270° — correct for a face, wrong for an
+              edge someone is meant to perceive as having real thickness.
+              These two hairline strips sit just inside the core's own
+              silhouette and catch the light the way a beveled metal edge
+              does, so the "edge-on" moment reads as a thin bar with a
+              visible top/bottom highlight rather than a bare flat color. */}
+          <View style={[styles.edgeHighlight, { top: 0 }]} />
+          <View style={[styles.edgeHighlight, { bottom: 0 }]} />
         </Animated.View>
 
         <Animated.View
+          renderToHardwareTextureAndroid
           style={[
             styles.face,
             styles.hidden,
@@ -314,6 +336,7 @@ export function SpinCard({ front, back, style, onTap, onDragChange, hint = 'Drag
         </Animated.View>
 
         <Animated.View
+          renderToHardwareTextureAndroid
           style={[
             styles.face,
             styles.hidden,
@@ -360,6 +383,13 @@ const styles = StyleSheet.create({
   fill: {
     flex: 1,
     borderRadius: radius.virtualCard,
+  },
+  edgeHighlight: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    height: 2,
+    backgroundColor: 'rgba(255,255,255,0.35)',
   },
   hint: {
     marginTop: 14,

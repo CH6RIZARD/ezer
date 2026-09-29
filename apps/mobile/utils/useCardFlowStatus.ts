@@ -14,7 +14,13 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { useFocusEffect } from 'expo-router';
-import { loadCardDesign, getCardAccessOutcome, type CardAccessOutcome } from './cardDesignStore';
+import {
+  loadCardDesign,
+  getCardAccessOutcome,
+  fetchServerAccessOutcome,
+  mirrorServerAccessOutcome,
+  type CardAccessOutcome,
+} from './cardDesignStore';
 
 export function useCardFlowStatus() {
   const [hasCompletedFlow, setHasCompletedFlow] = useState(false);
@@ -28,8 +34,24 @@ export function useCardFlowStatus() {
   const refresh = useCallback(() => {
     let alive = true;
     (async () => {
-      const [design, outcome] = await Promise.all([loadCardDesign(), getCardAccessOutcome()]);
+      const [design, localOutcome] = await Promise.all([loadCardDesign(), getCardAccessOutcome()]);
       if (!alive) return;
+
+      // Local storage is the fast path, but it is only a mirror of a decision
+      // the server already made — a reinstall, a cleared app, or a second
+      // device wipes it while the real outcome still sits in Postgres. Before
+      // this fallback, that meant Home's Spending Power tile went right back
+      // to "not yet assessed" for someone who had already connected a bank
+      // and gotten a real answer: the assessment theatre would run again,
+      // finish, and the tile still wouldn't show anything. Only worth the
+      // network call when local storage came back genuinely empty.
+      let outcome = localOutcome;
+      if (!outcome) {
+        outcome = await fetchServerAccessOutcome();
+        if (!alive) return;
+        if (outcome) void mirrorServerAccessOutcome(outcome);
+      }
+
       setHasCompletedFlow(!!design && !!outcome);
       setAccess(outcome);
     })();

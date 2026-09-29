@@ -236,6 +236,63 @@ export async function saveCardAccessOutcome(access: CardAccessOutcome): Promise<
   }
 }
 
+function mapServerStatus(status: unknown): CardAccessOutcome['status'] | null {
+  if (status === 'approved_pending_issuance') return 'approved';
+  if (status === 'manual_review') return 'review';
+  if (status === 'waitlist') return 'waitlist';
+  return null;
+}
+
+/**
+ * Read the decision back from GET /cards/access-list. The on-device mirror in
+ * `access` is the only copy `getCardAccessOutcome()` reads — a reinstall, a
+ * cleared app, or signing in on a second device wipes it, even though the
+ * server made this exact decision already and still has the row. This is the
+ * fallback useCardFlowStatus.ts reaches for when the local mirror comes back
+ * empty, so "not yet assessed" isn't a permanent regression from a real
+ * approval outcome. Never throws; null means either nothing to find or the
+ * request failed, and callers already treat both the same as "not assessed."
+ */
+export async function fetchServerAccessOutcome(): Promise<CardAccessOutcome | null> {
+  try {
+    const res = await api.get<{
+      data?: { status?: string; limitCents?: number; joinedAt?: string } | null;
+    }>('/cards/access-list');
+    const payload = res?.data;
+    if (!payload) return null;
+    const status = mapServerStatus(payload.status);
+    if (!status) return null;
+    return {
+      status,
+      limitCents: typeof payload.limitCents === 'number' ? payload.limitCents : null,
+      joinedAt: payload.joinedAt ?? new Date().toISOString(),
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Mirror a server-recovered outcome onto local storage, but ONLY when a
+ * local design record already exists — e.g. this exact bug from earlier in
+ * this app's life, where the assessment ran and the outcome was simply never
+ * attached anywhere. When there is no local record at all (a genuine
+ * reinstall/second device), there is nothing safe to attach it to: inventing
+ * a blank placeholder design would make PhysicalCardReview.tsx render an
+ * empty canvas as "your design," which is worse than re-fetching the outcome
+ * from the server on every open. That in-memory value is what actually
+ * drives the current session's UI either way.
+ */
+export async function mirrorServerAccessOutcome(access: CardAccessOutcome): Promise<void> {
+  try {
+    const existing = await readRecord();
+    if (!existing) return;
+    await writeRecord({ ...existing, access });
+  } catch {
+    // Best effort — see above.
+  }
+}
+
 /** Wipe the saved design. Used by "start over" and sign-out. Never throws. */
 export async function clearCardDesign(): Promise<void> {
   try {
