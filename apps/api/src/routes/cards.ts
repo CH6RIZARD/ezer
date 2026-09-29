@@ -196,10 +196,16 @@ async function deriveTrustSignals(userId: string): Promise<TrustSignals | null> 
     select: { amountCents: true, date: true, merchantNameRaw: true },
   });
 
-  // Deposits are the positive side of the ledger. Averaged over the months
-  // actually observed, not a fixed six — a two-month-old account would
-  // otherwise look like it earns a third of what it does.
-  const inflow = txns.filter(t => t.amountCents > 0).reduce((sum, t) => sum + t.amountCents, 0);
+  // Deposits are the NEGATIVE side of the ledger in Plaid's own convention —
+  // positive amountCents means money OUT of the account (see the identical
+  // note on SubscriptionCandidateInput.amount in packages/shared). This
+  // summed amountCents > 0 for a long time, which is spending, not income:
+  // verified directly against this real, currently-linked account, it
+  // produced an "average monthly inflow" of $4,315 that was actually $4,315
+  // of average monthly SPENDING. Averaged over the months actually observed,
+  // not a fixed six — a two-month-old account would otherwise look like it
+  // earns a third of what it does.
+  const inflow = txns.filter(t => t.amountCents < 0).reduce((sum, t) => sum + -t.amountCents, 0);
   const oldest = txns.reduce<Date | null>((acc, t) => (!acc || t.date < acc ? t.date : acc), null);
   const observedMonths = oldest
     ? Math.max(1, Math.round((Date.now() - oldest.getTime()) / (1000 * 60 * 60 * 24 * 30)))
@@ -208,11 +214,17 @@ async function deriveTrustSignals(userId: string): Promise<TrustSignals | null> 
   // Plaid does not flag overdrafts, so they are matched by the fee description
   // the institution writes. Conservative on purpose: a missed overdraft costs
   // us a bad line, a false positive costs a good applicant their limit.
+  //
+  // The original pattern was not word-bounded: "nsf" matches inside
+  // "traNSFer", so ordinary transfers were being counted as overdraft
+  // events — verified directly, 7 of 36 "matches" on this real account were
+  // "ONLINE TRANSFER FROM ..." rows, not overdrafts at all. \b anchors fix
+  // it without changing what a genuine match looks like.
   const ninetyDaysAgo = Date.now() - 90 * 24 * 60 * 60 * 1000;
   const overdrafts = txns.filter(
     t =>
       t.date.getTime() >= ninetyDaysAgo &&
-      /overdraft|nsf|insufficient|returned item/i.test(t.merchantNameRaw)
+      /\boverdraft\b|\bnsf\b|\binsufficient\b|\breturned item\b/i.test(t.merchantNameRaw)
   ).length;
 
   const firstLink = items.reduce((acc, i) => (i.createdAt < acc ? i.createdAt : acc), items[0].createdAt);
