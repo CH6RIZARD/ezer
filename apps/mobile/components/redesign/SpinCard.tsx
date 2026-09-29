@@ -293,19 +293,15 @@ export function SpinCard({ front, back, style, onTap, onDragChange, hint = 'Drag
         ]}
       >
         {/* Gold metal core — sits between the faces, seen only edge-on.
-            renderToHardwareTextureAndroid forces each of these three
-            near-coplanar layers onto its own GPU texture on Android; without
-            it, the platform composites them by paint order rather than true
-            depth, and at grazing/edge-on angles — where all three are
-            visually thinnest and closest together — that shows up as a
-            flickering, jagged tear between the core and whichever face is
-            mid-rotation, which read as glitchy digital artifacting rather
-            than a real card's edge. No-op on iOS/web, which don't have this
-            failure mode. */}
-        <Animated.View
-          renderToHardwareTextureAndroid
-          style={[styles.face, { transform: faceTransform }]}
-        >
+            An earlier attempt added renderToHardwareTextureAndroid here to
+            fight z-fighting/tearing at grazing angles — it made that worse,
+            not better: flattening each face into a pre-rendered bitmap layer
+            broke Android's backfaceVisibility culling entirely, so the FRONT
+            face stayed visible (mirrored) even at rest instead of only the
+            back showing. Reverted. The hairline highlights below are a
+            smaller, purely additive fix for the same edge-on flatness that
+            doesn't touch how the faces are composited. */}
+        <Animated.View style={[styles.face, { transform: faceTransform }]}>
           <LinearGradient
             colors={gradients.metalEdge as unknown as readonly [string, string, ...string[]]}
             locations={gradients.metalEdgeLocations as unknown as readonly [number, number, ...number[]]}
@@ -325,7 +321,6 @@ export function SpinCard({ front, back, style, onTap, onDragChange, hint = 'Drag
         </Animated.View>
 
         <Animated.View
-          renderToHardwareTextureAndroid
           style={[
             styles.face,
             styles.hidden,
@@ -336,7 +331,6 @@ export function SpinCard({ front, back, style, onTap, onDragChange, hint = 'Drag
         </Animated.View>
 
         <Animated.View
-          renderToHardwareTextureAndroid
           style={[
             styles.face,
             styles.hidden,
