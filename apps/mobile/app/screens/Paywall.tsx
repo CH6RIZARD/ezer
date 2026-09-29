@@ -85,7 +85,14 @@ export default function PaywallScreen() {
       if (error) {
         setDevCodeError(error);
       } else {
-        router.back();
+        // This screen is most often reached via usePremiumGate's
+        // router.replace() when status was 'expired' — which leaves nothing
+        // behind it in history. router.back() from here is a silent no-op:
+        // the unlock genuinely succeeds server-side (confirmed directly
+        // against the database), but the screen just sits there looking
+        // unchanged, indistinguishable from the tap having failed. Force the
+        // destination instead of assuming there is one to go back to.
+        router.replace('/(tabs)/home');
       }
     } finally {
       setIsRedeeming(false);
@@ -110,8 +117,10 @@ export default function PaywallScreen() {
     try {
       const success = await purchasePremium();
       if (success) {
+        // Same reasoning as the dev-code path above: an expired-triggered
+        // visit to this screen has nothing behind it to go back to.
         Alert.alert('You’re in', 'Your founding rate is locked for as long as you stay subscribed.', [
-          { text: 'Let’s go', onPress: () => router.back() },
+          { text: 'Let’s go', onPress: () => router.replace('/(tabs)/home') },
         ]);
       }
     } finally {
@@ -129,7 +138,7 @@ export default function PaywallScreen() {
       const success = await restorePurchases();
       if (success) {
         Alert.alert('Subscription restored', 'Your access is back.', [
-          { text: 'Great', onPress: () => router.back() },
+          { text: 'Great', onPress: () => router.replace('/(tabs)/home') },
         ]);
       } else {
         Alert.alert('Nothing to restore', 'We couldn’t find a subscription on this account.');
