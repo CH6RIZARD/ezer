@@ -45,6 +45,9 @@ export interface InstrumentSummary extends FundingInstrument {
 }
 
 export interface MerchantCharge {
+  /** Null when this merchant has no active/trial Subscription row — e.g.
+   *  charges from a subscription that was since cancelled. */
+  subscriptionId: string | null;
   merchantId: string;
   merchantName: string;
   logo?: string;

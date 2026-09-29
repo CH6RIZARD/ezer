@@ -77,7 +77,19 @@ function resolveLogoKey(name?: string, merchantId?: string): string | undefined 
   return undefined;
 }
 
-/** Domain lookup for the optional remote step. */
+/**
+ * Domain lookup for the optional remote step.
+ *
+ * Curated MERCHANT_DOMAIN entries first — a handful of names are genuinely
+ * ambiguous (proton.me, not proton.com) or arrive mangled from Plaid's own
+ * transaction text (Netlify truncated to "netli"), and no automatic guess
+ * gets those right. Anything not curated falls back to guessing
+ * `{name}.com` rather than giving up to a grey initial tile — most real
+ * merchants ARE at their own name dot com, and the favicon CDN below
+ * degrades gracefully (a generic globe icon, not an error) when the guess
+ * is wrong or the domain has no site at all. Wrong-but-plausible beats
+ * grey for a long-tail subscription no one bothered to curate.
+ */
 function resolveDomain(name?: string, merchantId?: string): string | undefined {
   for (const c of [normalise(merchantId), normalise(name)]) {
     if (c.length === 0) continue;
@@ -85,6 +97,11 @@ function resolveDomain(name?: string, merchantId?: string): string | undefined {
     const head = c.split(' ')[0];
     if (MERCHANT_DOMAIN[head]) return MERCHANT_DOMAIN[head];
   }
+
+  const guess = normalise(name) || normalise(merchantId);
+  const head = guess.split(' ')[0];
+  if (head.length >= 3) return `${head}.com`;
+
   return undefined;
 }
 

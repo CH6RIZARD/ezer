@@ -267,7 +267,7 @@ export default function WalletScreen() {
   // is why this screen listed Netflix, Apple Music and Disney+ for a user who
   // had connected no bank at all.
   const [merchants, setMerchants] = useState<
-    { merchantId: string; merchantName: string; logo?: string; totalCents: number; count: number; subscriptionId: string }[]
+    { merchantId: string; merchantName: string; logo?: string; totalCents: number; count: number; subscriptionId: string | null }[]
   >([]);
   const [loadingBreakdown, setLoadingBreakdown] = useState(false);
 
@@ -294,9 +294,12 @@ export default function WalletScreen() {
             logo: m.logo,
             totalCents: m.totalDrainedCents,
             count: m.chargeCount,
-            // The API keys the breakdown by merchant; routing needs the
-            // subscription, and merchantId resolves on the detail screen.
-            subscriptionId: m.merchantId,
+            // The real Subscription id now, not merchantId standing in for
+            // it — GET /subscriptions/:id looks up by the Subscription row's
+            // own primary key, which a merchant id can never match. Every
+            // tap 404'd as "Subscription not found" until the API started
+            // actually resolving and returning this.
+            subscriptionId: m.subscriptionId,
           }))
         );
       })
@@ -546,12 +549,16 @@ export default function WalletScreen() {
               {merchants.map(m => (
                 <PressScale
                   key={m.merchantId}
-                  onPress={() =>
+                  onPress={() => {
+                    // No active/trial Subscription row for this merchant —
+                    // e.g. it was since cancelled. Nothing to open rather
+                    // than a 404.
+                    if (!m.subscriptionId) return;
                     router.push({
                       pathname: '/screens/SubscriptionDetail',
                       params: { id: m.subscriptionId },
-                    })
-                  }
+                    });
+                  }}
                 >
                   <Surface style={styles.row}>
                     <MerchantMark name={m.merchantName} merchantId={m.merchantId} size={40} />

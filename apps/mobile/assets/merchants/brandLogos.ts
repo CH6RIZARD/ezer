@@ -185,6 +185,11 @@ export const MERCHANT_DOMAIN: Record<string, string> = {
   figma: 'figma.com',
   slack: 'slack.com',
   github: 'github.com',
+  netli: 'netlify.com', // canonical name arrives truncated from Plaid's own transaction text
+  netlify: 'netlify.com',
+  bandlab: 'bandlab.com',
+  proton: 'proton.me', // NOT proton.com — a different, unrelated site
+  cursor: 'cursor.com',
 };
 
 /** Fallback tile colours for merchants with neither a bundled mark nor a logo. */
