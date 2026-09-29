@@ -324,15 +324,29 @@ export async function coreRoutes(server: FastifyInstance) {
       include: {
         merchant: true,
         trial: true,
+        priceHistory: { orderBy: { month: 'desc' }, take: 1 },
       },
       orderBy: {
         createdAt: 'desc',
       },
     });
 
+    // The Subscription model has no amountCents column of its own — a
+    // subscription's price is tracked month-by-month in PriceHistory, which
+    // this endpoint never included in its query. Every caller of GET
+    // /subscriptions therefore received subscriptions with no price on
+    // them at all: Home's "Top ticket" panel filters on `s.amountCents`
+    // truthiness and silently rendered nothing, the monthly-cost map built
+    // from this same list was empty for every merchant. The rows always
+    // had a real price sitting in PriceHistory; this just never read it.
+    const data = subscriptions.map(s => ({
+      ...s,
+      amountCents: s.priceHistory[0]?.amountCents ?? 0,
+    }));
+
     return {
       success: true,
-      data: subscriptions,
+      data,
     };
   });
 
