@@ -378,6 +378,31 @@ async function syncTransactionsForItem(userId: string, itemId: string, accessTok
 
   if (allTransactions.length === 0) return 0;
 
+  // Persist EVERY synced transaction, not just the subscription-qualifying
+  // subset below. The merchant grouping a few lines down filters through
+  // isSubscriptionCandidate() first, which explicitly excludes INCOME (along
+  // with transfers, loan payments and bank fees) — deposits and paychecks
+  // were therefore never written here at all. deriveTrustSignals() in
+  // routes/cards.ts computes its income/inflow figure by reading this exact
+  // table, so a trust score — and the Spending Power figure downstream of
+  // it — could never see a cent of real income, regardless of how healthy
+  // the account actually was. createMany + skipDuplicates rather than the
+  // per-row upsert below: transaction_id is Plaid's own stable id, so a
+  // re-sync naturally no-ops on rows already stored instead of needing an
+  // update path for data that does not change once settled.
+  await prisma.transaction.createMany({
+    data: allTransactions.map(tx => ({
+      id: tx.transaction_id,
+      userId,
+      merchantNameRaw: tx.merchant_name || tx.name,
+      amountCents: Math.round(tx.amount * 100),
+      date: new Date(tx.date),
+      source: 'plaid',
+      rawData: tx as any,
+    })),
+    skipDuplicates: true,
+  });
+
   // Get user's funding instruments for matching
   const instruments = await prisma.fundingInstrument.findMany({ where: { userId } });
 
@@ -416,22 +441,8 @@ async function syncTransactionsForItem(userId: string, itemId: string, accessTok
     // Regular timing AND a stable price. Either alone produces false positives.
     if (!hasStableAmount(amounts)) continue;
 
-    // Store raw transactions
-    for (const tx of txs) {
-      await prisma.transaction.upsert({
-        where: { id: tx.transaction_id },
-        create: {
-          id: tx.transaction_id,
-          userId,
-          merchantNameRaw: tx.merchant_name || tx.name,
-          amountCents: Math.round(tx.amount * 100),
-          date: new Date(tx.date),
-          source: 'plaid',
-          rawData: tx as any,
-        },
-        update: {},
-      });
-    }
+    // Raw transactions are already persisted for every synced transaction,
+    // subscription-qualifying or not — see the createMany above.
 
     // Find or create merchant
     let merchant = await prisma.merchant.findUnique({ where: { canonicalName } });
