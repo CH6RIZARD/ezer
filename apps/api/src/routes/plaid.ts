@@ -199,7 +199,11 @@ export async function plaidRoutes(server: FastifyInstance) {
       if (!networkArt && institutionName) {
         const guess = institutionName.toLowerCase().replace(/[^a-z0-9]/g, '');
         if (guess.length >= 2) {
-          networkArt = `https://www.google.com/s2/favicons?domain=${guess}.com&sz=128`;
+          // 256, not an arbitrary value — this favicon service only actually
+          // serves a handful of fixed sizes and silently returns a tiny
+          // 16x16 image for anything that doesn't land on one exactly
+          // (verified directly; see the identical note in MerchantMark.tsx).
+          networkArt = `https://www.google.com/s2/favicons?domain=${guess}.com&sz=256`;
         }
       }
 

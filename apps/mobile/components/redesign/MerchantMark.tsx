@@ -108,10 +108,21 @@ function resolveDomain(name?: string, merchantId?: string): string | undefined {
 /**
  * Public favicon/logo CDN, no API key. Used only when there is no bundled mark
  * and no Plaid logo. (Clearbit's endpoint is dead — see the header note.)
+ *
+ * This service only actually serves a handful of fixed sizes (16, 32, 48,
+ * 64, 128, 180, 256 — verified directly, not documented anywhere). Any other
+ * `sz` value silently rounds down to whichever bucket it lands in, and
+ * critically NOT to the nearest one below — `sz=120`, what the old
+ * `size * 3` formula computed for a typical 40px tile, returned a 16×16
+ * image, not something close to 120. That 16px source then stretched to
+ * fill a 40–64px tile is exactly what "blurry, low quality" looks like.
+ * Always requesting 256 (confirmed a real, full-resolution bucket) costs a
+ * few more KB per icon and guarantees the source is never the bottleneck —
+ * downscaling a real image always looks clean; it's upscaling a tiny one
+ * that doesn't.
  */
-function cdnUrl(domain: string, size: number): string {
-  const px = Math.min(256, Math.max(64, Math.round(size * 3))); // 3x for retina
-  return `https://www.google.com/s2/favicons?domain=${domain}&sz=${px}`;
+function cdnUrl(domain: string): string {
+  return `https://www.google.com/s2/favicons?domain=${domain}&sz=256`;
 }
 
 /** Accept an https/data URI, or a bare base64 PNG the way Plaid returns it. */
@@ -183,7 +194,7 @@ export function MerchantMark({
   // ---- 2. Plaid logo, then 3. remote CDN --------------------------------
   const plaid = normaliseLogoUrl(logoUrl);
   const domain = resolveDomain(name, merchantId);
-  const remote = plaid ?? (domain ? cdnUrl(domain, size) : undefined);
+  const remote = plaid ?? (domain ? cdnUrl(domain) : undefined);
 
   if (remote !== undefined && failedUri !== remote) {
     const isLoaded = loadedUri === remote;
