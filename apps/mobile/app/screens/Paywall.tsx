@@ -320,6 +320,7 @@ export default function PaywallScreen() {
               autoCapitalize="characters"
               autoCorrect={false}
               editable={!isRedeeming}
+              secureTextEntry
               style={{
                 height: 46,
                 borderRadius: 12,
