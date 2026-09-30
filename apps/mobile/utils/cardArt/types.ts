@@ -30,6 +30,8 @@ export type DesignPattern = 'solid' | 'wave' | 'diagonal' | 'dots' | 'rings';
 export interface CardDesign {
   id: string;
   issuerId: string;
+  /** Which generated look this is; lets the resolver recolour it. */
+  variant: 'classic' | 'night' | 'light' | 'generic';
   label: string;
   gradient: readonly [string, string];
   pattern: DesignPattern;
@@ -95,6 +97,8 @@ export interface ResolvedCardArt {
   logoUri?: string;
   issuerId?: string;
   designId?: string;
+  /** Set when the account's product name (e.g. "Platinum") chose the finish. */
+  finish?: 'silver' | 'gold' | 'obsidian';
   /**
    * True when `imageUri` is a photo of a real card, whose printed number must
    * be covered on screen. Network art carries no PAN, so it is never masked.

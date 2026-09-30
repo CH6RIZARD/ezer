@@ -148,7 +148,10 @@ style problem.
 - **`resolveCardArt()` is the single place that decides a card's look**, first
   hit wins: user photo → design the user picked → network-token art → catalog
   design for the matched bank → bank colour + logo template. Explicit user
-  choices deliberately outrank automatic sources. `BankCardFace` draws every
+  choices deliberately outrank automatic sources. Catalog designs are re-tinted
+  with Plaid's real `primary_color` when we have it (our catalog hues are only
+  fallbacks), and a product name like "Platinum"/"Gold"/"Reserve" switches the
+  card to a silver/gold/dark finish (`finishFor`, whole-word match). `BankCardFace` draws every
   tier; don't reintroduce a second inline card in `wallet.tsx`.
 - **Do not add scraped or copied issuer card art** (PNC's marketing PNGs and the
   like) to the catalog. It is copyrighted, carries trademarks and third-party

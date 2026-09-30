@@ -57,9 +57,9 @@ export const ISSUERS: readonly Issuer[] = [
 export const GENERIC_ISSUER_ID = 'generic';
 
 export const GENERIC_DESIGNS: readonly CardDesign[] = [
-  { id: 'generic-graphite', issuerId: GENERIC_ISSUER_ID, label: 'Graphite', gradient: ['#3A3D45', '#15171C'], pattern: 'diagonal', isDefault: true },
-  { id: 'generic-midnight', issuerId: GENERIC_ISSUER_ID, label: 'Midnight', gradient: ['#1E2A55', '#0B1230'], pattern: 'wave' },
-  { id: 'generic-sand', issuerId: GENERIC_ISSUER_ID, label: 'Sand', gradient: ['#EFE7D8', '#CDBFA5'], pattern: 'dots' },
+  { id: 'generic-graphite', issuerId: GENERIC_ISSUER_ID, variant: 'generic', label: 'Graphite', gradient: ['#3A3D45', '#15171C'], pattern: 'diagonal', isDefault: true },
+  { id: 'generic-midnight', issuerId: GENERIC_ISSUER_ID, variant: 'generic', label: 'Midnight', gradient: ['#1E2A55', '#0B1230'], pattern: 'wave' },
+  { id: 'generic-sand', issuerId: GENERIC_ISSUER_ID, variant: 'generic', label: 'Sand', gradient: ['#EFE7D8', '#CDBFA5'], pattern: 'dots' },
 ];
 
 /** The generated + curated designs for one issuer. */
@@ -69,6 +69,7 @@ function designsFor(issuer: Issuer): CardDesign[] {
     {
       id: `${id}-classic`,
       issuerId: id,
+      variant: 'classic',
       label: 'Classic',
       gradient: [primary, darken(primary, 0.45)],
       pattern: 'wave',
@@ -77,6 +78,7 @@ function designsFor(issuer: Issuer): CardDesign[] {
     {
       id: `${id}-night`,
       issuerId: id,
+      variant: 'night',
       label: 'Night',
       gradient: [secondary, darken(secondary, 0.55)],
       pattern: 'diagonal',
@@ -84,6 +86,7 @@ function designsFor(issuer: Issuer): CardDesign[] {
     {
       id: `${id}-light`,
       issuerId: id,
+      variant: 'light',
       label: 'Light',
       gradient: [lighten(primary, 0.88), lighten(primary, 0.62)],
       pattern: 'dots',

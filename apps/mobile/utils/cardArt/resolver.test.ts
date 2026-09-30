@@ -4,7 +4,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { resolveCardArt } from './resolver';
+import { finishFor, resolveCardArt } from './resolver';
 import { matchIssuer } from './matching';
 import { designsForIssuer, defaultDesignFor, getDesign, ISSUERS } from './catalog';
 import { isHexColor } from './color';
@@ -130,4 +130,45 @@ test('resolve: the bank logo is passed through on gradient tiers only', () => {
     undefined,
     'a photo already contains the real logo',
   );
+});
+
+test('resolve: Plaid brand colour replaces our approximate hue in catalog designs', () => {
+  const r = resolveCardArt({ institutionName: 'Chase', issuerColorHint: '#123ABC' });
+  assert.equal(r.tier, 'catalog');
+  assert.equal(r.gradient[0], '#123abc');
+  // A bad hint must not break anything: keep the catalog hue.
+  const bad = resolveCardArt({ institutionName: 'Chase', issuerColorHint: 'nope' });
+  assert.equal(bad.gradient[0].toLowerCase(), '#117aca');
+  // "Night" keeps its own dark secondary regardless of the hint.
+  const night = resolveCardArt({ institutionName: 'Chase', issuerColorHint: '#123ABC' }, { designId: 'chase-night' });
+  assert.equal(night.gradient[0].toLowerCase(), '#0b2e59');
+});
+
+test('finishFor: product names imply a finish, whole words only', () => {
+  assert.equal(finishFor('Platinum Card'), 'silver');
+  assert.equal(finishFor('Sapphire Reserve'), 'obsidian');
+  assert.equal(finishFor('Gold Rewards'), 'gold');
+  assert.equal(finishFor('Visa Signature Black'), 'obsidian');
+  assert.equal(finishFor('Spend'), undefined);
+  assert.equal(finishFor('Checking'), undefined);
+  assert.equal(finishFor('Goldman Savings'), undefined, '"gold" inside another word must not match');
+  assert.equal(finishFor(undefined), undefined);
+});
+
+test('resolve: finish beats the bank colour, but a picked design beats the finish', () => {
+  const plat = resolveCardArt({ institutionName: 'American Express', displayName: 'Platinum Card', issuerColorHint: '#006FCF' });
+  assert.equal(plat.tier, 'catalog');
+  assert.equal(plat.finish, 'silver');
+  assert.equal(plat.fg, '#241A38', 'dark text on a light silver card');
+
+  const picked = resolveCardArt(
+    { institutionName: 'American Express', displayName: 'Platinum Card' },
+    { designId: 'amex-night' },
+  );
+  assert.equal(picked.tier, 'user_design');
+  assert.equal(picked.finish, undefined);
+
+  // A photo still outranks everything.
+  const photo = resolveCardArt({ institutionName: 'American Express', displayName: 'Platinum Card' }, { photoUri: 'data:image/jpeg;base64,AAA' });
+  assert.equal(photo.tier, 'user_photo');
 });

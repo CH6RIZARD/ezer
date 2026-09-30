@@ -123,6 +123,10 @@ export default function BankCardFace({
   useEffect(() => setImageFailed(false), [art.imageUri]);
   const showImage = !!art.imageUri && !imageFailed;
 
+  // Plaid-linked accounts carry no card network (brand is "Bank"/"Unknown"),
+  // so only show a network name when one is genuinely known.
+  const hasNetwork = !!network && !['CARD', 'BANK', 'UNKNOWN'].includes(network.toUpperCase());
+
   const a11y = `${bankName}${accountLabel ? ` ${accountLabel}` : ''} card ending in ${last4}`;
   const frame: ViewStyle = { width, height, borderRadius, overflow: 'hidden' };
 
@@ -131,7 +135,7 @@ export default function BankCardFace({
     const isPhoto = art.tier === 'user_photo';
     const showPill = isPhoto && !!subsLabel;
     // Visa's rules want "Visa 1234"; other networks just the digits.
-    const networkLabel = network && network !== 'CARD' ? `${network[0]}${network.slice(1).toLowerCase()} ` : '';
+    const networkLabel = hasNetwork ? `${network[0]}${network.slice(1).toLowerCase()} ` : '';
     return (
       <View style={[frame, style]} accessible accessibilityLabel={a11y}>
         <Image
@@ -195,23 +199,44 @@ export default function BankCardFace({
       />
 
       <View style={styles.top}>
-        <Text style={[styles.bankName, { color: art.fg }]} numberOfLines={1}>
-          {bankName}
-        </Text>
-        {art.logoUri ? (
-          <Image source={{ uri: art.logoUri }} style={styles.logo} resizeMode="contain" />
-        ) : (
+        {/* Real cards lead with the bank's mark at top-left, so the logo sits
+            there beside the name; the network label (when known) goes right. */}
+        <View style={styles.brand}>
+          {art.logoUri ? (
+            <Image source={{ uri: art.logoUri }} style={styles.logo} resizeMode="contain" />
+          ) : null}
+          <Text style={[styles.bankName, { color: art.fg }]} numberOfLines={1}>
+            {bankName}
+          </Text>
+        </View>
+        {hasNetwork ? (
           <Text style={[styles.network, { color: art.fgDim }]}>{network}</Text>
-        )}
+        ) : null}
       </View>
 
-      <LinearGradient
-        colors={gradients.metalEdge as unknown as readonly [string, string, ...string[]]}
-        locations={gradients.metalEdgeLocations as unknown as readonly [number, number, ...number[]]}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={styles.chip}
-      />
+      <View style={styles.chipRow}>
+        <LinearGradient
+          colors={gradients.metalEdge as unknown as readonly [string, string, ...string[]]}
+          locations={gradients.metalEdgeLocations as unknown as readonly [number, number, ...number[]]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.chip}
+        />
+        {/* Contactless mark, as on any tap-to-pay card. */}
+        <Svg width={18} height={22} viewBox="0 0 18 22">
+          {[5, 9, 13].map((r, i) => (
+            <Path
+              key={r}
+              d={`M${3 + i * 0.4} ${11 - r} A ${r} ${r} 0 0 1 ${3 + i * 0.4} ${11 + r}`}
+              stroke={art.fg}
+              strokeWidth={1.6}
+              strokeLinecap="round"
+              fill="none"
+              opacity={0.7}
+            />
+          ))}
+        </Svg>
+      </View>
 
       <Text style={[styles.pan, { color: art.fg }]}>{'•••• •••• •••• '}{last4}</Text>
 
@@ -235,7 +260,9 @@ const styles = StyleSheet.create({
   top: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   bankName: { fontFamily: fontFamily.bold, fontSize: 14, letterSpacing: 0.4, flexShrink: 1 },
   network: { fontFamily: fontFamily.semibold, fontSize: 11 },
-  logo: { width: 34, height: 22 },
+  brand: { flexDirection: 'row', alignItems: 'center', gap: 8, flexShrink: 1 },
+  logo: { width: 24, height: 24, borderRadius: 5 },
+  chipRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   chip: { width: 36, height: 26, borderRadius: 5 },
   pan: { fontFamily: fontFamily.semibold, fontSize: 15.5, letterSpacing: 1.8 },
   bottom: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end' },

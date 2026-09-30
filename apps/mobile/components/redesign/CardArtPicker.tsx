@@ -15,7 +15,7 @@ import { fontFamily, radius } from '../../theme/type';
 import BankCardFace, { type BankCardFaceProps } from './BankCardFace';
 import { defaultDesignFor, designsForIssuer, GENERIC_DESIGNS } from '../../utils/cardArt/catalog';
 import { matchIssuer } from '../../utils/cardArt/matching';
-import { resolveCardArt } from '../../utils/cardArt/resolver';
+import { recolorDesign, resolveCardArt } from '../../utils/cardArt/resolver';
 import type { CardArtFallback, CardArtInput, CardArtPrefs, CardDesign, Gradient } from '../../utils/cardArt/types';
 
 interface Props {
@@ -58,10 +58,11 @@ export default function CardArtPicker({
   // when the bank is unknown and the list already is the generic set).
   const designs = useMemo<CardDesign[]>(() => {
     const own = issuer ? [...designsForIssuer(issuer.id)] : [];
-    return [...own, ...GENERIC_DESIGNS];
-  }, [issuer]);
+    // Same recolouring the card itself gets, so a swatch matches its result.
+    return [...own, ...GENERIC_DESIGNS].map(d => recolorDesign(d, input.issuerColorHint));
+  }, [issuer, input.issuerColorHint]);
 
-  const autoDesign = issuer ? defaultDesignFor(issuer.id) : null;
+  const autoDesign = issuer ? recolorDesign(defaultDesignFor(issuer.id), input.issuerColorHint) : null;
   const usingAuto = !prefs.photoUri && !prefs.designId;
   const hasNetworkArt = !!input.networkTokenArtUri;
 
