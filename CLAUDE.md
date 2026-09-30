@@ -98,13 +98,9 @@ style problem.
   `FundingSource.purpose`/`Transfer.installmentId`) HAS been applied — the
   `POST /cards/installments/sweep` endpoint returned a real 200 after, not
   the P2021/P2022 "table/column does not exist" errors it threw before.
-  **`20260930030000_add_linked_banks_model` has NOT been applied yet** as of
-  this writing — `User.payIn4InstrumentId`, `PlaidItem.readForSubscriptions`,
-  `FundingInstrument.subtype`/`itemId` exist only in the schema file and the
-  generated Prisma client. Every route in the Linked banks section below
-  (`GET /plaid/linked-banks`, `POST /cards/pay-in4-account`,
-  `POST /plaid/items/:id/read-for-subscriptions`, `DELETE /plaid/items/:id`)
-  will 500 with a P2021/P2022 Prisma error until this runs.
+  `20260930030000_add_linked_banks_model` (`User.payIn4InstrumentId`,
+  `PlaidItem.readForSubscriptions`, `FundingInstrument.subtype`/`itemId`) HAS
+  been applied.
 
 ## Card Studio
 
