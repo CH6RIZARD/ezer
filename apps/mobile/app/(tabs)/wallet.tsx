@@ -364,10 +364,44 @@ export default function WalletScreen() {
    *
    * NATIVE: onMomentumScrollEnd fires when the platform snap settles, and
    * onScrollEndDrag covers a drag released without enough velocity to coast.
+   *
+   * A fast flick fires BOTH, in that order, and `onScrollEndDrag`'s offset is
+   * captured the instant the finger lifts — BEFORE momentum has carried the
+   * card the rest of the way to its snap point. Trusting it directly set the
+   * index to whatever card was under the finger at release, fetched THAT
+   * card's sub count, and then onMomentumScrollEnd corrected the index a
+   * moment later once the card actually settled — a real flash of the wrong
+   * number (0, 6, whichever the mid-flight card was) before the right one
+   * landed, not just a loading blip. `momentumActive` defers acting on
+   * onScrollEndDrag by one frame so a follow-up onMomentumScrollBegin can
+   * claim the correction instead — the settle event is always the one that
+   * actually wins.
    */
-  const syncIndex = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+  const momentumActive = useRef(false);
+
+  const commitIndex = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
     const i = nearestIndex(e.nativeEvent.contentOffset.x);
     if (i !== index) setIndex(i);
+  };
+
+  const handleMomentumBegin = () => {
+    momentumActive.current = true;
+  };
+
+  const handleMomentumEnd = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+    momentumActive.current = false;
+    commitIndex(e);
+  };
+
+  const handleScrollEndDrag = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+    momentumActive.current = false;
+    const offsetX = e.nativeEvent.contentOffset.x;
+    requestAnimationFrame(() => {
+      // Momentum claimed this release in the meantime — onMomentumScrollEnd
+      // will commit the real settled index; this offset is stale.
+      if (momentumActive.current) return;
+      commitIndex({ nativeEvent: { contentOffset: { x: offsetX } } } as NativeSyntheticEvent<NativeScrollEvent>);
+    });
   };
 
   /**
@@ -419,8 +453,9 @@ export default function WalletScreen() {
               paddingTop: 18,
             }}
             onScroll={IS_WEB ? handleWebScroll : undefined}
-            onMomentumScrollEnd={IS_WEB ? undefined : syncIndex}
-            onScrollEndDrag={IS_WEB ? undefined : syncIndex}
+            onMomentumScrollBegin={IS_WEB ? undefined : handleMomentumBegin}
+            onMomentumScrollEnd={IS_WEB ? undefined : handleMomentumEnd}
+            onScrollEndDrag={IS_WEB ? undefined : handleScrollEndDrag}
             scrollEventThrottle={16}
           >
             {cards.map(c => (
