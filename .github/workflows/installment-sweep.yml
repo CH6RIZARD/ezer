@@ -9,8 +9,11 @@ name: Pay in 4 installment sweep
 # Needs two repo secrets:
 #   INSTALLMENT_SWEEP_SECRET — must match the same-named Railway variable on
 #     the API service; the route 503s if that variable is unset.
-#   EZER_API_URL — the deployed API's base URL (e.g. https://ezer-api-production.up.railway.app),
-#     no trailing slash.
+#   EZER_API_URL — the deployed API's base URL (e.g.
+#     https://ezer-api-production-fca5.up.railway.app). MUST be https:// —
+#     Railway 301-redirects http to https, and a redirect that changes method
+#     drops a POST's body/headers unless curl is told to preserve it, which is
+#     what --post301/--post302/--post303 below are for. No trailing slash.
 on:
   schedule:
     # Once a day. Pay in 4 installments are spaced 14 days apart, so daily is
@@ -33,6 +36,6 @@ jobs:
             echo "Missing INSTALLMENT_SWEEP_SECRET or EZER_API_URL repo secret." >&2
             exit 1
           fi
-          curl -sf -X POST "$API_URL/cards/installments/sweep" \
+          curl -sfL --post301 --post302 --post303 -X POST "$API_URL/cards/installments/sweep" \
             -H "x-sweep-secret: $SWEEP_SECRET" \
             -w '\nHTTP %{http_code}\n'
