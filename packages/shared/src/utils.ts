@@ -241,6 +241,16 @@ export function getDateRange(range: string, customStart?: string, customEnd?: st
       startDate = new Date(now);
       startDate.setDate(startDate.getDate() - 90);
       break;
+    case 'lastYear':
+      // Trailing 365 days, matching last30/last90's own convention — not
+      // the previous calendar year. This case did not exist at all before;
+      // a caller passing 'lastYear' silently fell through to the `default`
+      // branch below and got the last 30 days instead, which is why the
+      // wallet's "Last year" filter showed a total that looked identical
+      // to "This month."
+      startDate = new Date(now);
+      startDate.setDate(startDate.getDate() - 365);
+      break;
     case 'custom':
       if (!customStart || !customEnd) {
         throw new Error('Custom range requires startDate and endDate');

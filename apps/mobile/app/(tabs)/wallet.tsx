@@ -293,11 +293,22 @@ export default function WalletScreen() {
       return;
     }
 
-    const rangeKey =
-      preset === 'thisMonth' ? 'thisMonth' : preset === 'lastYear' ? 'lastYear' : 'last30';
+    // Clear the PREVIOUS card's/range's rows immediately, not just once the
+    // new fetch resolves. Leaving them in place until then is exactly why
+    // swiping cards flashed the wrong sub count — `active?.id` updates
+    // synchronously, so the render briefly paired the new card with the
+    // old card's still-in-state merchant list before the fetch below
+    // caught up.
+    setMerchants([]);
+
+    const rangeKey = preset === 'thisMonth' ? 'thisMonth' : preset === 'lastYear' ? 'lastYear' : preset === 'custom' ? 'custom' : 'last30';
+    const customDates =
+      rangeKey === 'custom'
+        ? { startDate: range.start.toISOString(), endDate: range.end.toISOString() }
+        : undefined;
 
     setLoadingBreakdown(true);
-    getMerchants(cardId, rangeKey)
+    getMerchants(cardId, rangeKey, customDates)
       .then(rows => {
         if (cancelled) return;
         setMerchants(
@@ -488,9 +499,13 @@ export default function WalletScreen() {
                         // whichever card is currently focused (see the
                         // effect keyed on active?.id above) — the only card
                         // this component actually has a real count for. A
-                        // card that isn't focused yet shows "…" rather than
-                        // a wrong "0 subs" it hasn't fetched data for.
-                        if (c.id !== active?.id) return '…';
+                        // card that isn't focused, or whose fetch for THIS
+                        // card hasn't resolved yet, shows "…" rather than a
+                        // wrong "0 subs" — the count that used to flash
+                        // during a swipe or a range change, because the
+                        // previous card's/range's number was still sitting
+                        // in state.
+                        if (c.id !== active?.id || loadingBreakdown) return '…';
                         const n = merchants.length;
                         return `${n} sub${n === 1 ? '' : 's'}`;
                       })()}

@@ -342,11 +342,6 @@ export default function DrainReviewScreen() {
     ? 'Tap the card again if it failed or you decided not to cancel'
     : 'Tap a ticket to see where it drains';
 
-  const anyRestPending = restRows.some(r => rest[r.id] === 'pending');
-  const restHint = anyRestPending
-    ? 'Tap ✓ once cancelled · ← if it was an accident'
-    : 'Cut it opens cancellation';
-
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
       <ScrollView
@@ -464,11 +459,10 @@ export default function DrainReviewScreen() {
 
           {restRows.length > 0 && (
             <>
+              {/* No helper text here — the pill/back-arrow/checkmark controls
+                  on each row already say what they do. */}
               <View style={styles.restHeader}>
                 <Label>The other {restRows.length}</Label>
-                <Text style={[styles.restHintText, { color: anyRestPending ? colors.red : colors.mut2 }]}>
-                  {restHint}
-                </Text>
               </View>
 
               <View style={{ gap: 6 }}>

@@ -98,7 +98,11 @@ interface DataState {
 interface DataContextType extends DataState {
   refresh: () => Promise<void>;
   getInstrumentSummary: (id: string, range?: string) => Promise<InstrumentSummary | null>;
-  getMerchants: (id: string, range?: string) => Promise<MerchantCharge[]>;
+  getMerchants: (
+    id: string,
+    range?: string,
+    customDates?: { startDate: string; endDate: string }
+  ) => Promise<MerchantCharge[]>;
 }
 
 const DataContext = createContext<DataContextType | undefined>(undefined);
@@ -211,14 +215,32 @@ export function DataProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const getMerchants = useCallback(async (id: string, range = 'last30'): Promise<MerchantCharge[]> => {
-    try {
-      const res: any = await api.get(`/wallet/instruments/${id}/merchants?range=${range}`);
-      return res.data || [];
-    } catch {
-      return [];
-    }
-  }, []);
+  const getMerchants = useCallback(
+    async (
+      id: string,
+      range = 'last30',
+      customDates?: { startDate: string; endDate: string }
+    ): Promise<MerchantCharge[]> => {
+      try {
+        // The API's `custom` range (apps/api/src/routes/wallet.ts,
+        // @ezer/shared's getDateRange) requires startDate/endDate query
+        // params — without them it 500s. This was never wired up: the
+        // wallet screen's own "Custom" date picker computed a real
+        // start/end but the request that went out always asked for a fixed
+        // preset instead, so "Total drained" for a custom range never
+        // actually reflected the range the user picked.
+        const qs =
+          range === 'custom' && customDates
+            ? `range=custom&startDate=${encodeURIComponent(customDates.startDate)}&endDate=${encodeURIComponent(customDates.endDate)}`
+            : `range=${range}`;
+        const res: any = await api.get(`/wallet/instruments/${id}/merchants?${qs}`);
+        return res.data || [];
+      } catch {
+        return [];
+      }
+    },
+    []
+  );
 
   // Load data when the user authenticates. Called unconditionally so the
   // unauthenticated preview path seeds demo data too; refresh() returns early
