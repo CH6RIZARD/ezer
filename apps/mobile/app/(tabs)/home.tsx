@@ -247,6 +247,21 @@ export default function HomeScreen() {
       };
     }
 
+    // An uncured missed Pay in 4 payment — installmentEngine.ts's "restrict
+    // tightly" half. Distinct from "not yet assessed": this tile must say so
+    // rather than showing the same blank dash a brand-new user sees, which
+    // would read as "nothing's happened yet" instead of "action needed."
+    if (cardAccess?.status === 'suspended') {
+      return {
+        value: 'Paused',
+        label: 'Spending Power',
+        icon: 'alert-circle-outline' as const,
+        isAmount: false,
+        pulse: false,
+        onPress: goToSpendingPower,
+      };
+    }
+
     // Not yet assessed (never connected, or only joined the waitlist). An em
     // dash, not "Link a bank" — the rotating tile to its immediate left
     // already says "Connect your bank," so this tile stays in its stat form

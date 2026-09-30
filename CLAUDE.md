@@ -93,7 +93,12 @@ style problem.
   transaction pooler. Apply migrations manually.
   `20260907000000_add_consent_record` and `20260908000000_add_card_designer`
   HAVE both been applied to the live Supabase database; future migrations still
-  need running by hand.
+  need running by hand. **`20260930020000_add_installment_engine` has NOT been
+  applied yet** as of this writing — `InstallmentPlan`/`Installment` and
+  `FundingSource.purpose`/`Transfer.installmentId` exist only in the schema
+  file and the generated Prisma client, not in production Postgres. Apply it
+  by hand (session-mode connection, same as every other migration here)
+  before relying on anything in the Spending Power / Pay in 4 section below.
 
 ## Card Studio
 
@@ -135,26 +140,60 @@ style problem.
   hand-copied implementation. Edit the physics there; `VirtualCard.tsx` and
   `PhysicalCardReview.tsx` should only ever supply front/back content to it.
 
-## Spending Power / Pay in 4 underwriting (`apps/api/src/routes/cards.ts`)
+## Spending Power / Pay in 4 underwriting
 
 - **There is no manual-review state.** There used to be one — any trust score
   under 20, or a bank Plaid couldn't read signals from yet, produced
   `status: 'manual_review'`, and nothing anywhere in this codebase ever read
   that status back out: no admin tool, no queue, no cron. It was a permanent
   dead end presented to the user as "we'll get back to you." `limitForScore`
-  now has no zero band — the floor is a real $25, not a decline, matching how
+  (`apps/api/src/services/trustScoring.ts`) has no zero band from score alone
+  — the floor is a real $25, not a decline, matching how
   Klarna/Affirm/Cash App Borrow/Zip actually underwrite (automatic, generous
   at the start, nothing held for a human). Do not reintroduce a review state
-  without also building something that resolves it.
-- **The model is "generous start, tighten on failure."** The generous half is
-  live (`limitForScore`'s real floor). The tighten-on-failure half is
-  documented in `scoreTrust`'s comment but NOT implemented — there is no real
-  Pay in 4 installment-charging engine in this codebase yet (`payin4.tsx`
-  itself says "not yet available"), so there is no real missed-payment event
-  to penalize. When that engine exists, wire its failure signal into
-  `scoreTrust` as a heavy negative term, re-scored on every assessment the
-  same way overdrafts already are — do not bolt it on as a separate override
-  elsewhere.
+  without also building something that resolves it. `'suspended'` (below) is
+  not that review state — it always resolves itself the moment the missed
+  installment is cured.
+- **The scoring logic lives in `apps/api/src/services/trustScoring.ts`**, not
+  in `routes/cards.ts` — it moved out so
+  `services/installmentEngine.ts` could call the exact same `assessAccess()`
+  a missed-payment event needs to re-score against, without either file
+  importing the other's route module (the same CommonJS-cycle reason
+  `CONSENT_VERSION` lives in `utils/consent.ts` instead of `routes/auth.ts`).
+  `routes/cards.ts`'s `POST /access-list` is now a thin wrapper: derive
+  signals via `assessAccess`, write the `CardAccessList` row.
+- **The model is "generous start, tighten on failure," and BOTH halves are
+  now implemented.** Generous: `limitForScore`'s real $25 floor from score
+  alone. Tighten: an uncured `MISSED` Pay in 4 installment
+  (`InstallmentPlan`/`Installment` tables) forces `limitForScore` to return 0
+  and the status to `'suspended'` — regardless of score — the instant
+  `services/installmentEngine.ts`'s `onInstallmentTransferEvent` sees a
+  `returned` debit, not on the user's next Spending Power check. A cured miss
+  lifts the suspension but keeps scoring as a heavy, lingering penalty in
+  `scoreTrust` (`missedInstallmentsLast12mo`, bigger than the overdraft
+  penalty) for 12 months — the same way a real BNPL provider's risk model
+  keeps scoring a cured late payment after it's resolved.
+- **No real purchase flow or processor calls this yet.** Pay in 4 checkout
+  itself still doesn't exist (`payin4.tsx` still says "not yet available"),
+  and there is no BIN sponsor/ACH processor contracted — `FundingSource` (the
+  model this engine debits from) has never had a row created anywhere in this
+  codebase; `FundingSource.processorToken` stays null the same way
+  `services/savingsEngine.ts`'s own dormant sweep scaffolding does. The engine
+  was built anyway so the SCORING side has something real to react to right
+  now, and so wiring a real purchase flow later is only: call
+  `createPlan(userId, totalCents)` from checkout, and point a real scheduler
+  at `POST /cards/installments/sweep` (see below) instead of whatever manually
+  triggers it today. Do not invent a second scoring path when that day comes —
+  extend `trustScoring.ts`.
+- **`POST /cards/installments/sweep` is secret-gated, not JWT-auth'd**, the
+  same pattern as `/webhooks/processor/transfers`: it originates real debits
+  once a processor exists, for every user at once, so a user's own token must
+  never be enough to call it. Gated on `INSTALLMENT_SWEEP_SECRET` (header
+  `x-sweep-secret`), which fails CLOSED when unset — same reasoning as
+  `PROCESSOR_WEBHOOK_SECRET`. There is no cron inside this process (see
+  "Migrations do not run on deploy" above — this app has never had one); an
+  external scheduler must call this route, the same way migrations are
+  applied by hand today.
 - **`app/screens/SpendingPower.tsx` is the ONLY entry point** for checking or
   starting a Pay in 4 assessment — Home's Spending Power tile, the Pay in 4
   tab's CTA, and any future "early access" prompt all push here. It used to
@@ -166,13 +205,29 @@ style problem.
   two different reasons. Card Studio's own qualify-after-design step
   (`PhysicalCardApproval.tsx`, reached from `PhysicalCard.tsx`'s "Continue")
   is unchanged and still exists for people actually designing a card.
-- **`FundingInstrument.purpose`** is a UI grouping label only, set to
-  `'pay_in_4'` when a bank is linked from `SpendingPower.tsx` specifically
-  (threaded through `usePlaid().openPlaidLink`'s third argument →
+- **`SpendingPower.tsx` caches its outcome under its OWN AsyncStorage key**
+  (`getSpendingPowerOutcome`/`saveSpendingPowerOutcome` in
+  `utils/cardDesignStore.ts`), separate from Card Studio's design-record
+  `.access` field. Reusing the design record would mean a Spending Power
+  re-check with no saved card design either silently drops (the old
+  `saveCardAccessOutcome` no-ops without a record) or forces inventing an
+  empty placeholder design, which `PhysicalCardReview.tsx` would then render
+  as "your design" — the exact regression `mirrorServerAccessOutcome`'s own
+  comment exists to prevent. `SpendingPower.tsx` also best-effort mirrors onto
+  the design record (`mirrorServerAccessOutcome`) so Home's
+  "Get your physical card" tile (`useCardFlowStatus`, which still reads only
+  the design record) doesn't show a stale outcome for someone who has a saved
+  design AND just re-checked Spending Power.
+- **`FundingInstrument.purpose` and `FundingSource.purpose`** are UI/engine
+  grouping labels only, set to `'pay_in_4'` when a bank is linked from
+  `SpendingPower.tsx` specifically (threaded through
+  `usePlaid().openPlaidLink`'s third argument →
   `POST /plaid/exchange-public-token`). Settings' linked-banks list
-  (`app/settings.tsx`) groups by it into "Cards" vs "Pay in 4" sections.
-  Every linked account is read identically everywhere else — sync, trust
-  signals, subscriptions — `purpose` never gates or filters real data.
+  (`app/settings.tsx`) groups `FundingInstrument` by it into "Cards" vs
+  "Pay in 4" sections; `installmentEngine.ts`'s `getRepaymentSource` prefers
+  the matching `FundingSource` when charging. Every linked account is read
+  identically everywhere else — sync, trust signals, subscriptions —
+  `purpose` never gates or filters real data.
 
 ## Wallet card art (`apps/mobile/utils/cardArt/`)
 
@@ -246,3 +301,7 @@ style problem.
 and `DATABASE_URL`. That is deliberate — both secrets previously fell back to
 development defaults committed to this repo. Do not reintroduce a fallback.
 `DEV_OAUTH_BYPASS` must never be set in production; it is a login bypass.
+`INSTALLMENT_SWEEP_SECRET` gates `POST /cards/installments/sweep` — unlike
+the three above, an unset value does not stop the server booting (it isn't in
+`REQUIRED_IN_PRODUCTION`), it just makes that one route permanently 503
+(fail-closed, see `routes/installments.ts`) until it's set.

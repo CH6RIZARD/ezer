@@ -23,6 +23,7 @@ import { FastifyInstance } from 'fastify';
 import { createHmac, timingSafeEqual } from 'crypto';
 import { prisma } from '@ezer/db';
 import { onTransferEvent } from '../services/savingsEngine';
+import { onInstallmentTransferEvent } from '../services/installmentEngine';
 
 /** Reject anything signed outside this window — bounds replay attacks. */
 const MAX_SKEW_MS = 5 * 60 * 1000;
@@ -124,7 +125,14 @@ export async function processorWebhookRoutes(server: FastifyInstance) {
       return reply.status(200).send({ success: true, ignored: payload.type });
     }
 
+    // Both are safe to call for every event: each looks the transfer up and
+    // no-ops unless it owns that transfer's domain (installmentId vs goalId).
     await onTransferEvent({
+      externalId: payload.externalId,
+      type: payload.type,
+      returnCode: payload.returnCode,
+    });
+    await onInstallmentTransferEvent({
       externalId: payload.externalId,
       type: payload.type,
       returnCode: payload.returnCode,

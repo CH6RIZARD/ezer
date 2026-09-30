@@ -52,6 +52,9 @@ model User {
   transfers           Transfer[]
   sweepRuns           SweepRun[]
 
+  // Pay in 4 installment engine
+  installmentPlans    InstallmentPlan[]
+
   @@index([email])
 }
 
@@ -552,6 +555,12 @@ model FundingSource {
   subtype        String? // checking | savings
   status         FundingSourceStatus @default(ACTIVE)
   isPrimary      Boolean             @default(false)
+  /// UI/engine grouping only, mirrors FundingInstrument.purpose — 'pay_in_4'
+  /// when this is the bank the user linked specifically to repay Pay in 4.
+  /// installmentEngine.ts prefers this tag over isPrimary when charging an
+  /// installment; undefined means "use the primary source," same as before
+  /// this field existed.
+  purpose        String?
   createdAt      DateTime            @default(now())
   updatedAt      DateTime            @updatedAt
 
@@ -671,10 +680,15 @@ model Transfer {
   id          String            @id @default(cuid())
   userId      String
   goalId      String?
+  /// Set only for a Pay in 4 repayment debit — mutually exclusive with goalId.
+  /// Reuses this model's processor/idempotency/settlement machinery rather
+  /// than duplicating it for a second money-moving subsystem; see
+  /// services/installmentEngine.ts.
+  installmentId String?
   direction   TransferDirection
   amountCents Int
   status      TransferStatus    @default(PENDING)
-  /// hash(user, goal, periodKey) — the processor-level idempotency lock.
+  /// hash(user, goal|installment, periodKey) — the processor-level idempotency lock.
   idempotencyKey String         @unique
   /// Processor's transfer id, known only after origination.
   externalId  String?           @unique
@@ -685,12 +699,14 @@ model Transfer {
   createdAt   DateTime          @default(now())
   updatedAt   DateTime          @updatedAt
 
-  user    User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
-  goal    SavingsGoal?         @relation(fields: [goalId], references: [id], onDelete: SetNull)
-  entries SavingsLedgerEntry[]
+  user        User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  goal        SavingsGoal?         @relation(fields: [goalId], references: [id], onDelete: SetNull)
+  installment Installment?         @relation(fields: [installmentId], references: [id], onDelete: SetNull)
+  entries     SavingsLedgerEntry[]
 
   @@index([userId, status])
   @@index([goalId])
+  @@index([installmentId])
 }
 
 /// Double-entry line. INVARIANT: SUM(amountCents) per transferId == 0.
@@ -795,4 +811,79 @@ model CardAccessList {
   design CardDesign? @relation(fields: [designId], references: [id], onDelete: SetNull)
 
   @@index([userId])
+}
+
+// ============================================================================
+// Pay in 4 — installment charging engine
+//
+// Not live yet: nothing in the app currently lets someone actually SPLIT a
+// purchase (payin4.tsx's own copy says "not yet available"). This schema and
+// services/installmentEngine.ts exist so the "restrict tightly on a missed
+// payment" half of the underwriting model (see cards.ts's scoreTrust) has
+// something real to react to THE MOMENT a BIN sponsor/processor makes Pay in 4
+// chargeable — no schema or scoring change needed at that point, only wiring
+// a real purchase flow to createPlan() and a real cron to chargeDueInstallments().
+// ============================================================================
+
+enum InstallmentPlanStatus {
+  ACTIVE
+  COMPLETE
+  /// One or more installments went uncured past the grace period. The plan
+  /// itself stays DEFAULTED even if a later installment on it settles — the
+  /// user already missed one, which is the event scoreTrust penalizes.
+  DEFAULTED
+}
+
+model InstallmentPlan {
+  id         String                @id @default(cuid())
+  userId     String
+  totalCents Int
+  status     InstallmentPlanStatus @default(ACTIVE)
+  createdAt  DateTime              @default(now())
+
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  installments Installment[]
+
+  @@index([userId, status])
+}
+
+enum InstallmentStatus {
+  /// Not yet due, or due but not yet charged.
+  PENDING
+  /// Debit originated with the processor, awaiting settlement.
+  SUBMITTED
+  PAID
+  /// Returned (NSF/etc.) and still past the grace period, uncured. This is
+  /// the exact signal `scoreTrust` has nowhere to read from yet — see
+  /// cards.ts's limitForScore comment.
+  MISSED
+  /// Was MISSED, then paid late. Still counted as a miss for scoring (the
+  /// event happened), but no longer blocks issuance the way an uncured MISSED
+  /// installment does.
+  CURED
+}
+
+model Installment {
+  id          String             @id @default(cuid())
+  planId      String
+  /// Denormalized from plan.userId — every query that matters here (charge
+  /// what's due, score what's missed) is per-user, and joining through plan
+  /// for that on every call is pure overhead.
+  userId      String
+  /// 1-based position in the plan (1 of 4, 2 of 4, …).
+  n           Int
+  amountCents Int
+  dueDate     DateTime
+  status      InstallmentStatus  @default(PENDING)
+  paidAt      DateTime?
+  missedAt    DateTime?
+  createdAt   DateTime           @default(now())
+
+  plan      InstallmentPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+  transfers Transfer[]
+
+  @@unique([planId, n])
+  @@index([planId])
+  @@index([userId, status])
+  @@index([status, dueDate])
 }

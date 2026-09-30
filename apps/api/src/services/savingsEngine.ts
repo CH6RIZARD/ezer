@@ -449,6 +449,11 @@ export interface ProcessorEvent {
 export async function onTransferEvent(evt: ProcessorEvent): Promise<void> {
   const tr = await prisma.transfer.findUnique({ where: { externalId: evt.externalId } });
   if (!tr) return;
+  // Pay in 4 repayment debits share this table but not this subsystem's
+  // semantics — a missed installment must not raise this user's savings
+  // buffer or revoke their savings funding source. installmentEngine.ts's own
+  // onInstallmentTransferEvent handles these.
+  if (tr.installmentId) return;
 
   // Webhooks are at-least-once; replaying a settled transfer would double-credit.
   if (tr.status === 'SETTLED' || tr.status === 'RETURNED') return;

@@ -16,13 +16,14 @@
 // designId: null — the coupling was only ever a client-side routing choice,
 // never a backend requirement.
 //
-// Underwriting itself is fully automated — see apps/api/src/routes/cards.ts
-// (scoreTrust / limitForScore). There is no manual-review state: every
-// assessment returns a real, usable limit immediately, generous at the
-// floor and re-computed fresh (so it can grow) on every connect. The other
-// half of that model — restricting hard on a missed Pay in 4 payment — is
-// documented in cards.ts but not wired up yet, because there is no real
-// installment-charging engine in this codebase to fail a payment against.
+// Underwriting itself is fully automated — see
+// apps/api/src/services/trustScoring.ts (scoreTrust / limitForScore). There
+// is no manual-review state: every assessment returns a real, usable limit
+// immediately, generous at the floor and re-computed fresh (so it can grow)
+// on every connect. The restrict-tightly half — apps/api/src/services/
+// installmentEngine.ts — can suspend new spending power the instant a Pay in
+// 4 repayment is missed, independent of anything the user does on this
+// screen; see the 'suspended' phase below.
 // =============================================================================
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
@@ -35,8 +36,11 @@ import { fontFamily, typeScale, radius, layout } from '../../theme/type';
 import { Body, Label, SectionHeader, Surface, PressScale, ScreenBody } from '../../components/redesign/Primitives';
 import { formatCents } from '../../utils/calculations';
 import {
-  getCardAccessOutcome,
+  getSpendingPowerOutcome,
+  saveSpendingPowerOutcome,
   fetchServerAccessOutcome,
+  mapServerStatus,
+  mirrorServerAccessOutcome,
   type CardAccessOutcome,
 } from '../../utils/cardDesignStore';
 import { usePlaid } from '../../utils/usePlaid';
@@ -59,7 +63,7 @@ function formatLimit(cents: number): string {
 
 type AccessResponse = { data?: { status?: string; limitCents?: number }; status?: string; limitCents?: number };
 
-type Phase = 'loading' | 'intro' | 'assessing' | 'approved' | 'waitlist';
+type Phase = 'loading' | 'intro' | 'assessing' | 'approved' | 'waitlist' | 'suspended';
 
 const FEATURE_PLAID = process.env.EXPO_PUBLIC_FEATURE_PLAID === '1';
 
@@ -88,7 +92,7 @@ export default function SpendingPowerScreen() {
   // product to someone who already has a real number.
   useEffect(() => {
     (async () => {
-      const local = await getCardAccessOutcome();
+      const local = await getSpendingPowerOutcome();
       const outcome = local ?? (await fetchServerAccessOutcome());
       if (!alive.current) return;
       applyOutcome(outcome);
@@ -101,6 +105,13 @@ export default function SpendingPowerScreen() {
       setPhase('intro');
     } else if (outcome.status === 'waitlist') {
       setPhase('waitlist');
+    } else if (outcome.status === 'suspended') {
+      // An uncured missed Pay in 4 payment — the "restrict tightly" half of
+      // the model. This can appear here WITHOUT the user ever tapping
+      // anything on this screen: installmentEngine.ts writes it the instant
+      // a repayment debit comes back returned.
+      setLimitCents(outcome.limitCents ?? 0);
+      setPhase('suspended');
     } else {
       // 'approved' or the legacy 'review' value a pre-automation assessment
       // may have left behind — both get a real re-assessment on "Connect
@@ -121,17 +132,35 @@ export default function SpendingPowerScreen() {
     }
 
     let cents = DEMO_LIMIT_CENTS;
+    let status: CardAccessOutcome['status'] = 'approved';
+    let persisted = false;
     try {
       const res = await api.post<AccessResponse>('/cards/access-list', { mode: 'plaid', designId: null });
       const payload = res?.data ?? res;
       cents = typeof payload?.limitCents === 'number' ? payload.limitCents : DEMO_LIMIT_CENTS;
+      status = mapServerStatus(payload?.status) ?? 'approved';
+      // Write the FRESH outcome back to local storage, not just React state.
+      // Without this, a re-check only ever updated this screen instance —
+      // Home's tile and the next time this screen opened would both keep
+      // showing whatever was cached before, which is exactly the "$0 forever"
+      // bug a stale local cache produced before this existed.
+      const outcome: CardAccessOutcome = { status, limitCents: cents, joinedAt: new Date().toISOString() };
+      await saveSpendingPowerOutcome(outcome);
+      // Best-effort mirror onto the Card Studio design record too (no-ops if
+      // the user never saved a design) — that record is what Home's
+      // "Get your physical card" tile and useCardFlowStatus still read, and
+      // it must not keep showing a pre-existing stale outcome for someone
+      // who just got a fresh one here.
+      await mirrorServerAccessOutcome(outcome);
+      persisted = true;
     } catch {
-      // Offline / not signed in: the demo band still resolves the screen.
+      // Offline / not signed in: the demo band still resolves the screen, but
+      // is deliberately NOT persisted — it is not a real assessment.
     }
     if (!alive.current) return;
 
     setLimitCents(cents);
-    setPhase('approved');
+    setPhase(persisted && status === 'suspended' ? 'suspended' : 'approved');
   }, [wait]);
 
   const handleConnectBank = useCallback(async () => {
@@ -165,6 +194,9 @@ export default function SpendingPowerScreen() {
     setBusy(true);
     try {
       await api.post('/cards/access-list', { mode: 'waitlist', designId: null });
+      const outcome: CardAccessOutcome = { status: 'waitlist', limitCents: null, joinedAt: new Date().toISOString() };
+      await saveSpendingPowerOutcome(outcome);
+      await mirrorServerAccessOutcome(outcome);
     } catch {
       // Best-effort — the screen still shows the confirmed state locally;
       // a retry next time this screen opens re-sends it.
@@ -278,6 +310,24 @@ export default function SpendingPowerScreen() {
                 <View style={[styles.ctaGhost, { borderColor: colors.goldLine }]}>
                   <Text style={[styles.ctaGhostText, { color: colors.gold }]}>
                     {busy ? 'Checking…' : 'Re-check spending power'}
+                  </Text>
+                </View>
+              </PressScale>
+            </Surface>
+          )}
+
+          {/* --- Suspended: an uncured missed Pay in 4 payment ------------------- */}
+          {phase === 'suspended' && (
+            <Surface style={[styles.reveal, { borderColor: colors.line, backgroundColor: colors.card }]}>
+              <Label color={colors.mut}>Spending power paused</Label>
+              <Body style={{ marginTop: 8 }}>
+                A Pay in 4 payment didn't go through, so new spending power is paused until it's
+                resolved. Nothing else on your account is affected.
+              </Body>
+              <PressScale onPress={handleConnectBank} scaleTo={0.97} disabled={busy} style={{ marginTop: 14 }}>
+                <View style={[styles.ctaGhost, { borderColor: colors.line }]}>
+                  <Text style={[styles.ctaGhostText, { color: colors.ink }]}>
+                    {busy ? 'Checking…' : 'Check again'}
                   </Text>
                 </View>
               </PressScale>

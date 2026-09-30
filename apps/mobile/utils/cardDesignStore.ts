@@ -39,7 +39,13 @@ export type CardDesign = {
  * terminal and so never get persisted.
  */
 export type CardAccessOutcome = {
-  status: 'approved' | 'review' | 'waitlist';
+  /**
+   * 'suspended' is the "restricted tightly" outcome — an uncured missed Pay
+   * in 4 payment. It comes back from GET /cards/access-list the instant
+   * installmentEngine.ts marks an installment MISSED, not only after the
+   * user re-checks; see mirrorServerAccessOutcome.
+   */
+  status: 'approved' | 'review' | 'waitlist' | 'suspended';
   limitCents: number | null;
   joinedAt: string;
 };
@@ -91,7 +97,10 @@ async function readRecord(): Promise<StoredRecord | null> {
     const access = parsed.access;
     const validAccess: CardAccessOutcome | undefined =
       access &&
-      (access.status === 'approved' || access.status === 'review' || access.status === 'waitlist') &&
+      (access.status === 'approved' ||
+        access.status === 'review' ||
+        access.status === 'waitlist' ||
+        access.status === 'suspended') &&
       (access.limitCents === null || typeof access.limitCents === 'number') &&
       typeof access.joinedAt === 'string'
         ? { status: access.status, limitCents: access.limitCents, joinedAt: access.joinedAt }
@@ -236,10 +245,11 @@ export async function saveCardAccessOutcome(access: CardAccessOutcome): Promise<
   }
 }
 
-function mapServerStatus(status: unknown): CardAccessOutcome['status'] | null {
+export function mapServerStatus(status: unknown): CardAccessOutcome['status'] | null {
   if (status === 'approved_pending_issuance') return 'approved';
   if (status === 'manual_review') return 'review';
   if (status === 'waitlist') return 'waitlist';
+  if (status === 'suspended') return 'suspended';
   return null;
 }
 
@@ -299,5 +309,70 @@ export async function clearCardDesign(): Promise<void> {
     await AsyncStorage.removeItem(STORAGE_KEY);
   } catch {
     // Nothing useful to do — a stale local design is not worth an error state.
+  }
+}
+
+// -----------------------------------------------------------------------------
+// Spending Power outcome — INTENTIONALLY its own storage key, separate from
+// the card-design record above.
+//
+// SpendingPower.tsx's outcome has nothing to do with a physical card design
+// any more — that coupling is exactly what this screen replaced (see its own
+// header comment). Writing its outcome onto the design record's `.access`
+// field would mean a fresh $25 re-check with no saved design either gets
+// silently dropped (saveCardAccessOutcome no-ops without a record) or forces
+// inventing an empty placeholder design — which PhysicalCardReview.tsx would
+// then render as "your design," a real regression mirrorServerAccessOutcome
+// was written specifically to avoid. Card Studio's own outcome tracking
+// (getCardAccessOutcome/saveCardAccessOutcome, still used by
+// useCardFlowStatus for the separate "Get your physical card" tile) is
+// untouched.
+// -----------------------------------------------------------------------------
+
+const SPENDING_POWER_KEY = '@ezer_spending_power_access';
+
+function parseAccessOutcome(raw: string | null): CardAccessOutcome | null {
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as Partial<CardAccessOutcome>;
+    if (
+      (parsed.status === 'approved' ||
+        parsed.status === 'review' ||
+        parsed.status === 'waitlist' ||
+        parsed.status === 'suspended') &&
+      (parsed.limitCents === null || typeof parsed.limitCents === 'number') &&
+      typeof parsed.joinedAt === 'string'
+    ) {
+      return { status: parsed.status, limitCents: parsed.limitCents ?? null, joinedAt: parsed.joinedAt };
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/** The locally-cached Spending Power outcome, or null. Never throws. */
+export async function getSpendingPowerOutcome(): Promise<CardAccessOutcome | null> {
+  try {
+    return parseAccessOutcome(await AsyncStorage.getItem(SPENDING_POWER_KEY));
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Persist a fresh Spending Power outcome — called after EVERY successful
+ * POST /cards/access-list from SpendingPower.tsx, not only the first one.
+ * Without this, a re-check only updated in-memory screen state: Home's tile
+ * and the next time this screen opened would both keep showing whatever was
+ * cached here before, even though the server had already moved the user to
+ * a new limit (or, the case this exists for, to 'suspended'). Never throws.
+ */
+export async function saveSpendingPowerOutcome(access: CardAccessOutcome): Promise<void> {
+  try {
+    await AsyncStorage.setItem(SPENDING_POWER_KEY, JSON.stringify(access));
+  } catch {
+    // Best-effort — losing this mirror only means the next open re-fetches
+    // from the server instead of reading the local cache.
   }
 }

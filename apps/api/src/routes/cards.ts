@@ -17,9 +17,8 @@
 
 import { FastifyInstance, FastifyRequest } from 'fastify';
 import { prisma } from '@ezer/db';
-import { decrypt } from '../utils/encryption';
-import { getPlaidClient } from './plaid';
 import { verifyJwt, extractTokenFromHeader } from '../utils/jwt';
+import { assessAccess, type AccessStatus } from '../services/trustScoring';
 
 // -----------------------------------------------------------------------------
 // Types
@@ -29,39 +28,6 @@ type CardStroke = { d: string; color: string; width: number };
 
 
 type AccessMode = 'plaid' | 'waitlist';
-
-/**
- * Status vocabulary the client renders against. Kept as strings (not booleans)
- * so a future "declined" or "kyc_required" state is an additive change.
- *
- * There is deliberately no "manual_review" here. There used to be one — any
- * score under 20, or a bank Plaid couldn't read signals from yet, parked the
- * applicant in a status nothing in this codebase ever reads back out of:
- * no admin tool, no queue, no cron, nothing that ever moves a row out of
- * manual_review. It was a permanent dead end presented to the user as "we'll
- * get back to you." Real BNPL underwriting (Klarna, Affirm, Cash App
- * Borrow/Afterpay, Zip) does not hold thin-file applicants for human review
- * either — it approves automatically for a small starting amount and lets
- * usage earn a bigger one, which is what `limitForScore` below does now.
- */
-type AccessStatus = 'approved_pending_issuance' | 'waitlist';
-
-
-/**
- * Plaid-derived inputs to the trust score. The real implementation reads these
- * off /transactions/sync + /accounts/balance for the linked item; the shape is
- * defined here so the scoring function is testable without Plaid at all.
- */
-export type TrustSignals = {
-  /** Mean monthly deposits over the observed window, in cents. */
-  avgMonthlyInflowCents: number;
-  /** Current available balance across depository accounts, in cents. */
-  currentBalanceCents: number;
-  /** How long the oldest linked account has existed, in months. */
-  accountAgeMonths: number;
-  /** Overdraft / NSF events in the last 90 days. */
-  overdraftsLast90d: number;
-};
 
 
 /**
@@ -81,84 +47,6 @@ function resolveUserId(request: FastifyRequest): string {
 }
 
 // -----------------------------------------------------------------------------
-// Trust scoring stub
-// -----------------------------------------------------------------------------
-
-
-/**
- * Turn Plaid-style signals into a 0–100 trust score.
- *
- * The weighting reflects what actually predicts repayment on a small-limit
- * consumer card, in order of predictive power:
- *
- *   1. INCOME (max 40) — recurring inflow is the strongest single predictor.
- *      1 point per $100 of average monthly inflow, so the band that matters
- *      ($0–$4,000/mo) is where the whole 40 points get spent; earning more than
- *      $4,000/mo doesn't make someone progressively safer on a $1,500 line.
- *
- *   2. BUFFER (max 25) — balance is what absorbs a bad month. 1 point per $50,
- *      capped at $1,250. Cheaper to earn than income points because a balance
- *      is a snapshot and trivially gamed by a one-off transfer before linking.
- *
- *   3. TENURE (max 20) — account age proxies for identity stability and makes
- *      synthetic-identity fraud expensive. 1 point per month, capped at 20;
- *      past ~2 years it stops carrying new information.
- *
- *   4. OVERDRAFTS (penalty) — the strongest NEGATIVE signal, and the only one
- *      that can undo the other three. -12 points each, so three NSF events in a
- *      quarter erase a full income score no matter how large the deposits are.
- *
- * The result is clamped to 0–100. This is a stub: production must additionally
- * run KYC/identity, sanctions screening and the issuer's own underwriting
- * before any of this becomes a real credit decision.
- */
-export function scoreTrust(signals: TrustSignals): number {
-  const incomePoints = Math.min(40, Math.floor(signals.avgMonthlyInflowCents / 10_000));
-  const bufferPoints = Math.min(25, Math.floor(signals.currentBalanceCents / 5_000));
-  const tenurePoints = Math.min(20, Math.max(0, Math.floor(signals.accountAgeMonths)));
-  const overdraftPenalty = Math.max(0, signals.overdraftsLast90d) * 12;
-
-  const raw = incomePoints + bufferPoints + tenurePoints - overdraftPenalty;
-  return Math.max(0, Math.min(100, raw));
-}
-
-/**
- * Map a trust score to a starting limit, in CENTS. Every score produces a
- * real, usable limit — there is no zero band. This is the "generous start"
- * half of the model: Cash App's own reported first-time Borrow limits run
- * $50–$400 with a ~$150 average for thin-file users, and neither Klarna nor
- * Affirm hard-decline a first transaction purely on a thin file — they
- * approve small and let it grow. $25 is EZER's equivalent floor: real money,
- * genuinely usable, deliberately the smallest band so a bad-signal file
- * (heavy overdrafts, no tenure) starts furthest from the top.
- *
- * Banded rather than continuous on purpose: a band is explainable to the user
- * ("you're in our $1,000 tier") and to a regulator, and it stops a $5 change in
- * balance from moving the number they were shown yesterday. Bands are also
- * where a real issuer's approved limit grid gets dropped in verbatim.
- *
- * The "restricted tightly" half of the model — the other thing every one of
- * these apps does — is a missed-PAYMENT penalty, not a missed-deposit one:
- * Cash App explicitly cuts or suspends Borrow access after a late/missed
- * repayment, independent of income or balance signals. That side of this
- * function is not implemented yet because there is nothing to feed it — Pay
- * in 4 has no real installment-charging engine in this codebase yet (see
- * app/(tabs)/payin4.tsx's own "not yet available" disclosure), so there is no
- * real "missed a payment" event to score. When that engine exists, its
- * failure signal belongs in `scoreTrust` as a heavy negative term (bigger
- * than the overdraft penalty below), re-scored on every assessment the same
- * way overdrafts already are — NOT bolted on here as a separate override.
- */
-export function limitForScore(score: number): number {
-  if (score >= 80) return 150_000; // $1,500
-  if (score >= 65) return 100_000; // $1,000
-  if (score >= 50) return 50_000; //    $500
-  if (score >= 35) return 25_000; //    $250
-  if (score >= 20) return 10_000; //    $100
-  return 2_500; //                      $25 — the floor, not a decline
-}
-
-// -----------------------------------------------------------------------------
 // Validation
 // -----------------------------------------------------------------------------
 
@@ -174,98 +62,6 @@ const MAX_STROKES = 500;
 // -----------------------------------------------------------------------------
 // Routes
 // -----------------------------------------------------------------------------
-
-/**
- * Derive the trust signals from the user's OWN Plaid data.
- *
- * This route used to merge whatever `signals` the client sent over the demo
- * set and score the result. That let a caller POST
- * `{ avgMonthlyInflowCents: 99999999 }` and be granted the maximum limit — the
- * applicant decided their own credit line. Client input is now ignored
- * entirely; every number below is read server-side from data the user cannot
- * author.
- *
- * Returns null when the user has linked no bank, which is a different outcome
- * from scoring zero: no data is a reason to review, not a reason to decline.
- */
-async function deriveTrustSignals(userId: string): Promise<TrustSignals | null> {
-  const items = await prisma.plaidItem.findMany({ where: { userId } });
-  if (items.length === 0) return null;
-
-  // Live balance across depository accounts. A Plaid failure must not silently
-  // become a zero balance, which would read as a poor signal rather than a
-  // missing one — so a total that never resolved leaves the applicant unscored.
-  let balanceCents: number | null = null;
-  if (process.env.PLAID_CLIENT_ID && process.env.PLAID_SECRET) {
-    const plaid = getPlaidClient();
-    for (const item of items) {
-      try {
-        const res = await plaid.accountsBalanceGet({ access_token: decrypt(item.accessTokenEnc) });
-        for (const acct of res.data.accounts) {
-          if (acct.type !== 'depository') continue;
-          const available = acct.balances.available ?? acct.balances.current;
-          if (typeof available === 'number') {
-            balanceCents = (balanceCents ?? 0) + Math.round(available * 100);
-          }
-        }
-      } catch {
-        // One unreachable item does not invalidate the others.
-      }
-    }
-  }
-  if (balanceCents === null) return null;
-
-  const since = new Date();
-  since.setMonth(since.getMonth() - 6);
-  const txns = await prisma.transaction.findMany({
-    where: { userId, date: { gte: since } },
-    select: { amountCents: true, date: true, merchantNameRaw: true },
-  });
-
-  // Deposits are the NEGATIVE side of the ledger in Plaid's own convention —
-  // positive amountCents means money OUT of the account (see the identical
-  // note on SubscriptionCandidateInput.amount in packages/shared). This
-  // summed amountCents > 0 for a long time, which is spending, not income:
-  // verified directly against this real, currently-linked account, it
-  // produced an "average monthly inflow" of $4,315 that was actually $4,315
-  // of average monthly SPENDING. Averaged over the months actually observed,
-  // not a fixed six — a two-month-old account would otherwise look like it
-  // earns a third of what it does.
-  const inflow = txns.filter(t => t.amountCents < 0).reduce((sum, t) => sum + -t.amountCents, 0);
-  const oldest = txns.reduce<Date | null>((acc, t) => (!acc || t.date < acc ? t.date : acc), null);
-  const observedMonths = oldest
-    ? Math.max(1, Math.round((Date.now() - oldest.getTime()) / (1000 * 60 * 60 * 24 * 30)))
-    : 1;
-
-  // Plaid does not flag overdrafts, so they are matched by the fee description
-  // the institution writes. Conservative on purpose: a missed overdraft costs
-  // us a bad line, a false positive costs a good applicant their limit.
-  //
-  // The original pattern was not word-bounded: "nsf" matches inside
-  // "traNSFer", so ordinary transfers were being counted as overdraft
-  // events — verified directly, 7 of 36 "matches" on this real account were
-  // "ONLINE TRANSFER FROM ..." rows, not overdrafts at all. \b anchors fix
-  // it without changing what a genuine match looks like.
-  const ninetyDaysAgo = Date.now() - 90 * 24 * 60 * 60 * 1000;
-  const overdrafts = txns.filter(
-    t =>
-      t.date.getTime() >= ninetyDaysAgo &&
-      /\boverdraft\b|\bnsf\b|\binsufficient\b|\breturned item\b/i.test(t.merchantNameRaw)
-  ).length;
-
-  const firstLink = items.reduce((acc, i) => (i.createdAt < acc ? i.createdAt : acc), items[0].createdAt);
-  const accountAgeMonths = Math.max(
-    observedMonths,
-    Math.round((Date.now() - firstLink.getTime()) / (1000 * 60 * 60 * 24 * 30))
-  );
-
-  return {
-    avgMonthlyInflowCents: Math.round(inflow / observedMonths),
-    currentBalanceCents: balanceCents,
-    accountAgeMonths,
-    overdraftsLast90d: overdrafts,
-  };
-}
 
 export async function cardRoutes(server: FastifyInstance) {
   // POST /cards/designs
@@ -367,21 +163,19 @@ export async function cardRoutes(server: FastifyInstance) {
     // "no signals" — `scoreTrust` on empty/zeroed signals lands under 20,
     // and `limitForScore` gives that its real $25 floor. Fully automated,
     // every time, the same way Klarna re-underwrites per transaction rather
-    // than sending a thin file to a queue.
-    const derived = await deriveTrustSignals(userId);
-    const score = derived
-      ? scoreTrust(derived)
-      : scoreTrust({ avgMonthlyInflowCents: 0, currentBalanceCents: 0, accountAgeMonths: 0, overdraftsLast90d: 0 });
-    const limitCents = limitForScore(score);
-    const status: AccessStatus = 'approved_pending_issuance';
+    // than sending a thin file to a queue. The one thing that CAN override the
+    // floor is an uncured Pay in 4 miss — assessAccess folds that in from
+    // InstallmentPlan/Installment, so re-checking here after a missed payment
+    // returns 'suspended' the same way a fresh miss already did automatically.
+    const { status, limitCents, trustScore } = await assessAccess(userId);
 
     await prisma.cardAccessList.create({
-      data: { userId, designId: designId || null, mode: 'plaid', status, limitCents, trustScore: score },
+      data: { userId, designId: designId || null, mode: 'plaid', status, limitCents, trustScore },
     });
 
     return {
       success: true,
-      data: { status, limitCents, trustScore: score },
+      data: { status, limitCents, trustScore },
     };
   });
 

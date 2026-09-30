@@ -18,6 +18,7 @@ import { jobRoutes } from './routes/jobs';
 import { simulatorRoutes } from './routes/simulator';
 import { plaidRoutes } from './routes/plaid';
 import { cardRoutes } from './routes/cards';
+import { installmentRoutes } from './routes/installments';
 import { savingsRoutes } from './routes/savings';
 import { processorWebhookRoutes } from './routes/processorWebhook';
 import { ensureUploadsDir } from './utils/storage';
@@ -95,6 +96,7 @@ async function start() {
     }
     await server.register(plaidRoutes, { prefix: '/plaid' });
     await server.register(cardRoutes, { prefix: '/cards' });
+    await server.register(installmentRoutes, { prefix: '/cards/installments' });
     await server.register(savingsRoutes, { prefix: '/savings' });
     // Separate plugin on purpose: its own encapsulation context means the
     // savings auth preHandler cannot reach it. Authenticated by HMAC signature
