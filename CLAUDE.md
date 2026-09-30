@@ -239,15 +239,33 @@ style problem.
   doesn't show a stale outcome for someone who has a saved design AND just
   re-checked Spending Power.
 - **`FundingInstrument.purpose` and `FundingSource.purpose`** are UI/engine
-  grouping labels only, set to `'pay_in_4'` when a bank is linked from
-  `SpendingPowerSheet.tsx` specifically (threaded through
-  `usePlaid().openPlaidLink`'s third argument →
-  `POST /plaid/exchange-public-token`). Settings' linked-banks list
-  (`app/settings.tsx`) groups `FundingInstrument` by it into "Cards" vs
-  "Pay in 4" sections; `installmentEngine.ts`'s `getRepaymentSource` prefers
-  the matching `FundingSource` when charging. Every linked account is read
-  identically everywhere else — sync, trust signals, subscriptions —
-  `purpose` never gates or filters real data.
+  grouping labels only, set to `'pay_in_4'` ONLY when "Connect a new bank" is
+  used (see Patch 2 below) — threaded through `usePlaid().openPlaidLink`'s
+  third argument → `POST /plaid/exchange-public-token`. Settings' linked-banks
+  list (`app/settings.tsx`) groups `FundingInstrument` by it into
+  "Subscriptions" vs "Pay in 4" sections; `installmentEngine.ts`'s
+  `getRepaymentSource` prefers the matching `FundingSource` when charging.
+  Every linked account is read identically everywhere else — sync, trust
+  signals, subscriptions — `purpose` never gates or filters real data.
+- **Patch 2 (same patch notes file): the primary pill offers "Use connected
+  bank" instead of forcing a second Plaid Link.** Someone whose subscriptions
+  are already being read from a linked account must not be made to link a
+  SEPARATE bank just to see a Pay in 4 number — `SpendingPowerSheet.tsx`
+  checks `instruments.length > 0 || subscriptions.length > 0`
+  (`contexts/DataContext.tsx`) and, if true, a first tap reveals
+  "Use connected bank" (runs the real `POST /cards/access-list` assessment
+  immediately, no Plaid Link — `trustScoring.ts` already aggregates every
+  linked `PlaidItem` regardless of `purpose`, so this is a genuine assessment,
+  not a shortcut) alongside "Connect a new bank" (the original `pay_in_4`-
+  tagged Plaid Link flow, for someone who wants a SEPARATE bank funding Pay in
+  4). Someone with no bank linked at all skips straight to "Connect a new
+  bank" — there is nothing to choose between. Because "Use connected bank"
+  never tags anything `pay_in_4`, `app/settings.tsx` cannot read back which
+  account an assessment actually used; it infers the "Also used for Pay in 4"
+  badge on a Subscriptions-group row from `getSpendingPowerOutcome()` alone
+  (approved + a real limit, no dedicated `pay_in_4` instrument already
+  exists) rather than a per-instrument record — correct for one linked bank,
+  silently skipped (not wrong) once someone has more than one.
 
 ## Wallet card art (`apps/mobile/utils/cardArt/`)
 

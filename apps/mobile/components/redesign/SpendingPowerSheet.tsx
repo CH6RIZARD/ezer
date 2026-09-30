@@ -20,6 +20,15 @@
 // in 4 payment — see installmentEngine.ts) isn't in the original mock, which
 // predates that engine; it's folded into the 'status' phase with its own
 // Priority/CTA copy rather than inventing a fifth phase.
+//
+// Patch 2 (PATCH-NOTES-early-access-sheet.md): the primary pill no longer
+// forces Plaid Link on someone who already has a bank linked (subscriptions
+// were already reading from it). A first tap with `hasBank` true swaps the
+// single pill for "Use connected bank" (runs the SAME assessment, no Link)
+// vs "Connect a new bank" (Plaid Link tagged 'pay_in_4', separate from
+// whatever backs subscriptions). The mock's slide/wipe circle animation is
+// simplified here to a plain swap between the single pill and the two-pill
+// row — same end states and API calls, less animation fidelity.
 // =============================================================================
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
@@ -39,6 +48,7 @@ import {
   type CardAccessOutcome,
 } from '../../utils/cardDesignStore';
 import { usePlaid } from '../../utils/usePlaid';
+import { useData } from '../../contexts/DataContext';
 import { api } from '../../utils/api';
 
 const CHECK_STEPS = [
@@ -72,6 +82,15 @@ export default function SpendingPowerSheet({
 }) {
   const { colors } = useTheme();
   const { openPlaidLink } = usePlaid();
+  // Whether ANY bank is already linked — for subscriptions, cards, a prior
+  // Pay in 4 link, anything. Drives the "Use connected bank" vs "Connect a
+  // new bank" split (Patch 2 of PATCH-NOTES-early-access-sheet.md): someone
+  // whose subscriptions are already being read from a linked account must
+  // not be forced through a second, separate Plaid Link just to see a
+  // number. `instruments`/`subscriptions` are the same signals
+  // useConnectBank-style code elsewhere treats as "has a bank".
+  const { instruments, subscriptions } = useData();
+  const hasBank = instruments.length > 0 || subscriptions.length > 0;
 
   const [phase, setPhase] = useState<Phase>('ask');
   const [loaded, setLoaded] = useState(false);
@@ -82,6 +101,10 @@ export default function SpendingPowerSheet({
   const [designSaved, setDesignSaved] = useState(false);
   const [stepIndex, setStepIndex] = useState(0);
   const [busy, setBusy] = useState(false);
+  /** True once the primary pill has been tapped once and a bank is already
+   *  linked — shows the "Use connected bank" / "Connect a new bank" choice
+   *  in place of the single pill. Reset on every fresh sheet open. */
+  const [showChoice, setShowChoice] = useState(false);
 
   const alive = useRef(true);
   useEffect(
@@ -98,6 +121,7 @@ export default function SpendingPowerSheet({
     setLoaded(false);
     setBusy(false);
     setJustJoined(false);
+    setShowChoice(false);
 
     const [outcome, revealSeen, design] = await Promise.all([
       getSpendingPowerOutcome(),
@@ -191,9 +215,14 @@ export default function SpendingPowerSheet({
     }
   }, [wait]);
 
+  /** "Connect a new bank" — opens Plaid Link tagged 'pay_in_4', separate from
+   *  whatever bank (if any) already backs subscriptions. This is also the
+   *  fallback for someone with NO bank linked at all: the split choice never
+   *  shows for them, this runs directly off the single pill. */
   const handleConnect = useCallback(() => {
     if (busy) return;
     setBusy(true);
+    setShowChoice(false);
 
     if (!FEATURE_PLAID) {
       void runAssessment().finally(() => {
@@ -213,6 +242,34 @@ export default function SpendingPowerSheet({
     );
   }, [busy, openPlaidLink, runAssessment]);
 
+  /**
+   * "Use connected bank" — runs the SAME assessment as "Connect a new bank",
+   * just without opening Plaid Link first. deriveTrustSignals (trustScoring.ts)
+   * already aggregates across every PlaidItem the user has, regardless of
+   * which `purpose` linked it, so there is no separate "scope to just this
+   * account" call to make — reusing what's already connected for the
+   * subscription/wallet side genuinely does produce a real assessment, not a
+   * placeholder.
+   */
+  const handleUseConnected = useCallback(() => {
+    if (busy) return;
+    setBusy(true);
+    setShowChoice(false);
+    void runAssessment();
+  }, [busy, runAssessment]);
+
+  /** Primary pill's idle tap: reveal the connected/new-bank choice when a
+   *  bank is already linked, otherwise go straight to Plaid — there is
+   *  nothing to choose between for someone starting from zero. */
+  const handlePrimaryTap = useCallback(() => {
+    if (busy) return;
+    if (hasBank) {
+      setShowChoice(true);
+      return;
+    }
+    handleConnect();
+  }, [busy, hasBank, handleConnect]);
+
   const finishReveal = useCallback(async () => {
     await markSpendingPowerRevealSeen();
     onClose();
@@ -221,6 +278,37 @@ export default function SpendingPowerSheet({
   if (!loaded && phase === 'ask' && !visible) return null;
 
   const hasLimit = limitCents !== null && limitCents > 0 && !suspended;
+
+  /**
+   * The primary pill, shared between the 'ask' and no-limit 'status' phases.
+   * Renders as a single pill until tapped; if a bank is already linked, that
+   * tap swaps it for the "Use connected bank" / "Connect a new bank" split
+   * instead of firing an action directly (Patch 2).
+   */
+  const renderPrimaryCta = (idleLabel: string, busyLabel: string) =>
+    showChoice ? (
+      <View style={{ flexDirection: 'row', gap: 8, height: 56 }}>
+        <PressScale onPress={handleUseConnected} scaleTo={motion.pressScale} disabled={busy} style={{ flex: 1 }}>
+          <View style={[styles.splitPillFilled, { backgroundColor: colors.ink }]}>
+            <Text style={styles.splitPillFilledText}>Use connected bank</Text>
+          </View>
+        </PressScale>
+        <PressScale onPress={handleConnect} scaleTo={motion.pressScale} disabled={busy} style={{ flex: 1 }}>
+          <View style={[styles.splitPillOutline, { borderColor: colors.ink }]}>
+            <Text style={[styles.splitPillOutlineText, { color: colors.ink }]}>Connect a new bank</Text>
+          </View>
+        </PressScale>
+      </View>
+    ) : (
+      <PressScale onPress={handlePrimaryTap} scaleTo={motion.pressScale} disabled={busy}>
+        <View style={[styles.ctaPill, { backgroundColor: colors.ink, opacity: busy ? 0.6 : 1 }]}>
+          <Text style={styles.ctaPillText}>{busy ? busyLabel : idleLabel}</Text>
+          <View style={[styles.ctaCircle, { backgroundColor: colors.gold }]}>
+            <Ionicons name="arrow-forward" size={18} color="#FFFFFF" />
+          </View>
+        </View>
+      </PressScale>
+    );
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
@@ -272,16 +360,7 @@ export default function SpendingPowerSheet({
                     </View>
                   </View>
 
-                  <PressScale onPress={handleConnect} scaleTo={motion.pressScale} disabled={busy} style={{ marginTop: 30 }}>
-                    <View style={[styles.ctaPill, { backgroundColor: colors.ink, opacity: busy ? 0.6 : 1 }]}>
-                      <Text style={styles.ctaPillText}>
-                        {busy ? 'Opening…' : 'Find out my spending power'}
-                      </Text>
-                      <View style={[styles.ctaCircle, { backgroundColor: colors.gold }]}>
-                        <Ionicons name="arrow-forward" size={18} color="#FFFFFF" />
-                      </View>
-                    </View>
-                  </PressScale>
+                  <View style={{ marginTop: 30 }}>{renderPrimaryCta('Find out my spending power', 'Opening…')}</View>
                   <Pressable onPress={onClose} disabled={busy} style={styles.laterBtn}>
                     <Text style={[styles.laterText, { color: colors.mut }]}>Later</Text>
                   </Pressable>
@@ -406,7 +485,7 @@ export default function SpendingPowerSheet({
                         </Text>
                       </View>
                     ) : (
-                      <Pressable onPress={handleConnect} disabled={busy}>
+                      <Pressable onPress={handlePrimaryTap} disabled={busy}>
                         <StatusRow
                           label="Spending power"
                           value={suspended ? 'Check again ›' : 'Check now ›'}
@@ -453,16 +532,9 @@ export default function SpendingPowerSheet({
                   )}
 
                   {!hasLimit ? (
-                    <PressScale onPress={handleConnect} scaleTo={motion.pressScale} disabled={busy} style={{ marginTop: 22 }}>
-                      <View style={[styles.ctaPill, { backgroundColor: colors.ink, opacity: busy ? 0.6 : 1 }]}>
-                        <Text style={styles.ctaPillText}>
-                          {busy ? 'Checking…' : suspended ? 'Check again' : 'Check spending power'}
-                        </Text>
-                        <View style={[styles.ctaCircle, { backgroundColor: colors.gold }]}>
-                          <Ionicons name="arrow-forward" size={18} color="#FFFFFF" />
-                        </View>
-                      </View>
-                    </PressScale>
+                    <View style={{ marginTop: 22 }}>
+                      {renderPrimaryCta(suspended ? 'Check again' : 'Check spending power', 'Checking…')}
+                    </View>
                   ) : (
                     <PressScale onPress={onClose} scaleTo={motion.pressScale} style={{ marginTop: 22 }}>
                       <View style={[styles.ctaPillCentered, { backgroundColor: colors.ink }]}>
@@ -551,6 +623,17 @@ const styles = StyleSheet.create({
   },
   ctaPillText: { fontFamily: fontFamily.bold, fontSize: 15, color: '#FFFFFF' },
   ctaCircle: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
+  splitPillFilled: { flex: 1, height: 56, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center' },
+  splitPillFilledText: { fontFamily: fontFamily.bold, fontSize: 13.5, color: '#FFFFFF' },
+  splitPillOutline: {
+    flex: 1,
+    height: 56,
+    borderRadius: radius.pill,
+    borderWidth: 1.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  splitPillOutlineText: { fontFamily: fontFamily.bold, fontSize: 13.5 },
   laterBtn: { height: 44, alignItems: 'center', justifyContent: 'center', marginTop: 4 },
   laterText: { fontFamily: fontFamily.semibold, fontSize: 14 },
   stepRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 8 },

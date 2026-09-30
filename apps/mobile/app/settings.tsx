@@ -7,7 +7,7 @@
 // toggles, and a red Sign out row.
 // =============================================================================
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, Text, ScrollView, Pressable, Switch, StyleSheet } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -25,6 +25,7 @@ import {
 } from '../components/redesign/Primitives';
 import { useConnectBank } from '../utils/useConnectBank';
 import { useData } from '../contexts/DataContext';
+import { getSpendingPowerOutcome } from '../utils/cardDesignStore';
 
 const NOTIFS = [
   { key: 'renewals', title: 'Renewal alerts', sub: '3 days before' },
@@ -48,6 +49,22 @@ export default function SettingsScreen() {
     trials: true,
     digest: false,
   });
+
+  // Whether Pay in 4 has a real assessed limit right now. Used below to flag
+  // a Subscriptions-group account as "Also used for Pay in 4" when nobody
+  // ever linked a SEPARATE pay_in_4-tagged bank — i.e. they used "Use
+  // connected bank" in SpendingPowerSheet.tsx rather than "Connect a new
+  // bank". There is no per-instrument record of which account backed an
+  // assessment (trustScoring.ts aggregates across every linked PlaidItem on
+  // purpose), so this is inferred, not read back from the server — accurate
+  // for the overwhelmingly common case of one linked bank, and silent rather
+  // than wrong when there's more than one.
+  const [payIn4Assessed, setPayIn4Assessed] = useState(false);
+  useEffect(() => {
+    void getSpendingPowerOutcome().then(outcome =>
+      setPayIn4Assessed(outcome?.status === 'approved' && !!outcome.limitCents)
+    );
+  }, []);
 
   const signOut = () => {
     // The auth context has gone by both names across revisions; call whichever
@@ -161,14 +178,20 @@ export default function SettingsScreen() {
             linked, and the last of which is not a card at all. The cards listed
             here must be the cards the charges are actually billed to.
 
-            Grouped by `purpose` (FundingInstrument.purpose) into Cards vs Pay
-            in 4 rather than one flat list. A bank connected from the Spending
-            Power sheet (components/redesign/SpendingPowerSheet.tsx, tagged
-            'pay_in_4' when the link is made) is there for ONE reason — running the Pay
-            in 4 trust assessment — and showing it mixed in with banks that
-            back subscription tracking made it look like every linked account
-            did the same thing. Untagged instruments (the common case: linked
-            from Wallet/onboarding, no specific purpose) fall under "Cards".
+            Grouped by `purpose` (FundingInstrument.purpose) into
+            Subscriptions vs Pay in 4 rather than one flat list. A bank
+            connected from the Spending Power sheet
+            (components/redesign/SpendingPowerSheet.tsx) via "Connect a new
+            bank" is tagged 'pay_in_4' and is there for ONE reason — running
+            the Pay in 4 trust assessment — and showing it mixed in with
+            banks that back subscription tracking made it look like every
+            linked account did the same thing. Untagged instruments (the
+            common case: linked from Wallet/onboarding, no specific purpose)
+            fall under "Subscriptions". "Use connected bank" reuses one of
+            those for the Pay in 4 assessment too WITHOUT retagging it (it
+            still, correctly, backs subscriptions) — `payIn4Assessed` flags
+            that row with "Also used for Pay in 4" instead, since there is no
+            per-instrument record of which account an assessment used.
           */}
           <SectionHeader style={styles.section}>Linked banks</SectionHeader>
           {instruments.length === 0 ? (
@@ -179,46 +202,58 @@ export default function SettingsScreen() {
             </Surface>
           ) : (
             <>
-              {(
-                [
-                  { key: 'cards', title: 'Cards', rows: instruments.filter(i => i.purpose !== 'pay_in_4') },
-                  { key: 'pay_in_4', title: 'Pay in 4', rows: instruments.filter(i => i.purpose === 'pay_in_4') },
-                ] as const
-              ).map(group =>
-                group.rows.length === 0 ? null : (
-                  <View key={group.key} style={{ marginTop: 10 }}>
-                    <Label style={{ marginBottom: 6 }}>{group.title}</Label>
-                    <Surface style={styles.block}>
-                      {group.rows.map((inst, i) => (
-                        <View key={inst.id}>
-                          {i > 0 && <View style={[styles.divider, { backgroundColor: colors.line }]} />}
-                          <View style={styles.bankRow}>
-                            <Ionicons name="card-outline" size={19} color={colors.mut} />
-                            <View style={{ flex: 1 }}>
-                              <Text style={[styles.kvValue, { color: colors.ink }]} numberOfLines={1}>
-                                {inst.displayName || 'Account'}
-                              </Text>
-                              <Body style={{ marginTop: 2 }}>
-                                {/* Only render the parts Plaid actually returned
-                                    — a missing brand/mask produced "Unknown
-                                    •****". */}
-                                {[inst.brand, inst.last4 ? `•${inst.last4}` : null]
-                                  .filter(Boolean)
-                                  .join(' ') || 'Linked account'}
-                              </Body>
-                            </View>
-                            {inst.isDefault && (
-                              <View style={[styles.defaultChip, { backgroundColor: colors.accSoft }]}>
-                                <Text style={[typeScale.labelSm, { color: colors.accInk }]}>DEFAULT</Text>
+              {(() => {
+                const payIn4Tagged = instruments.filter(i => i.purpose === 'pay_in_4');
+                const subscriptionRows = instruments.filter(i => i.purpose !== 'pay_in_4');
+                // Only infer the badge when there's no dedicated pay_in_4
+                // link — a real separate link is the unambiguous signal and
+                // should not ALSO get the inferred one.
+                const showInferredBadge = payIn4Assessed && payIn4Tagged.length === 0;
+
+                return (
+                  [
+                    { key: 'subscriptions', title: 'Subscriptions', rows: subscriptionRows, badge: showInferredBadge },
+                    { key: 'pay_in_4', title: 'Pay in 4', rows: payIn4Tagged, badge: false },
+                  ] as const
+                ).map(group =>
+                  group.rows.length === 0 ? null : (
+                    <View key={group.key} style={{ marginTop: 10 }}>
+                      <Label style={{ marginBottom: 6 }}>{group.title}</Label>
+                      <Surface style={styles.block}>
+                        {group.rows.map((inst, i) => (
+                          <View key={inst.id}>
+                            {i > 0 && <View style={[styles.divider, { backgroundColor: colors.line }]} />}
+                            <View style={styles.bankRow}>
+                              <Ionicons name="card-outline" size={19} color={colors.mut} />
+                              <View style={{ flex: 1 }}>
+                                <Text style={[styles.kvValue, { color: colors.ink }]} numberOfLines={1}>
+                                  {inst.displayName || 'Account'}
+                                </Text>
+                                <Body style={{ marginTop: 2 }}>
+                                  {/* Only render the parts Plaid actually returned
+                                      — a missing brand/mask produced "Unknown
+                                      •****". */}
+                                  {[inst.brand, inst.last4 ? `•${inst.last4}` : null]
+                                    .filter(Boolean)
+                                    .join(' ') || 'Linked account'}
+                                </Body>
+                                {group.badge && (
+                                  <Body style={{ marginTop: 2, color: colors.gold }}>Also used for Pay in 4</Body>
+                                )}
                               </View>
-                            )}
+                              {inst.isDefault && (
+                                <View style={[styles.defaultChip, { backgroundColor: colors.accSoft }]}>
+                                  <Text style={[typeScale.labelSm, { color: colors.accInk }]}>DEFAULT</Text>
+                                </View>
+                              )}
+                            </View>
                           </View>
-                        </View>
-                      ))}
-                    </Surface>
-                  </View>
-                )
-              )}
+                        ))}
+                      </Surface>
+                    </View>
+                  )
+                );
+              })()}
             </>
           )}
 
