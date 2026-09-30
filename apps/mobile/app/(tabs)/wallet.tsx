@@ -21,13 +21,11 @@ import {
   Platform,
   Pressable,
   StyleSheet,
-  Image,
   type NativeSyntheticEvent,
   type NativeScrollEvent,
 } from 'react-native';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../utils/ThemeContext';
 import { useAuth } from '../../utils/AuthContext';
@@ -47,6 +45,12 @@ import {
   Wordmark,
 } from '../../components/redesign/Primitives';
 import MerchantMark from '../../components/redesign/MerchantMark';
+import BankCardFace from '../../components/redesign/BankCardFace';
+import CardArtPicker from '../../components/redesign/CardArtPicker';
+import { brandSkin } from '../../utils/cardArt/color';
+import { resolveCardArt } from '../../utils/cardArt/resolver';
+import { useCardArtPrefs } from '../../utils/cardArt/useCardArtPrefs';
+import type { CardArtFallback, CardArtInput } from '../../utils/cardArt/types';
 import RangeCalendar from '../../components/redesign/RangeCalendar';
 // Only the date-range helper is still used here — the charge expansion in that
 // module reads bundled demo subscriptions, and every figure on this screen now
@@ -127,10 +131,10 @@ interface WalletCard {
   accountLabel?: string;
   network: string;
   last4: string;
-  gradient: readonly string[];
-  fg: string;
-  fgDim: string;
-  logoUri?: string;
+  /** What is known about the card, for utils/cardArt/resolver.ts. */
+  input: CardArtInput;
+  /** Skin used when the resolver has nothing better (the old cycling skins). */
+  fallback: CardArtFallback;
   /** Distinct subscriptions billed to this card (derived, not hard-coded). */
   subs: number;
 }
@@ -161,39 +165,12 @@ const BANK_CARD_SKINS = [
 ] as const;
 
 /**
- * Real institution branding, when Plaid has it — see apps/api/src/routes/
- * plaid.ts for where issuerColorHint/networkArt get fetched. No data source
- * anywhere returns what a specific physical card looks like; a card tinted
- * in the bank's own real brand color (and carrying its real logo when Plaid
- * has one) is the closest honest approximation of that, not a fabrication
- * standing in for one.
+ * Where a card's appearance comes from is decided by utils/cardArt/resolver.ts:
+ * the user's own photo, a design they picked, network-issued art, our catalog
+ * for the bank, then the bank's Plaid colour + logo. No data source returns what
+ * a specific physical card looks like, so only the first is an exact match —
+ * see that file for the full ordering and why.
  */
-function hexToRgb(hex: string): [number, number, number] {
-  const h = hex.replace('#', '');
-  const full = h.length === 3 ? h.split('').map(c => c + c).join('') : h;
-  return [parseInt(full.slice(0, 2), 16), parseInt(full.slice(2, 4), 16), parseInt(full.slice(4, 6), 16)];
-}
-
-function darken(hex: string, amount: number): string {
-  const [r, g, b] = hexToRgb(hex);
-  const d = (v: number) => Math.max(0, Math.round(v * (1 - amount)));
-  return `#${[d(r), d(g), d(b)].map(v => v.toString(16).padStart(2, '0')).join('')}`;
-}
-
-/** Perceived luminance — decides whether card text should be light or dark. */
-function isLightColor(hex: string): boolean {
-  const [r, g, b] = hexToRgb(hex);
-  return 0.299 * r + 0.587 * g + 0.114 * b > 170;
-}
-
-function brandSkin(hex: string) {
-  const light = isLightColor(hex);
-  return {
-    gradient: [hex, darken(hex, 0.45)] as const,
-    fg: light ? '#241A38' : '#FFFFFF',
-    fgDim: light ? 'rgba(36,26,56,.6)' : 'rgba(255,255,255,.65)',
-  };
-}
 
 export default function WalletScreen() {
   const insets = useSafeAreaInsets();
@@ -222,9 +199,9 @@ export default function WalletScreen() {
   const cards = useMemo<WalletCard[]>(
     () =>
       instruments.map((inst, i) => {
-        // Prefer the real bank's own brand color over the generic cycling
-        // skin — see brandSkin() above.
-        const skin = inst.issuerColorHint
+        // Fallback skin for when the resolver has no bank match and Plaid gave
+        // no colour: the bank's Plaid colour if present, else a cycling skin.
+        const fallback: CardArtFallback = inst.issuerColorHint
           ? brandSkin(inst.issuerColorHint)
           : BANK_CARD_SKINS[i % BANK_CARD_SKINS.length];
         return {
@@ -237,10 +214,15 @@ export default function WalletScreen() {
           accountLabel: inst.institutionName ? inst.displayName : undefined,
           network: inst.brand?.toUpperCase() || 'CARD',
           last4: inst.last4 ?? '',
-          gradient: skin.gradient,
-          fg: skin.fg,
-          fgDim: skin.fgDim,
-          logoUri: inst.networkArt,
+          input: {
+            institutionName: inst.institutionName,
+            displayName: inst.displayName,
+            brand: inst.brand,
+            issuerColorHint: inst.issuerColorHint,
+            logoUri: inst.networkArt,
+            networkTokenArtUri: inst.networkTokenArtUri,
+          },
+          fallback,
           // Real count filled in at render time from `merchants` (the API
           // breakdown) for whichever card is currently active — see the
           // `subsCount` lookup below. This used to be hardcoded to 0 with a
@@ -256,6 +238,25 @@ export default function WalletScreen() {
   );
 
   const active = cards[Math.min(index, cards.length - 1)];
+
+  // The user's own card looks (a photo, a picked design) — on this device only.
+  const cardIds = useMemo(() => cards.map(c => c.id), [cards]);
+  const { prefs: artPrefs, setDesign, addPhoto, removePhoto } = useCardArtPrefs(cardIds);
+  const [artPickerOpen, setArtPickerOpen] = useState(false);
+
+  /** The count shown on a card; only the focused card has a fetched count. */
+  const subsLabelFor = (cardId: string) => {
+    // `merchants` is the API breakdown fetched for whichever card is currently
+    // focused (see the effect keyed on active?.id below) — the only card this
+    // component has a real count for. A card that isn't focused, or whose
+    // fetch for THIS card hasn't resolved yet, shows "…" rather than a wrong
+    // "0 subs" — the count that used to flash during a swipe or a range
+    // change, because the previous card's/range's number was still sitting
+    // in state.
+    if (cardId !== active?.id || loadingBreakdown) return '…';
+    const n = merchants.length;
+    return `${n} sub${n === 1 ? '' : 's'}`;
+  };
 
   /**
    * Exact scroll offset that centres each card, per the derivation at the top
@@ -423,96 +424,22 @@ export default function WalletScreen() {
             scrollEventThrottle={16}
           >
             {cards.map(c => (
-              <LinearGradient
+              <BankCardFace
                 key={c.id}
-                colors={c.gradient as unknown as readonly [string, string, ...string[]]}
-                locations={
-                  c.gradient.length === 3
-                    ? (gradients.bankGoldLocations as unknown as readonly [number, number, ...number[]])
-                    : undefined
-                }
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={[styles.bankCard, WEB_SNAP_CHILD]}
-              >
-                {/* Diagonal foil sheen — the one thing a flat gradient can
-                    never fake: a real card's laminate catches light unevenly.
-                    Decorative only, so it sits above everything else but
-                    intercepts no touches. */}
-                <LinearGradient
-                  pointerEvents="none"
-                  colors={['rgba(255,255,255,0.16)', 'rgba(255,255,255,0)', 'rgba(255,255,255,0.05)']}
-                  locations={[0, 0.5, 1]}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 0.9 }}
-                  style={StyleSheet.absoluteFillObject}
-                />
-
-                <View style={styles.bankTop}>
-                  <Text style={[styles.bankName, { color: c.fg }]} numberOfLines={1}>
-                    {c.name}
-                  </Text>
-                  {/* The bank's real logo when Plaid has one for this
-                      institution; the generic network/type label otherwise.
-                      Not every institution has a logo available. */}
-                  {c.logoUri ? (
-                    <Image source={{ uri: c.logoUri }} style={styles.bankLogo} resizeMode="contain" />
-                  ) : (
-                    <Text style={[styles.bankNetwork, { color: c.fgDim }]}>{c.network}</Text>
-                  )}
-                </View>
-
-                {/* EMV chip — the single detail that reads "physical card" at
-                    a glance more than any color choice does. Same metal-foil
-                    gradient as the EZER card's own chip (CardCanvas.tsx), so
-                    the two don't look like they came from different apps. */}
-                <LinearGradient
-                  colors={gradients.metalEdge as unknown as readonly [string, string, ...string[]]}
-                  locations={gradients.metalEdgeLocations as unknown as readonly [number, number, ...number[]]}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                  style={styles.emvChip}
-                />
-
-                {/* Full masked PAN, not just the last 4 — "•••• 1234" reads as
-                    a placeholder; sixteen digits in four groups reads as a
-                    card. */}
-                <Text style={[styles.bankLast4, { color: c.fg }]}>
-                  {'•••• •••• •••• '}{c.last4}
-                </Text>
-
-                <View style={styles.bankBottom}>
-                  {/* The account holder's actual name, not a generic "EZER
-                      MEMBER" label — a real linked bank card branded with the
-                      app's own name instead of the person who owns it reads
-                      as a demo/mock card even though the number and balance
-                      behind it are entirely real. That confusion is why this
-                      card kept getting reported as fake. */}
-                  <Text style={[styles.bankHolder, { color: c.fgDim }]} numberOfLines={1}>
-                    {(user?.name || 'EZER MEMBER').toUpperCase()}
-                    {c.accountLabel ? `  ·  ${c.accountLabel.toUpperCase()}` : ''}
-                  </Text>
-                  <View style={[styles.subsPill, { backgroundColor: c.fg === '#FFFFFF' ? 'rgba(255,255,255,0.16)' : 'rgba(36,26,56,0.12)' }]}>
-                    <Text style={[styles.bankSubs, { color: c.fg }]}>
-                      {(() => {
-                        // `merchants` is the API breakdown fetched for
-                        // whichever card is currently focused (see the
-                        // effect keyed on active?.id above) — the only card
-                        // this component actually has a real count for. A
-                        // card that isn't focused, or whose fetch for THIS
-                        // card hasn't resolved yet, shows "…" rather than a
-                        // wrong "0 subs" — the count that used to flash
-                        // during a swipe or a range change, because the
-                        // previous card's/range's number was still sitting
-                        // in state.
-                        if (c.id !== active?.id || loadingBreakdown) return '…';
-                        const n = merchants.length;
-                        return `${n} sub${n === 1 ? '' : 's'}`;
-                      })()}
-                    </Text>
-                  </View>
-                </View>
-              </LinearGradient>
+                art={resolveCardArt(c.input, artPrefs[c.id], c.fallback)}
+                bankName={c.name}
+                accountLabel={c.accountLabel}
+                network={c.network}
+                last4={c.last4}
+                // The account holder's actual name, not a generic "EZER MEMBER"
+                // — a real linked card branded with the app's name instead of
+                // the person who owns it reads as a demo card.
+                holderName={user?.name || 'EZER MEMBER'}
+                subsLabel={subsLabelFor(c.id)}
+                width={CARD_W}
+                height={CARD_H}
+                style={WEB_SNAP_CHILD}
+              />
             ))}
           </ScrollView>
 
@@ -541,6 +468,19 @@ export default function WalletScreen() {
               );
             })}
           </View>
+
+          {active ? (
+            <Pressable
+              onPress={() => setArtPickerOpen(true)}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel="Change how this card looks"
+              style={styles.lookPill}
+            >
+              <Ionicons name="color-palette-outline" size={14} color={colors.gold} />
+              <Text style={[styles.lookText, { color: colors.gold }]}>Match my card</Text>
+            </Pressable>
+          ) : null}
 
           <View style={{ paddingHorizontal: layout.screenX }}>
             {/* --- range chips ----------------------------------------------- */}
@@ -661,6 +601,27 @@ export default function WalletScreen() {
           </View>
         </ScreenBody>
       </ScrollView>
+
+      {active ? (
+        <CardArtPicker
+          visible={artPickerOpen}
+          onClose={() => setArtPickerOpen(false)}
+          input={active.input}
+          prefs={artPrefs[active.id] ?? {}}
+          fallback={active.fallback}
+          face={{
+            bankName: active.name,
+            accountLabel: active.accountLabel,
+            network: active.network,
+            last4: active.last4,
+            holderName: user?.name || 'EZER MEMBER',
+            subsLabel: subsLabelFor(active.id),
+          }}
+          onSelectDesign={designId => setDesign(active.id, designId)}
+          onAddPhoto={source => addPhoto(active.id, source)}
+          onRemovePhoto={() => removePhoto(active.id)}
+        />
+      ) : null}
     </View>
   );
 }
@@ -670,59 +631,17 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
   },
-  bankCard: {
-    width: CARD_W,
-    height: CARD_H,
-    borderRadius: radius.virtualCard,
-    padding: 20,
-    justifyContent: 'space-between',
-  },
-  bankTop: {
+  lookPill: {
+    alignSelf: 'center',
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-  },
-  // All measured off the prototype markup.
-  bankName: {
-    fontFamily: fontFamily.bold,
-    fontSize: 14,
-    letterSpacing: 0.4,
-  },
-  bankNetwork: {
-    fontFamily: fontFamily.semibold,
-    fontSize: 11,
-  },
-  bankLogo: {
-    width: 34,
-    height: 22,
-  },
-  emvChip: {
-    width: 36,
-    height: 26,
-    borderRadius: 5,
-  },
-  bankLast4: {
-    fontFamily: fontFamily.semibold,
-    fontSize: 15.5,
-    letterSpacing: 1.8,
-  },
-  bankBottom: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-end',
-  },
-  bankHolder: {
-    fontFamily: fontFamily.regular,
-    fontSize: 11,
-  },
-  subsPill: {
-    paddingHorizontal: 9,
+    gap: 6,
+    marginTop: 12,
     paddingVertical: 4,
-    borderRadius: radius.pill,
   },
-  bankSubs: {
+  lookText: {
     fontFamily: fontFamily.bold,
-    fontSize: 11,
+    fontSize: 12,
   },
   dots: {
     flexDirection: 'row',
