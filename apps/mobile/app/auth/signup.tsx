@@ -83,9 +83,13 @@ export default function SignupScreen() {
   };
 
   return (
+    // See login.tsx's identical comment: Android already resizes for the
+    // keyboard (Expo default), so also applying behavior="height" here
+    // double-shrinks the layout and can render an input's text outside its
+    // own box while typing.
     <KeyboardAvoidingView
       style={{ flex: 1, backgroundColor: colors.background }}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       <ScrollView
         contentContainerStyle={{ flexGrow: 1, paddingHorizontal: 24, paddingTop: insets.top + 20, paddingBottom: insets.bottom + 20 }}

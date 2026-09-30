@@ -56,9 +56,17 @@ export default function LoginScreen() {
   };
 
   return (
+    // Android already resizes the window for the keyboard (Expo's default
+    // android.softwareKeyboardLayoutMode is "resize" — app.json sets nothing
+    // else). Also applying KeyboardAvoidingView's behavior="height" on top of
+    // that double-shrinks the layout: RN measures the keyboard against the
+    // window's ORIGINAL size and re-applies a height adjustment the OS
+    // already made, so inputs end up positioned wrong and can render outside
+    // their own box while the keyboard is up — undefined on Android lets the
+    // native resize do the whole job, matching iOS's own single adjustment.
     <KeyboardAvoidingView
       style={{ flex: 1, backgroundColor: colors.background }}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       <View style={{ flex: 1, paddingHorizontal: 24, justifyContent: 'space-between', paddingTop: insets.top + 40, paddingBottom: insets.bottom + 20 }}>
         {/* Logo */}
