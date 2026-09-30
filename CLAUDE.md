@@ -135,6 +135,45 @@ style problem.
   hand-copied implementation. Edit the physics there; `VirtualCard.tsx` and
   `PhysicalCardReview.tsx` should only ever supply front/back content to it.
 
+## Spending Power / Pay in 4 underwriting (`apps/api/src/routes/cards.ts`)
+
+- **There is no manual-review state.** There used to be one — any trust score
+  under 20, or a bank Plaid couldn't read signals from yet, produced
+  `status: 'manual_review'`, and nothing anywhere in this codebase ever read
+  that status back out: no admin tool, no queue, no cron. It was a permanent
+  dead end presented to the user as "we'll get back to you." `limitForScore`
+  now has no zero band — the floor is a real $25, not a decline, matching how
+  Klarna/Affirm/Cash App Borrow/Zip actually underwrite (automatic, generous
+  at the start, nothing held for a human). Do not reintroduce a review state
+  without also building something that resolves it.
+- **The model is "generous start, tighten on failure."** The generous half is
+  live (`limitForScore`'s real floor). The tighten-on-failure half is
+  documented in `scoreTrust`'s comment but NOT implemented — there is no real
+  Pay in 4 installment-charging engine in this codebase yet (`payin4.tsx`
+  itself says "not yet available"), so there is no real missed-payment event
+  to penalize. When that engine exists, wire its failure signal into
+  `scoreTrust` as a heavy negative term, re-scored on every assessment the
+  same way overdrafts already are — do not bolt it on as a separate override
+  elsewhere.
+- **`app/screens/SpendingPower.tsx` is the ONLY entry point** for checking or
+  starting a Pay in 4 assessment — Home's Spending Power tile, the Pay in 4
+  tab's CTA, and any future "early access" prompt all push here. It used to
+  route through Card Studio (`PhysicalCardApproval.tsx`) because the
+  assessment lived behind "reached ONLY after the design is saved" — but
+  `POST /cards/access-list` always accepted `designId: null`; the coupling
+  was a client routing choice, not a backend requirement. Designing a
+  physical card and checking a spending limit are two different things for
+  two different reasons. Card Studio's own qualify-after-design step
+  (`PhysicalCardApproval.tsx`, reached from `PhysicalCard.tsx`'s "Continue")
+  is unchanged and still exists for people actually designing a card.
+- **`FundingInstrument.purpose`** is a UI grouping label only, set to
+  `'pay_in_4'` when a bank is linked from `SpendingPower.tsx` specifically
+  (threaded through `usePlaid().openPlaidLink`'s third argument →
+  `POST /plaid/exchange-public-token`). Settings' linked-banks list
+  (`app/settings.tsx`) groups by it into "Cards" vs "Pay in 4" sections.
+  Every linked account is read identically everywhere else — sync, trust
+  signals, subscriptions — `purpose` never gates or filters real data.
+
 ## Wallet card art (`apps/mobile/utils/cardArt/`)
 
 - **No data source returns what a linked card physically looks like.** Plaid,

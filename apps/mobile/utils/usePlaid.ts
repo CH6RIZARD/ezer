@@ -45,7 +45,10 @@ export function usePlaid() {
   const openPlaidLink = useCallback(
     async (
       onSuccess?: (result: PlaidLinkSuccess) => void,
-      onExit?: (result: PlaidLinkExit) => void
+      onExit?: (result: PlaidLinkExit) => void,
+      /** UI grouping label only, e.g. 'pay_in_4' — see FundingInstrument.purpose.
+       *  Omit for a general-purpose link. */
+      purpose?: string
     ) => {
       setState(prev => ({ ...prev, isLoading: true, error: null }));
 
@@ -96,6 +99,7 @@ export function usePlaid() {
                 institutionId: success.metadata?.institution?.id || '',
                 institutionName: success.metadata?.institution?.name || '',
                 accounts,
+                ...(purpose ? { purpose } : {}),
               });
 
               setState(prev => ({

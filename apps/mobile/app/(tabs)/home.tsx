@@ -40,7 +40,6 @@ import { useSavingsGoals } from '../../utils/SavingsGoalsContext';
 import { projectMonthEvents, groupEventsByDay } from '../../utils/calendarEvents';
 import { useConnectBank } from '../../utils/useConnectBank';
 import { useCardFlowStatus } from '../../utils/useCardFlowStatus';
-import { loadCardDesign } from '../../utils/cardDesignStore';
 
 const WEEKDAYS = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
 /** Handoff: spending power is a fixed $400 in the prototype. */
@@ -223,33 +222,20 @@ export default function HomeScreen() {
     pulse: boolean;
     onPress: () => void;
   }>(() => {
-    const linked = instruments.length > 0 || subscriptions.length > 0;
+    // This tile always opens app/screens/SpendingPower.tsx now, never Card
+    // Studio — checking a spending limit and designing a physical card are
+    // two different things a user wants to do for two different reasons.
+    // That screen reads/refreshes the real outcome itself (local storage,
+    // then the server — see useCardFlowStatus.ts's own fallback), so this
+    // tile only needs to reflect whatever `cardAccess` already resolved to.
+    const goToSpendingPower = () => router.push('/screens/SpendingPower');
 
-    // An em dash, not "Link a bank".
-    //
-    // The rotating tile to its immediate left ALREADY says "Connect your bank"
-    // — two adjacent cells asking for the same action read as a broken layout,
-    // and it costs the grid its shape: three stat tiles and one stray CTA.
-    // "—" keeps the tile in its stat form and still says, truthfully, that
-    // there is no figure yet. Tapping it still starts the right flow.
-    if (!linked) {
-      return {
-        value: '—',
-        label: 'Spending Power',
-        icon: 'cash-outline' as const,
-        isAmount: true,
-        // No pulse: nothing here is unlocked, and the left tile is already
-        // pulsing for the same action.
-        pulse: false,
-        onPress: () => void connectBank.connect(),
-      };
-    }
-
-    // The assessment already ran (POST /cards/access-list) and produced a
-    // real, terminal outcome. Before this branch existed, "assessed, no
-    // limit for now" and "never assessed at all" rendered as the exact same
-    // pulsing "—" — indistinguishable, which read as the tile being
-    // permanently stuck rather than as an actual answer having been given.
+    // Automated underwriting never leaves a real outcome at "review" or "no
+    // limit" — apps/api/src/routes/cards.ts's `limitForScore` has no zero
+    // band, so `approved` with a real limitCents is the only terminal state
+    // POST /cards/access-list can produce now. 'review' is only read here
+    // for an outcome a PRE-automation assessment already wrote to a device;
+    // it gets a real re-assessment on next visit to the shared screen.
     if (cardAccess?.status === 'approved' && cardAccess.limitCents) {
       return {
         value: formatCents(cardAccess.limitCents),
@@ -257,49 +243,23 @@ export default function HomeScreen() {
         icon: 'cash-outline' as const,
         isAmount: true,
         pulse: false,
-        onPress: () => router.push('/screens/PhysicalCardReview'),
-      };
-    }
-    if (cardAccess?.status === 'review') {
-      return {
-        value: 'Under review',
-        label: 'Spending Power',
-        icon: 'time-outline' as const,
-        isAmount: false,
-        pulse: false,
-        onPress: () => router.push('/screens/PhysicalCardReview'),
+        onPress: goToSpendingPower,
       };
     }
 
-    // Linked but not yet assessed (or on the waitlist, which never ran the
-    // assessment). Still shown as a value — the limit is simply not known
-    // until the Pay-in-4 trust assessment runs.
+    // Not yet assessed (never connected, or only joined the waitlist). An em
+    // dash, not "Link a bank" — the rotating tile to its immediate left
+    // already says "Connect your bank," so this tile stays in its stat form
+    // and still says, truthfully, that there is no figure yet.
     return {
       value: '—',
       label: 'Spending Power',
       icon: 'cash-outline' as const,
       isAmount: true,
       pulse: true,
-      // PhysicalCardApproval.tsx's saveCardAccessOutcome() is a silent no-op
-      // when there is no CardDesign saved yet — access is stored attached to
-      // the design record, and there is only one record. Jumping straight to
-      // Approval from here (as this used to do) meant the assessment ran,
-      // POST /cards/access-list succeeded server-side, but the result never
-      // persisted on-device: Home kept showing this same "not yet assessed"
-      // tile forever, no matter how many times someone completed the flow,
-      // because nothing was ever there for the outcome to attach to. Route
-      // through the designer first when there's no design yet — same as the
-      // "Get your physical card" tile already does — so approval always has
-      // a record to write onto. When a design already exists, go straight to
-      // Approval as before.
-      onPress: () => {
-        void (async () => {
-          const design = await loadCardDesign();
-          router.push(design ? '/screens/PhysicalCardApproval' : '/screens/PhysicalCard');
-        })();
-      },
+      onPress: goToSpendingPower,
     };
-  }, [instruments.length, subscriptions.length, connectBank, cardAccess]);
+  }, [cardAccess]);
 
   /** Top three subscriptions by cost, for the "Top ticket" rotation. */
   const topTicket = useMemo(() => {

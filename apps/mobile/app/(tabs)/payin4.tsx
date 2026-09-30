@@ -9,6 +9,7 @@
 
 import React, { useMemo, useState } from 'react';
 import { View, Text, ScrollView, StyleSheet } from 'react-native';
+import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -70,7 +71,6 @@ function useInstallments() {
 export default function PayInFourScreen() {
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
-  const [joined, setJoined] = useState(false);
   // While the card is being turned the page must not scroll — otherwise a
   // vertical drag fights the rotation and the screen slides away underneath it.
   const [cardDragging, setCardDragging] = useState(false);
@@ -190,26 +190,24 @@ export default function PayInFourScreen() {
             at a time, until it closes at the fourth.
           </Body>
 
-          {/* --- join CTA ---------------------------------------------------- */}
-          {joined ? (
-            <View style={[styles.success, { backgroundColor: colors.successBg }]}>
-              <Ionicons name="checkmark-circle" size={18} color={colors.success} />
-              <Text style={[styles.successText, { color: colors.success }]}>
-                You're on the early-access list ✓
-              </Text>
-            </View>
-          ) : (
-            <PressScale onPress={() => setJoined(true)} style={{ marginTop: 20 }}>
-              <LinearGradient
-                colors={gradients.ctaPrimary as unknown as readonly [string, string, ...string[]]}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={styles.cta}
-              >
-                <Text style={styles.ctaText}>Join the early-access list</Text>
-              </LinearGradient>
-            </PressScale>
-          )}
+          {/* --- join CTA -----------------------------------------------------
+              This used to be `setJoined(true)` — pure local component state,
+              no request ever sent. Tapping it "joined" nobody: nothing was
+              persisted, nothing was recorded server-side, and reopening the
+              tab lost it entirely. It now opens the same shared Spending
+              Power screen Home's tile does, which makes the real
+              POST /cards/access-list call (mode 'waitlist' or 'plaid') and
+              shows whatever real outcome already exists. */}
+          <PressScale onPress={() => router.push('/screens/SpendingPower')} style={{ marginTop: 20 }}>
+            <LinearGradient
+              colors={gradients.ctaPrimary as unknown as readonly [string, string, ...string[]]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.cta}
+            >
+              <Text style={styles.ctaText}>Check your spending power</Text>
+            </LinearGradient>
+          </PressScale>
 
           <View style={styles.shieldRow}>
             <Ionicons name="shield-checkmark-outline" size={15} color={colors.mut} />

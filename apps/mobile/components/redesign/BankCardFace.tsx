@@ -222,20 +222,6 @@ export default function BankCardFace({
           end={{ x: 1, y: 1 }}
           style={styles.chip}
         />
-        {/* Contactless mark, as on any tap-to-pay card. */}
-        <Svg width={18} height={22} viewBox="0 0 18 22">
-          {[5, 9, 13].map((r, i) => (
-            <Path
-              key={r}
-              d={`M${3 + i * 0.4} ${11 - r} A ${r} ${r} 0 0 1 ${3 + i * 0.4} ${11 + r}`}
-              stroke={art.fg}
-              strokeWidth={1.6}
-              strokeLinecap="round"
-              fill="none"
-              opacity={0.7}
-            />
-          ))}
-        </Svg>
       </View>
 
       <Text style={[styles.pan, { color: art.fg }]}>{'•••• •••• •••• '}{last4}</Text>

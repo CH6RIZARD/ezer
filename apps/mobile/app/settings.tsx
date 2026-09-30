@@ -160,6 +160,15 @@ export default function SettingsScreen() {
             Amex Gold and an "Unknown Card •****" — none of which the user had
             linked, and the last of which is not a card at all. The cards listed
             here must be the cards the charges are actually billed to.
+
+            Grouped by `purpose` (FundingInstrument.purpose) into Cards vs Pay
+            in 4 rather than one flat list. A bank connected from the Spending
+            Power screen (app/screens/SpendingPower.tsx, tagged 'pay_in_4'
+            when the link is made) is there for ONE reason — running the Pay
+            in 4 trust assessment — and showing it mixed in with banks that
+            back subscription tracking made it look like every linked account
+            did the same thing. Untagged instruments (the common case: linked
+            from Wallet/onboarding, no specific purpose) fall under "Cards".
           */}
           <SectionHeader style={styles.section}>Linked banks</SectionHeader>
           {instruments.length === 0 ? (
@@ -169,33 +178,48 @@ export default function SettingsScreen() {
               </Body>
             </Surface>
           ) : (
-            <Surface style={styles.block}>
-              {instruments.map((inst, i) => (
-                <View key={inst.id}>
-                  {i > 0 && <View style={[styles.divider, { backgroundColor: colors.line }]} />}
-                  <View style={styles.bankRow}>
-                    <Ionicons name="card-outline" size={19} color={colors.mut} />
-                    <View style={{ flex: 1 }}>
-                      <Text style={[styles.kvValue, { color: colors.ink }]} numberOfLines={1}>
-                        {inst.displayName || 'Account'}
-                      </Text>
-                      <Body style={{ marginTop: 2 }}>
-                        {/* Only render the parts Plaid actually returned — a
-                            missing brand/mask produced "Unknown •****". */}
-                        {[inst.brand, inst.last4 ? `•${inst.last4}` : null]
-                          .filter(Boolean)
-                          .join(' ') || 'Linked account'}
-                      </Body>
-                    </View>
-                    {inst.isDefault && (
-                      <View style={[styles.defaultChip, { backgroundColor: colors.accSoft }]}>
-                        <Text style={[typeScale.labelSm, { color: colors.accInk }]}>DEFAULT</Text>
-                      </View>
-                    )}
+            <>
+              {(
+                [
+                  { key: 'cards', title: 'Cards', rows: instruments.filter(i => i.purpose !== 'pay_in_4') },
+                  { key: 'pay_in_4', title: 'Pay in 4', rows: instruments.filter(i => i.purpose === 'pay_in_4') },
+                ] as const
+              ).map(group =>
+                group.rows.length === 0 ? null : (
+                  <View key={group.key} style={{ marginTop: 10 }}>
+                    <Label style={{ marginBottom: 6 }}>{group.title}</Label>
+                    <Surface style={styles.block}>
+                      {group.rows.map((inst, i) => (
+                        <View key={inst.id}>
+                          {i > 0 && <View style={[styles.divider, { backgroundColor: colors.line }]} />}
+                          <View style={styles.bankRow}>
+                            <Ionicons name="card-outline" size={19} color={colors.mut} />
+                            <View style={{ flex: 1 }}>
+                              <Text style={[styles.kvValue, { color: colors.ink }]} numberOfLines={1}>
+                                {inst.displayName || 'Account'}
+                              </Text>
+                              <Body style={{ marginTop: 2 }}>
+                                {/* Only render the parts Plaid actually returned
+                                    — a missing brand/mask produced "Unknown
+                                    •****". */}
+                                {[inst.brand, inst.last4 ? `•${inst.last4}` : null]
+                                  .filter(Boolean)
+                                  .join(' ') || 'Linked account'}
+                              </Body>
+                            </View>
+                            {inst.isDefault && (
+                              <View style={[styles.defaultChip, { backgroundColor: colors.accSoft }]}>
+                                <Text style={[typeScale.labelSm, { color: colors.accInk }]}>DEFAULT</Text>
+                              </View>
+                            )}
+                          </View>
+                        </View>
+                      ))}
+                    </Surface>
                   </View>
-                </View>
-              ))}
-            </Surface>
+                )
+              )}
+            </>
           )}
 
           {/* --- add a bank ----------------------------------------------------- */}

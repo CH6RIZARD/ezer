@@ -169,6 +169,15 @@ model FundingInstrument {
   // whichever instrument happened to be first in the array. See the note in
   // syncTransactionsForItem (apps/api/src/routes/plaid.ts).
   plaidAccountId  String?
+  // Which product this bank link was made FOR, when the user linked it from
+  // a specific flow rather than general onboarding. Null means "general" —
+  // it can back subscriptions, Wallet, anything. 'pay_in_4' means the user
+  // connected this account specifically from the Spending Power screen, so
+  // Settings' linked-banks list can show it under Pay in 4 rather than mixed
+  // in with Card subscription-tracking banks. Purely a UI grouping label —
+  // every linked account is read the same way everywhere else (sync,
+  // trust-score signals, subscriptions).
+  purpose         String?
   isDefault       Boolean               @default(false)
   createdAt       DateTime              @default(now())
   updatedAt       DateTime              @updatedAt

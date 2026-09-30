@@ -46,7 +46,6 @@ import {
 } from '../../components/redesign/Primitives';
 import MerchantMark from '../../components/redesign/MerchantMark';
 import BankCardFace from '../../components/redesign/BankCardFace';
-import CardArtPicker from '../../components/redesign/CardArtPicker';
 import { brandSkin } from '../../utils/cardArt/color';
 import { resolveCardArt } from '../../utils/cardArt/resolver';
 import { useCardArtPrefs } from '../../utils/cardArt/useCardArtPrefs';
@@ -239,10 +238,11 @@ export default function WalletScreen() {
 
   const active = cards[Math.min(index, cards.length - 1)];
 
-  // The user's own card looks (a photo, a picked design) — on this device only.
+  // Any card look the user already picked before "Match my card" was removed
+  // (a photo, a chosen design) still renders — resolveCardArt() reads these
+  // same prefs below. There is just no UI here to set a new one anymore.
   const cardIds = useMemo(() => cards.map(c => c.id), [cards]);
-  const { prefs: artPrefs, setDesign, addPhoto, removePhoto } = useCardArtPrefs(cardIds);
-  const [artPickerOpen, setArtPickerOpen] = useState(false);
+  const { prefs: artPrefs } = useCardArtPrefs(cardIds);
 
   /** The count shown on a card; only the focused card has a fetched count. */
   const subsLabelFor = (cardId: string) => {
@@ -469,18 +469,6 @@ export default function WalletScreen() {
             })}
           </View>
 
-          {active ? (
-            <Pressable
-              onPress={() => setArtPickerOpen(true)}
-              hitSlop={8}
-              accessibilityRole="button"
-              accessibilityLabel="Change how this card looks"
-              style={styles.lookPill}
-            >
-              <Ionicons name="color-palette-outline" size={14} color={colors.gold} />
-              <Text style={[styles.lookText, { color: colors.gold }]}>Match my card</Text>
-            </Pressable>
-          ) : null}
 
           <View style={{ paddingHorizontal: layout.screenX }}>
             {/* --- range chips ----------------------------------------------- */}
@@ -601,27 +589,6 @@ export default function WalletScreen() {
           </View>
         </ScreenBody>
       </ScrollView>
-
-      {active ? (
-        <CardArtPicker
-          visible={artPickerOpen}
-          onClose={() => setArtPickerOpen(false)}
-          input={active.input}
-          prefs={artPrefs[active.id] ?? {}}
-          fallback={active.fallback}
-          face={{
-            bankName: active.name,
-            accountLabel: active.accountLabel,
-            network: active.network,
-            last4: active.last4,
-            holderName: user?.name || 'EZER MEMBER',
-            subsLabel: subsLabelFor(active.id),
-          }}
-          onSelectDesign={designId => setDesign(active.id, designId)}
-          onAddPhoto={source => addPhoto(active.id, source)}
-          onRemovePhoto={() => removePhoto(active.id)}
-        />
-      ) : null}
     </View>
   );
 }
@@ -630,18 +597,6 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-  },
-  lookPill: {
-    alignSelf: 'center',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginTop: 12,
-    paddingVertical: 4,
-  },
-  lookText: {
-    fontFamily: fontFamily.bold,
-    fontSize: 12,
   },
   dots: {
     flexDirection: 'row',

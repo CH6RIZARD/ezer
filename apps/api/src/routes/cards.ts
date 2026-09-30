@@ -33,8 +33,18 @@ type AccessMode = 'plaid' | 'waitlist';
 /**
  * Status vocabulary the client renders against. Kept as strings (not booleans)
  * so a future "declined" or "kyc_required" state is an additive change.
+ *
+ * There is deliberately no "manual_review" here. There used to be one — any
+ * score under 20, or a bank Plaid couldn't read signals from yet, parked the
+ * applicant in a status nothing in this codebase ever reads back out of:
+ * no admin tool, no queue, no cron, nothing that ever moves a row out of
+ * manual_review. It was a permanent dead end presented to the user as "we'll
+ * get back to you." Real BNPL underwriting (Klarna, Affirm, Cash App
+ * Borrow/Afterpay, Zip) does not hold thin-file applicants for human review
+ * either — it approves automatically for a small starting amount and lets
+ * usage earn a bigger one, which is what `limitForScore` below does now.
  */
-type AccessStatus = 'approved_pending_issuance' | 'manual_review' | 'waitlist';
+type AccessStatus = 'approved_pending_issuance' | 'waitlist';
 
 
 /**
@@ -113,15 +123,31 @@ export function scoreTrust(signals: TrustSignals): number {
 }
 
 /**
- * Map a trust score to a starting limit, in CENTS.
+ * Map a trust score to a starting limit, in CENTS. Every score produces a
+ * real, usable limit — there is no zero band. This is the "generous start"
+ * half of the model: Cash App's own reported first-time Borrow limits run
+ * $50–$400 with a ~$150 average for thin-file users, and neither Klarna nor
+ * Affirm hard-decline a first transaction purely on a thin file — they
+ * approve small and let it grow. $25 is EZER's equivalent floor: real money,
+ * genuinely usable, deliberately the smallest band so a bad-signal file
+ * (heavy overdrafts, no tenure) starts furthest from the top.
  *
  * Banded rather than continuous on purpose: a band is explainable to the user
  * ("you're in our $1,000 tier") and to a regulator, and it stops a $5 change in
  * balance from moving the number they were shown yesterday. Bands are also
  * where a real issuer's approved limit grid gets dropped in verbatim.
  *
- * A score under 20 returns 0 — that is NOT a decline, it routes to manual
- * review, because thin-file users legitimately score low here.
+ * The "restricted tightly" half of the model — the other thing every one of
+ * these apps does — is a missed-PAYMENT penalty, not a missed-deposit one:
+ * Cash App explicitly cuts or suspends Borrow access after a late/missed
+ * repayment, independent of income or balance signals. That side of this
+ * function is not implemented yet because there is nothing to feed it — Pay
+ * in 4 has no real installment-charging engine in this codebase yet (see
+ * app/(tabs)/payin4.tsx's own "not yet available" disclosure), so there is no
+ * real "missed a payment" event to score. When that engine exists, its
+ * failure signal belongs in `scoreTrust` as a heavy negative term (bigger
+ * than the overdraft penalty below), re-scored on every assessment the same
+ * way overdrafts already are — NOT bolted on here as a separate override.
  */
 export function limitForScore(score: number): number {
   if (score >= 80) return 150_000; // $1,500
@@ -129,7 +155,7 @@ export function limitForScore(score: number): number {
   if (score >= 50) return 50_000; //    $500
   if (score >= 35) return 25_000; //    $250
   if (score >= 20) return 10_000; //    $100
-  return 0; //                          → manual review
+  return 2_500; //                      $25 — the floor, not a decline
 }
 
 // -----------------------------------------------------------------------------
@@ -335,21 +361,19 @@ export async function cardRoutes(server: FastifyInstance) {
     // mode === 'plaid'. Signals are derived server-side from the applicant's own
     // linked accounts; anything the client sent is ignored. A user must not be
     // able to state the income their credit line is computed from.
+    //
+    // No manual review branch: whether or not real signals came back — a
+    // brand new account with no transaction history yet reads the same as
+    // "no signals" — `scoreTrust` on empty/zeroed signals lands under 20,
+    // and `limitForScore` gives that its real $25 floor. Fully automated,
+    // every time, the same way Klarna re-underwrites per transaction rather
+    // than sending a thin file to a queue.
     const derived = await deriveTrustSignals(userId);
-
-    // No linked bank, or Plaid unreachable: route to review rather than score
-    // the demo numbers. Approving someone on invented income is worse than
-    // making them wait.
-    if (!derived) {
-      await prisma.cardAccessList.create({
-        data: { userId, designId: designId || null, mode: 'plaid', status: 'manual_review' },
-      });
-      return { success: true, data: { status: 'manual_review' as AccessStatus } };
-    }
-
-    const score = scoreTrust(derived);
+    const score = derived
+      ? scoreTrust(derived)
+      : scoreTrust({ avgMonthlyInflowCents: 0, currentBalanceCents: 0, accountAgeMonths: 0, overdraftsLast90d: 0 });
     const limitCents = limitForScore(score);
-    const status: AccessStatus = limitCents > 0 ? 'approved_pending_issuance' : 'manual_review';
+    const status: AccessStatus = 'approved_pending_issuance';
 
     await prisma.cardAccessList.create({
       data: { userId, designId: designId || null, mode: 'plaid', status, limitCents, trustScore: score },
@@ -357,13 +381,7 @@ export async function cardRoutes(server: FastifyInstance) {
 
     return {
       success: true,
-      data: {
-        status,
-        // Omitted entirely rather than sent as 0, so the client never renders
-        // "$0.00" as if it were an approved line.
-        ...(limitCents > 0 ? { limitCents } : {}),
-        trustScore: score,
-      },
+      data: { status, limitCents, trustScore: score },
     };
   });
 

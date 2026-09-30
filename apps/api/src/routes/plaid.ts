@@ -108,11 +108,21 @@ export async function plaidRoutes(server: FastifyInstance) {
   });
 
   // POST /plaid/exchange-public-token
-  server.post<{ Body: { publicToken: string; institutionId: string; institutionName: string; accounts: any[] } }>(
+  server.post<{
+    Body: {
+      publicToken: string;
+      institutionId: string;
+      institutionName: string;
+      accounts: any[];
+      /** UI grouping label only — see the schema comment on
+       *  FundingInstrument.purpose. Optional; general-purpose links omit it. */
+      purpose?: string;
+    };
+  }>(
     '/exchange-public-token',
     async (request, reply) => {
       const userId = (request as any).userId;
-      const { publicToken, institutionId, institutionName, accounts } = request.body;
+      const { publicToken, institutionId, institutionName, accounts, purpose } = request.body;
 
       if (!publicToken) return reply.status(400).send({ success: false, error: 'publicToken required' });
 
@@ -250,12 +260,16 @@ export async function plaidRoutes(server: FastifyInstance) {
               // sit there. See the schema comment for why that guess never
               // actually worked.
               plaidAccountId: account.id,
+              purpose: purpose || null,
             },
           });
-        } else if (issuerColorHint || networkArt || institutionName || account.id) {
+        } else if (issuerColorHint || networkArt || institutionName || account.id || purpose) {
           // Re-linking an account that predates this feature: backfill the
           // branding onto the existing row instead of leaving it stuck with
-          // the generic skin forever.
+          // the generic skin forever. `purpose` backfills the same way — if
+          // someone re-links an already-known account specifically from the
+          // Spending Power screen, it's reasonable to tag it now even though
+          // it was general-purpose before; never clears an existing tag.
           await prisma.fundingInstrument.update({
             where: { id: existing.id },
             data: {
@@ -263,6 +277,7 @@ export async function plaidRoutes(server: FastifyInstance) {
               networkArt: existing.networkArt ?? networkArt,
               institutionName: existing.institutionName ?? institutionName,
               plaidAccountId: existing.plaidAccountId ?? account.id,
+              purpose: existing.purpose ?? (purpose || null),
             },
           });
         }

@@ -46,6 +46,10 @@ export interface FundingInstrument {
   /** The BANK's name ("PNC Bank"), distinct from displayName (the account's
    *  own nickname, e.g. "Spend") — a real card shows the bank's name. */
   institutionName?: string;
+  /** UI grouping label only — 'pay_in_4' when linked specifically from the
+   *  Spending Power screen, undefined for a general-purpose link. Settings
+   *  uses this to group the linked-banks list. */
+  purpose?: string;
   isDefault: boolean;
 }
 
