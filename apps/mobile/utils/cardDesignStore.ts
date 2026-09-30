@@ -376,3 +376,28 @@ export async function saveSpendingPowerOutcome(access: CardAccessOutcome): Promi
     // from the server instead of reading the local cache.
   }
 }
+
+/**
+ * Whether SpendingPowerSheet.tsx's 2a·3-equivalent "reveal" phase (the big
+ * serif $ number, shown once) has already played for this device. A SEPARATE
+ * flag from the outcome itself — the reveal is a one-time animation beat, not
+ * underwriting state, and re-checking a limit that hasn't changed must not
+ * replay it.
+ */
+const REVEAL_SEEN_KEY = '@ezer_spending_power_reveal_seen';
+
+export async function getSpendingPowerRevealSeen(): Promise<boolean> {
+  try {
+    return (await AsyncStorage.getItem(REVEAL_SEEN_KEY)) === '1';
+  } catch {
+    return false;
+  }
+}
+
+export async function markSpendingPowerRevealSeen(): Promise<void> {
+  try {
+    await AsyncStorage.setItem(REVEAL_SEEN_KEY, '1');
+  } catch {
+    // Worst case the reveal plays again next open — cosmetic, not data loss.
+  }
+}

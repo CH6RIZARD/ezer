@@ -194,18 +194,38 @@ style problem.
   "Migrations do not run on deploy" above — this app has never had one); an
   external scheduler must call this route, the same way migrations are
   applied by hand today.
-- **`app/screens/SpendingPower.tsx` is the ONLY entry point** for checking or
-  starting a Pay in 4 assessment — Home's Spending Power tile, the Pay in 4
-  tab's CTA, and any future "early access" prompt all push here. It used to
-  route through Card Studio (`PhysicalCardApproval.tsx`) because the
-  assessment lived behind "reached ONLY after the design is saved" — but
-  `POST /cards/access-list` always accepted `designId: null`; the coupling
-  was a client routing choice, not a backend requirement. Designing a
-  physical card and checking a spending limit are two different things for
-  two different reasons. Card Studio's own qualify-after-design step
-  (`PhysicalCardApproval.tsx`, reached from `PhysicalCard.tsx`'s "Continue")
-  is unchanged and still exists for people actually designing a card.
-- **`SpendingPower.tsx` caches its outcome under its OWN AsyncStorage key**
+- **`components/redesign/SpendingPowerSheet.tsx` is the ONLY entry point**
+  for checking or joining Pay in 4 early access — a bottom sheet over the Pay
+  in 4 tab, not a standalone screen. `app/screens/SpendingPower.tsx` (this
+  session's earlier, full-screen version) is DELETED; do not recreate it.
+  Home's Spending Power tile opens it via
+  `router.push({ pathname: '/(tabs)/payin4', params: { sheet: 'spending' } })`
+  — `payin4.tsx` watches `params.sheet === 'spending'` (guarded by a ref so
+  it only fires once per param value) and opens the sheet itself, rather than
+  the tile pushing a route that doesn't exist. The Pay in 4 tab's own CTA
+  opens the same sheet directly (`openSheet(viaJoin)`) without any navigation
+  at all. It used to route through Card Studio (`PhysicalCardApproval.tsx`),
+  then through a dedicated full screen — see `PATCH-NOTES-early-access-sheet.md`
+  if it resurfaces; `POST /cards/access-list` always accepted `designId: null`,
+  so neither coupling was ever a backend requirement. Card Studio's own
+  qualify-after-design step (`PhysicalCardApproval.tsx`, reached from
+  `PhysicalCard.tsx`'s "Continue") is unchanged and still exists for people
+  actually designing a card.
+- **The sheet has four phases — `ask` → `assessing` → `reveal` → `status`**
+  — and `reveal` (the large serif $ number) is tracked SEPARATELY from the
+  underwriting outcome, via `getSpendingPowerRevealSeen`/
+  `markSpendingPowerRevealSeen` in `utils/cardDesignStore.ts` (its own
+  AsyncStorage key, `@ezer_spending_power_reveal_seen`). It is a one-time
+  animation beat, not underwriting state — re-checking a limit that hasn't
+  changed must go straight to `status`, not replay the reveal. `ask` itself
+  renders two ways from one phase: `justJoined` (true only when this exact
+  sheet-open just POSTed the waitlist join) adds the checkmark/"you're on the
+  list" preamble; `joined` (true whenever ANY outcome already exists) does
+  not by itself change `ask`'s copy — it only decides whether a fresh open
+  lands on `ask` at all versus `status`. `'suspended'` (an uncured missed Pay
+  in 4 payment, see the installment engine below) isn't in the original mock
+  and is folded into `status` with its own copy rather than a fifth phase.
+- **The sheet caches its outcome under its OWN AsyncStorage key**
   (`getSpendingPowerOutcome`/`saveSpendingPowerOutcome` in
   `utils/cardDesignStore.ts`), separate from Card Studio's design-record
   `.access` field. Reusing the design record would mean a Spending Power
@@ -213,14 +233,14 @@ style problem.
   `saveCardAccessOutcome` no-ops without a record) or forces inventing an
   empty placeholder design, which `PhysicalCardReview.tsx` would then render
   as "your design" — the exact regression `mirrorServerAccessOutcome`'s own
-  comment exists to prevent. `SpendingPower.tsx` also best-effort mirrors onto
-  the design record (`mirrorServerAccessOutcome`) so Home's
-  "Get your physical card" tile (`useCardFlowStatus`, which still reads only
-  the design record) doesn't show a stale outcome for someone who has a saved
-  design AND just re-checked Spending Power.
+  comment exists to prevent. The sheet also best-effort mirrors onto the
+  design record (`mirrorServerAccessOutcome`) so Home's "Get your physical
+  card" tile (`useCardFlowStatus`, which still reads only the design record)
+  doesn't show a stale outcome for someone who has a saved design AND just
+  re-checked Spending Power.
 - **`FundingInstrument.purpose` and `FundingSource.purpose`** are UI/engine
   grouping labels only, set to `'pay_in_4'` when a bank is linked from
-  `SpendingPower.tsx` specifically (threaded through
+  `SpendingPowerSheet.tsx` specifically (threaded through
   `usePlaid().openPlaidLink`'s third argument →
   `POST /plaid/exchange-public-token`). Settings' linked-banks list
   (`app/settings.tsx`) groups `FundingInstrument` by it into "Cards" vs

@@ -222,13 +222,16 @@ export default function HomeScreen() {
     pulse: boolean;
     onPress: () => void;
   }>(() => {
-    // This tile always opens app/screens/SpendingPower.tsx now, never Card
-    // Studio — checking a spending limit and designing a physical card are
-    // two different things a user wants to do for two different reasons.
-    // That screen reads/refreshes the real outcome itself (local storage,
-    // then the server — see useCardFlowStatus.ts's own fallback), so this
-    // tile only needs to reflect whatever `cardAccess` already resolved to.
-    const goToSpendingPower = () => router.push('/screens/SpendingPower');
+    // This tile opens the Pay in 4 tab with SpendingPowerSheet already up
+    // (components/redesign/SpendingPowerSheet.tsx), not a standalone screen
+    // and never Card Studio — checking a spending limit and designing a
+    // physical card are two different things a user wants to do for two
+    // different reasons. The sheet reads/refreshes the real outcome itself
+    // (local storage, then the server — see useCardFlowStatus.ts's own
+    // fallback), so this tile only needs to reflect whatever `cardAccess`
+    // already resolved to.
+    const goToSpendingPower = () =>
+      router.push({ pathname: '/(tabs)/payin4', params: { sheet: 'spending' } });
 
     // Automated underwriting never leaves a real outcome at "review" or "no
     // limit" — apps/api/src/routes/cards.ts's `limitForScore` has no zero

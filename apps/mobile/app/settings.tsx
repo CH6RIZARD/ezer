@@ -163,8 +163,8 @@ export default function SettingsScreen() {
 
             Grouped by `purpose` (FundingInstrument.purpose) into Cards vs Pay
             in 4 rather than one flat list. A bank connected from the Spending
-            Power screen (app/screens/SpendingPower.tsx, tagged 'pay_in_4'
-            when the link is made) is there for ONE reason — running the Pay
+            Power sheet (components/redesign/SpendingPowerSheet.tsx, tagged
+            'pay_in_4' when the link is made) is there for ONE reason — running the Pay
             in 4 trust assessment — and showing it mixed in with banks that
             back subscription tracking made it look like every linked account
             did the same thing. Untagged instruments (the common case: linked

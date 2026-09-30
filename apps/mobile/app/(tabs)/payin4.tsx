@@ -7,9 +7,9 @@
 // gradient join CTA -> success state, shield reassurance, legal fine print.
 // =============================================================================
 
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, ScrollView, StyleSheet } from 'react-native';
-import { router } from 'expo-router';
+import { useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -28,6 +28,8 @@ import {
 } from '../../components/redesign/Primitives';
 import VirtualCard from '../../components/redesign/VirtualCard';
 import ProgressRing from '../../components/redesign/ProgressRing';
+import SpendingPowerSheet from '../../components/redesign/SpendingPowerSheet';
+import { getSpendingPowerOutcome } from '../../utils/cardDesignStore';
 import { formatCents } from '../../utils/calculations';
 
 /** Illustrative basket used to show what one installment actually costs. */
@@ -75,6 +77,46 @@ export default function PayInFourScreen() {
   // vertical drag fights the rotation and the screen slides away underneath it.
   const [cardDragging, setCardDragging] = useState(false);
   const installments = useInstallments();
+
+  // --- Spending Power sheet --------------------------------------------------
+  // Per PATCH-NOTES-early-access-sheet.md: both the Home tile and this tab's
+  // own CTA open the SAME sheet over this tab, rather than navigating to a
+  // separate screen. `joined` tracks whether an outcome already exists so the
+  // CTA's label can switch to "Your status" — checked on mount/focus, not just
+  // once, since the sheet itself can change it while open.
+  const [sheetVisible, setSheetVisible] = useState(false);
+  const [sheetViaJoin, setSheetViaJoin] = useState(false);
+  const [joined, setJoined] = useState(false);
+  const params = useLocalSearchParams<{ sheet?: string }>();
+  const handledSheetParam = useRef<string | undefined>(undefined);
+
+  const refreshJoined = useCallback(() => {
+    void getSpendingPowerOutcome().then(outcome => setJoined(!!outcome));
+  }, []);
+  useEffect(refreshJoined, [refreshJoined]);
+
+  // Home's Spending Power tile pushes here with ?sheet=spending. Guarded by a
+  // ref (not just the param value) so navigating back to this same param
+  // doesn't reopen the sheet a second time within one mount.
+  useEffect(() => {
+    if (params.sheet === 'spending' && handledSheetParam.current !== params.sheet) {
+      handledSheetParam.current = params.sheet;
+      setSheetViaJoin(false);
+      setSheetVisible(true);
+    }
+  }, [params.sheet]);
+
+  const openSheet = useCallback(
+    (viaJoin: boolean) => {
+      setSheetViaJoin(viaJoin);
+      setSheetVisible(true);
+    },
+    []
+  );
+  const closeSheet = useCallback(() => {
+    setSheetVisible(false);
+    refreshJoined();
+  }, [refreshJoined]);
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
@@ -194,18 +236,20 @@ export default function PayInFourScreen() {
               This used to be `setJoined(true)` — pure local component state,
               no request ever sent. Tapping it "joined" nobody: nothing was
               persisted, nothing was recorded server-side, and reopening the
-              tab lost it entirely. It now opens the same shared Spending
-              Power screen Home's tile does, which makes the real
-              POST /cards/access-list call (mode 'waitlist' or 'plaid') and
-              shows whatever real outcome already exists. */}
-          <PressScale onPress={() => router.push('/screens/SpendingPower')} style={{ marginTop: 20 }}>
+              tab lost it entirely. It now opens SpendingPowerSheet right over
+              this tab (never navigates away) — `viaJoin: true` so a first tap
+              actually POSTs the waitlist join, per
+              PATCH-NOTES-early-access-sheet.md. Once `joined`, the label
+              switches and the sheet opens straight to whatever status/reveal
+              phase already applies. */}
+          <PressScale onPress={() => openSheet(!joined)} style={{ marginTop: 20 }}>
             <LinearGradient
               colors={gradients.ctaPrimary as unknown as readonly [string, string, ...string[]]}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
               style={styles.cta}
             >
-              <Text style={styles.ctaText}>Check your spending power</Text>
+              <Text style={styles.ctaText}>{joined ? 'Your status' : 'Check your spending power'}</Text>
             </LinearGradient>
           </PressScale>
 
@@ -223,6 +267,8 @@ export default function PayInFourScreen() {
           </Text>
         </ScreenBody>
       </ScrollView>
+
+      <SpendingPowerSheet visible={sheetVisible} viaJoin={sheetViaJoin} onClose={closeSheet} />
     </View>
   );
 }
