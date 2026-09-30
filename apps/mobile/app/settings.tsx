@@ -10,6 +10,7 @@
 import React, { useCallback, useState } from 'react';
 import { View, Text, ScrollView, Pressable, Switch, StyleSheet, ActivityIndicator } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
+import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../utils/ThemeContext';
@@ -24,7 +25,7 @@ import {
   ScreenBody,
 } from '../components/redesign/Primitives';
 import { useConnectBank } from '../utils/useConnectBank';
-import { fetchLinkedBanks, payIn4AccountFor, initialFor, type LinkedBanksData } from '../utils/linkedBanks';
+import { fetchLinkedBanks, payIn4AccountFor, initialFor, tintFor, type LinkedBanksData } from '../utils/linkedBanks';
 import { formatCents } from '../utils/calculations';
 import { getSpendingPowerOutcome } from '../utils/cardDesignStore';
 import PayIn4AccountPicker from '../components/redesign/PayIn4AccountPicker';
@@ -200,9 +201,14 @@ export default function SettingsScreen() {
 
               return p4Account && p4Item ? (
                 <Pressable onPress={() => setPickerOpen(true)}>
-                  <View style={[styles.p4Card, { backgroundColor: colors.goldSoft, borderColor: colors.goldLine }]}>
+                  <LinearGradient
+                    colors={colors.goldTile as unknown as readonly [string, string, ...string[]]}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={[styles.p4Card, { borderColor: colors.goldLine }]}
+                  >
                     <View style={styles.p4Head}>
-                      <View style={[styles.bankTile, { backgroundColor: colors.accInk }]}>
+                      <View style={[styles.bankTile, { backgroundColor: tintFor(p4Item.institutionName) ?? colors.accInk }]}>
                         <Text style={styles.bankTileText}>{initialFor(p4Item.institutionName)}</Text>
                       </View>
                       <View style={{ flex: 1, minWidth: 0 }}>
@@ -219,7 +225,7 @@ export default function SettingsScreen() {
                         <Text style={[styles.p4Amount, { color: colors.gold }]}>{formatCents(payIn4LimitCents)}</Text>
                       </View>
                     )}
-                  </View>
+                  </LinearGradient>
                 </Pressable>
               ) : (
                 <Pressable onPress={() => setPickerOpen(true)}>
@@ -263,7 +269,7 @@ export default function SettingsScreen() {
                         scaleTo={0.99}
                       >
                         <View style={styles.bankRow}>
-                          <View style={[styles.bankTile, { backgroundColor: colors.accInk }]}>
+                          <View style={[styles.bankTile, { backgroundColor: tintFor(item.institutionName) ?? colors.accInk }]}>
                             <Text style={styles.bankTileText}>{initialFor(item.institutionName)}</Text>
                           </View>
                           <View style={{ flex: 1, minWidth: 0 }}>

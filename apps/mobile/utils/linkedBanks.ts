@@ -7,6 +7,7 @@
 // =============================================================================
 
 import { api } from './api';
+import { matchIssuer } from './cardArt/matching';
 
 export type LinkedBankAccount = {
   instrumentId: string;
@@ -49,4 +50,16 @@ export function payIn4AccountFor(item: LinkedBankItem): LinkedBankAccount | null
 
 export function initialFor(name: string | null): string {
   return (name || '?').trim().charAt(0).toUpperCase() || '?';
+}
+
+/**
+ * The bank's own brand color for its initial tile, from the SAME catalog
+ * `utils/cardArt` already uses to tint a linked card's art
+ * (`utils/cardArt/matching.ts`'s `matchIssuer`) — not an invented per-bank
+ * palette. Null for a bank not in the catalog; callers fall back to a
+ * neutral theme color (`colors.accInk`) rather than guessing a color for an
+ * issuer nobody's added yet.
+ */
+export function tintFor(institutionName: string | null): string | null {
+  return matchIssuer(institutionName ?? undefined)?.primary ?? null;
 }

@@ -17,7 +17,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../utils/ThemeContext';
 import { fontFamily, radius, motion } from '../../theme/type';
 import { Body, PressScale } from './Primitives';
-import { type LinkedBanksData, type LinkedBankAccount, initialFor } from '../../utils/linkedBanks';
+import { type LinkedBanksData, type LinkedBankAccount, initialFor, tintFor } from '../../utils/linkedBanks';
 import { api } from '../../utils/api';
 import { useConnectBank } from '../../utils/useConnectBank';
 import {
@@ -125,7 +125,7 @@ export default function PayIn4AccountPicker({
                     <View style={[styles.radio, { borderColor: on ? colors.gold : colors.line2, backgroundColor: on ? colors.gold : 'transparent' }]}>
                       {on && <Ionicons name="checkmark" size={13} color="#FFFFFF" />}
                     </View>
-                    <View style={[styles.bankTile, { backgroundColor: colors.accInk }]}>
+                    <View style={[styles.bankTile, { backgroundColor: tintFor(row.bankName) ?? colors.accInk }]}>
                       <Text style={styles.bankTileText}>{initialFor(row.bankName)}</Text>
                     </View>
                     <View style={{ flex: 1, minWidth: 0 }}>
