@@ -1,0 +1,38 @@
+name: Pay in 4 installment sweep
+
+# Charges due Pay in 4 installments and marks overdue ones missed, by calling
+# POST /cards/installments/sweep on the deployed API — see
+# apps/api/src/routes/installments.ts and CLAUDE.md's Spending Power section.
+# There is no cron inside the API process itself (same as every other
+# scheduled job in this repo), so this workflow IS the scheduler.
+#
+# Needs two repo secrets:
+#   INSTALLMENT_SWEEP_SECRET — must match the same-named Railway variable on
+#     the API service; the route 503s if that variable is unset.
+#   EZER_API_URL — the deployed API's base URL (e.g. https://ezer-api-production.up.railway.app),
+#     no trailing slash.
+on:
+  schedule:
+    # Once a day. Pay in 4 installments are spaced 14 days apart, so daily is
+    # frequent enough to charge same-day and catch overdue ones within the
+    # engine's own grace window (GRACE_DAYS in installmentEngine.ts) without
+    # hammering the API hourly for something that changes this slowly.
+    - cron: '0 13 * * *' # 13:00 UTC
+  workflow_dispatch: {}
+
+jobs:
+  sweep:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call the sweep endpoint
+        env:
+          SWEEP_SECRET: ${{ secrets.INSTALLMENT_SWEEP_SECRET }}
+          API_URL: ${{ secrets.EZER_API_URL }}
+        run: |
+          if [ -z "$SWEEP_SECRET" ] || [ -z "$API_URL" ]; then
+            echo "Missing INSTALLMENT_SWEEP_SECRET or EZER_API_URL repo secret." >&2
+            exit 1
+          fi
+          curl -sf -X POST "$API_URL/cards/installments/sweep" \
+            -H "x-sweep-secret: $SWEEP_SECRET" \
+            -w '\nHTTP %{http_code}\n'
