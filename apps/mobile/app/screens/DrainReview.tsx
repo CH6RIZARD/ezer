@@ -312,9 +312,18 @@ export default function DrainReviewScreen() {
   }
 
   // --- "the other N" row interactions -------------------------------------
+  //
+  // "Cut it" here does NOT open a cancellation link directly — unlike the
+  // podium sheet above (left as-is; that's the confirmed "yes, cut this"
+  // moment). These are the rows the user hasn't looked at yet, so it opens
+  // the real in-app subscription screen instead — the one with the price-
+  // over-time chart and full charge history (apps/mobile/app/screens/
+  // SubscriptionDetail.tsx) — and cancellation itself happens from there,
+  // via that screen's own existing Cancel action. Marking this row 'pending'
+  // here just means "sent to review"; the ✓/← still resolve it on return.
   function onRestCutIt(row: DrainRow) {
     setRest(r => ({ ...r, [row.id]: 'pending' }));
-    void openCancellationFor(row);
+    router.push({ pathname: '/screens/SubscriptionDetail', params: { id: row.id } });
   }
   function onRestBack(row: DrainRow) {
     setRest(r => ({ ...r, [row.id]: 'idle' }));
@@ -495,15 +504,9 @@ export default function DrainReviewScreen() {
                       </Text>
 
                       {state === 'idle' && (
-                        <PressScale
-                          scaleTo={0.94}
-                          disabled={busyId === row.id}
-                          onPress={() => onRestCutIt(row)}
-                        >
+                        <PressScale scaleTo={0.94} onPress={() => onRestCutIt(row)}>
                           <View style={[styles.restPill, { borderColor: colors.line2 }]}>
-                            <Text style={[styles.restPillText, { color: colors.ink }]}>
-                              {busyId === row.id ? 'Opening…' : 'Cut it'}
-                            </Text>
+                            <Text style={[styles.restPillText, { color: colors.ink }]}>Cut it</Text>
                           </View>
                         </PressScale>
                       )}
