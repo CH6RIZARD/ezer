@@ -219,7 +219,7 @@ export async function plaidRoutes(server: FastifyInstance) {
 
       // Save encrypted access token
       const accessTokenEnc = encrypt(access_token);
-      await prisma.plaidItem.upsert({
+      const plaidItemRow = await prisma.plaidItem.upsert({
         where: { plaidItemId: item_id },
         create: {
           userId,
@@ -228,6 +228,13 @@ export async function plaidRoutes(server: FastifyInstance) {
           institutionId,
           institutionName,
           accounts: (resolvedAccounts ?? []) as object,
+          // A bank linked specifically for Pay in 4 defaults to NOT reading
+          // for subscriptions — SpendingPowerSheet's "Connect a new bank" is
+          // for someone who wants a bank separate from the one subscriptions
+          // already read from; reading it too would quietly undo that
+          // separation. General-purpose links (no purpose tag) keep the
+          // column's own true default.
+          ...(purpose === 'pay_in_4' ? { readForSubscriptions: false } : {}),
         },
         update: {
           accessTokenEnc,
@@ -260,6 +267,8 @@ export async function plaidRoutes(server: FastifyInstance) {
               // sit there. See the schema comment for why that guess never
               // actually worked.
               plaidAccountId: account.id,
+              subtype: account.subtype || null,
+              itemId: plaidItemRow.id,
               purpose: purpose || null,
             },
           });
@@ -277,6 +286,8 @@ export async function plaidRoutes(server: FastifyInstance) {
               networkArt: existing.networkArt ?? networkArt,
               institutionName: existing.institutionName ?? institutionName,
               plaidAccountId: existing.plaidAccountId ?? account.id,
+              subtype: existing.subtype ?? (account.subtype || null),
+              itemId: existing.itemId ?? plaidItemRow.id,
               purpose: existing.purpose ?? (purpose || null),
             },
           });
@@ -294,10 +305,16 @@ export async function plaidRoutes(server: FastifyInstance) {
   server.post('/sync', async (request, reply) => {
     const userId = (request as any).userId;
 
-    const items = await prisma.plaidItem.findMany({ where: { userId } });
-    if (items.length === 0) {
+    const allItems = await prisma.plaidItem.findMany({ where: { userId } });
+    if (allItems.length === 0) {
       return reply.status(404).send({ success: false, error: 'No linked bank accounts found' });
     }
+    // A bank connected for Pay in 4 only (Settings' "Read this bank for
+    // subscriptions" switch off) must not have its charges scanned for
+    // recurring payments — that is the entire point of the switch. Its
+    // balance is still readable via GET /plaid/balance / the trust-score
+    // assessment, which is a different read than this one.
+    const items = allItems.filter(i => i.readForSubscriptions);
 
     // One bad item must not take every other linked account down with it.
     // Before this, a single revoked/expired OAuth connection (Plaid's
@@ -408,6 +425,138 @@ export async function plaidRoutes(server: FastifyInstance) {
         lastSyncAt: item.lastSyncAt,
       })),
     };
+  });
+
+  /**
+   * GET /plaid/linked-banks — Settings' "Linked banks" screen, grouped by
+   * bank rather than the flat FundingInstrument list /wallet/instruments
+   * returns. Also the only place `payIn4InstrumentId` is exposed to the
+   * client, and the only place `eligibleForPayIn4` is computed (non-credit —
+   * `type === 'bank'` is the whole eligibility rule; see the schema comment
+   * on FundingInstrument.subtype for why subtype itself is display-only).
+   */
+  server.get('/linked-banks', async (request, reply) => {
+    const userId = (request as any).userId;
+
+    const [user, items] = await Promise.all([
+      prisma.user.findUnique({ where: { id: userId }, select: { payIn4InstrumentId: true } }),
+      prisma.plaidItem.findMany({
+        where: { userId },
+        include: { fundingInstruments: { orderBy: { createdAt: 'asc' } } },
+        orderBy: { createdAt: 'asc' },
+      }),
+    ]);
+
+    const payIn4InstrumentId = user?.payIn4InstrumentId ?? null;
+
+    return {
+      success: true,
+      data: {
+        payIn4InstrumentId,
+        items: items.map(item => ({
+          itemId: item.id,
+          institutionName: item.institutionName,
+          connectedAt: item.createdAt.toISOString(),
+          readForSubscriptions: item.readForSubscriptions,
+          accounts: item.fundingInstruments.map(inst => ({
+            instrumentId: inst.id,
+            displayName: inst.displayName,
+            last4: inst.last4,
+            subtype: inst.subtype,
+            type: inst.type,
+            isPayIn4: inst.id === payIn4InstrumentId,
+            eligibleForPayIn4: inst.type === 'bank',
+          })),
+        })),
+      },
+    };
+  });
+
+  /**
+   * POST /plaid/items/:id/read-for-subscriptions — Settings' bank-detail
+   * switch. Turning ON triggers a real sync for just this item so newly-
+   * readable history shows up immediately rather than waiting for the next
+   * app-open's background sync; turning off is instant (nothing to fetch —
+   * the item's existing Subscription rows are left as-is, same as any other
+   * bank that stops billing: they age out through the normal renewal-date
+   * flow, not a bulk delete here).
+   */
+  server.post<{ Params: { id: string }; Body: { enabled?: boolean } }>(
+    '/items/:id/read-for-subscriptions',
+    async (request, reply) => {
+      const userId = (request as any).userId;
+      const { enabled } = request.body || {};
+      if (typeof enabled !== 'boolean') {
+        return reply.status(400).send({ success: false, error: 'enabled must be a boolean' });
+      }
+
+      const item = await prisma.plaidItem.findFirst({ where: { id: request.params.id, userId } });
+      if (!item) return reply.status(404).send({ success: false, error: 'Bank not found' });
+
+      await prisma.plaidItem.update({ where: { id: item.id }, data: { readForSubscriptions: enabled } });
+
+      if (enabled) {
+        try {
+          const count = await syncTransactionsForItem(userId, item.plaidItemId, decrypt(item.accessTokenEnc));
+          await prisma.plaidItem.update({ where: { id: item.id }, data: { lastSyncAt: new Date() } });
+          return { success: true, data: { readForSubscriptions: true, newSubscriptionsDetected: count } };
+        } catch (err) {
+          // The flag is already flipped and saved — a sync failure here just
+          // means the next regular /plaid/sync call picks it up, the same as
+          // any other item whose sync happens to fail once.
+          request.log.warn({ err, itemId: item.id }, 'sync failed right after enabling subscription reading');
+          return { success: true, data: { readForSubscriptions: true, newSubscriptionsDetected: 0 } };
+        }
+      }
+
+      return { success: true, data: { readForSubscriptions: false } };
+    }
+  );
+
+  /**
+   * DELETE /plaid/items/:id — disconnect ONE bank, unlike DELETE /account
+   * (account.ts) which revokes every item as part of deleting the whole
+   * account. Same ordering rule applies for the same reason: Plaid FIRST.
+   * Deleting the row first would destroy the access token, leaving an item
+   * still connected at the bank and still billed, with no way left to
+   * revoke it.
+   */
+  server.delete<{ Params: { id: string } }>('/items/:id', async (request, reply) => {
+    const userId = (request as any).userId;
+    const item = await prisma.plaidItem.findFirst({ where: { id: request.params.id, userId } });
+    if (!item) return reply.status(404).send({ success: false, error: 'Bank not found' });
+
+    if (process.env.PLAID_CLIENT_ID && process.env.PLAID_SECRET) {
+      try {
+        const plaid = getPlaidClient();
+        await plaid.itemRemove({ access_token: decrypt(item.accessTokenEnc) });
+      } catch (err) {
+        // An item Plaid has already forgotten (expired, user revoked it from
+        // their bank's own side) must not strand the user's own disconnect
+        // request — log it and still remove our copy.
+        request.log.warn({ err, itemId: item.id }, 'itemRemove failed during single-bank disconnect');
+      }
+    }
+
+    // FundingInstrument rows cascade via the itemId FK. Only clear
+    // payIn4InstrumentId if THIS bank actually held it — an unrelated
+    // instrument's id must not be wiped by disconnecting a different bank.
+    const user = await prisma.user.findUnique({ where: { id: userId }, select: { payIn4InstrumentId: true } });
+    const heldPayIn4 =
+      !!user?.payIn4InstrumentId &&
+      (await prisma.fundingInstrument.findFirst({
+        where: { id: user.payIn4InstrumentId, itemId: item.id },
+        select: { id: true },
+      })) !== null;
+
+    await prisma.$transaction([
+      prisma.plaidItem.delete({ where: { id: item.id } }),
+      ...(heldPayIn4
+        ? [prisma.user.update({ where: { id: userId }, data: { payIn4InstrumentId: null } })]
+        : []),
+    ]);
+
+    return { success: true, data: { disconnected: true, payIn4Cleared: heldPayIn4 } };
   });
 }
 

@@ -98,6 +98,13 @@ style problem.
   `FundingSource.purpose`/`Transfer.installmentId`) HAS been applied — the
   `POST /cards/installments/sweep` endpoint returned a real 200 after, not
   the P2021/P2022 "table/column does not exist" errors it threw before.
+  **`20260930030000_add_linked_banks_model` has NOT been applied yet** as of
+  this writing — `User.payIn4InstrumentId`, `PlaidItem.readForSubscriptions`,
+  `FundingInstrument.subtype`/`itemId` exist only in the schema file and the
+  generated Prisma client. Every route in the Linked banks section below
+  (`GET /plaid/linked-banks`, `POST /cards/pay-in4-account`,
+  `POST /plaid/items/:id/read-for-subscriptions`, `DELETE /plaid/items/:id`)
+  will 500 with a P2021/P2022 Prisma error until this runs.
 
 ## Card Studio
 
@@ -240,31 +247,67 @@ style problem.
 - **`FundingInstrument.purpose` and `FundingSource.purpose`** are UI/engine
   grouping labels only, set to `'pay_in_4'` ONLY when "Connect a new bank" is
   used (see Patch 2 below) — threaded through `usePlaid().openPlaidLink`'s
-  third argument → `POST /plaid/exchange-public-token`. Settings' linked-banks
-  list (`app/settings.tsx`) groups `FundingInstrument` by it into
-  "Subscriptions" vs "Pay in 4" sections; `installmentEngine.ts`'s
-  `getRepaymentSource` prefers the matching `FundingSource` when charging.
-  Every linked account is read identically everywhere else — sync, trust
-  signals, subscriptions — `purpose` never gates or filters real data.
-- **Patch 2 (same patch notes file): the primary pill offers "Use connected
-  bank" instead of forcing a second Plaid Link.** Someone whose subscriptions
-  are already being read from a linked account must not be made to link a
-  SEPARATE bank just to see a Pay in 4 number — `SpendingPowerSheet.tsx`
-  checks `instruments.length > 0 || subscriptions.length > 0`
-  (`contexts/DataContext.tsx`) and, if true, a first tap reveals
-  "Use connected bank" (runs the real `POST /cards/access-list` assessment
-  immediately, no Plaid Link — `trustScoring.ts` already aggregates every
-  linked `PlaidItem` regardless of `purpose`, so this is a genuine assessment,
-  not a shortcut) alongside "Connect a new bank" (the original `pay_in_4`-
-  tagged Plaid Link flow, for someone who wants a SEPARATE bank funding Pay in
-  4). Someone with no bank linked at all skips straight to "Connect a new
-  bank" — there is nothing to choose between. Because "Use connected bank"
-  never tags anything `pay_in_4`, `app/settings.tsx` cannot read back which
-  account an assessment actually used; it infers the "Also used for Pay in 4"
-  badge on a Subscriptions-group row from `getSpendingPowerOutcome()` alone
-  (approved + a real limit, no dedicated `pay_in_4` instrument already
-  exists) rather than a per-instrument record — correct for one linked bank,
-  silently skipped (not wrong) once someone has more than one.
+  third argument → `POST /plaid/exchange-public-token`. A `pay_in_4`-tagged
+  bank ALSO defaults `PlaidItem.readForSubscriptions` to `false` at link time
+  (Patch 3's model, below) — someone connecting a separate bank specifically
+  for Pay in 4 does not want it silently feeding subscription detection too.
+  `installmentEngine.ts`'s `getRepaymentSource` prefers a `purpose`-tagged
+  `FundingSource` when charging. Every linked account is STILL read
+  identically for trust-score signals regardless of `purpose` or
+  `readForSubscriptions` — see the next point for the one real exception
+  (which account balance gets ASSESSED for Pay in 4, not which accounts count
+  at all).
+- **Patch 2 (PATCH-NOTES-early-access-sheet.md): the primary pill offers "Use
+  connected bank" instead of forcing a second Plaid Link.** Someone whose
+  subscriptions are already being read from a linked account must not be made
+  to link a SEPARATE bank just to see a Pay in 4 number —
+  `SpendingPowerSheet.tsx` checks `instruments.length > 0 || subscriptions.length > 0`
+  (`contexts/DataContext.tsx`) and, if true, a first tap reveals "Use
+  connected bank" (runs the real assessment immediately, no Plaid Link)
+  alongside "Connect a new bank" (the `pay_in_4`-tagged Plaid Link flow, for a
+  deliberately separate bank). No bank linked at all skips straight to
+  "Connect a new bank" — nothing to choose between.
+- **Patch 3 (same file, "Patch 3 — Settings › Linked banks"): Pay in 4 has
+  exactly ONE real funding account, not an aggregate of every linked bank.**
+  `User.payIn4InstrumentId` (a `FundingInstrument.id`) is that account.
+  `trustScoring.ts`'s `resolvePayIn4Instrument` reads it, and — this is the
+  part that makes "Use connected bank" above keep working without forcing
+  everyone through Settings first — AUTO-PICKS and PERSISTS the oldest
+  eligible (non-credit, `type === 'bank'`) linked account the first time
+  nothing is chosen yet. `derivePlaidSignals`'s BALANCE signal is scoped to
+  just that one account's Plaid `account_id` when one is resolved. The
+  inflow/overdraft signals are **NOT** scoped — `Transaction` rows carry no
+  per-account attribution in this schema (only `FundingInstrument.
+  plaidAccountId` does), so scoping those would need a real schema change;
+  documented as a known limitation in `derivePlaidSignals`'s own comment
+  rather than silently wrong. Don't "fix" this by guessing at
+  `rawData`-based JSON matching without reading that comment first.
+  - **Settings' "Linked banks" is now real per-account UI**, not the old
+    `purpose`-based two-bucket list: `GET /plaid/linked-banks`
+    (`routes/plaid.ts`) returns banks grouped by `PlaidItem`, each with its
+    accounts and which one (if any) funds Pay in 4 — `app/settings.tsx`'s
+    "Pay in 4 pays from" card, `app/screens/BankDetail.tsx` (one bank:
+    accounts, the subscriptions-read switch, disconnect), and
+    `components/redesign/PayIn4AccountPicker.tsx` (the account-picker
+    sheet) all read this shape directly rather than inferring anything.
+  - **`POST /cards/pay-in4-account`** is the only deliberate way to change
+    the funding account — sets `payIn4InstrumentId` AND immediately re-runs
+    `assessAccess`, writing a fresh `CardAccessList` row, so the picker's
+    "re-checks your spending power" copy is literally true, not aspirational.
+  - **`DELETE /plaid/items/:id`** disconnects ONE bank (Plaid `itemRemove`
+    FIRST, same ordering rule as `DELETE /account` and for the same reason),
+    cascade-deletes its `FundingInstrument` rows via the `itemId` FK, and
+    clears `payIn4InstrumentId` ONLY if that bank actually held it.
+  - **`POST /plaid/items/:id/read-for-subscriptions`** is the per-bank switch
+    on `BankDetail.tsx`. Turning off does not delete existing `Subscription`
+    rows from that bank — they age out through the normal renewal-date flow,
+    same as a bank that stops billing for any other reason. Turning on
+    triggers a real sync for just that item.
+  - **`app/settings/connected-accounts.tsx` is DELETED.** It was a fully
+    unreachable pre-Plaid screen with hardcoded fake accounts ("Chase
+    Checking •4532") — nothing in the app ever routed to it, but it sat there
+    as a landmine for exactly the confusion it was built to avoid. Do not
+    recreate a "connected accounts" screen separate from the ones above.
 
 ## Wallet card art (`apps/mobile/utils/cardArt/`)
 

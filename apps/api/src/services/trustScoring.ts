@@ -155,7 +155,26 @@ export function limitForScore(score: number, activeMissedInstallments: number): 
  * penalize it beyond the floor.
  */
 async function derivePlaidSignals(
-  userId: string
+  userId: string,
+  /**
+   * The Pay in 4 funding account's Plaid `account_id` (FundingInstrument.
+   * plaidAccountId), when one is chosen — see resolvePayIn4Instrument. When
+   * set, the BALANCE signal is scoped to just this account, matching
+   * CLAUDE.md's "spending power from THIS account" model. Null falls back to
+   * the old aggregate-across-every-linked-account behavior.
+   *
+   * KNOWN LIMITATION, documented rather than silently wrong: the inflow and
+   * overdraft signals below stay aggregate across every linked account
+   * regardless of this parameter. Transaction rows carry no per-account
+   * attribution in this schema (unlike FundingInstrument.plaidAccountId,
+   * nothing on Transaction ties a row back to a specific account — see the
+   * model, which only has userId), so scoping deposits/overdrafts to one
+   * account would need a real schema change, not just a query change. Until
+   * that exists, a thin-but-real chosen account still benefits from a
+   * healthier OTHER account's deposit history — generous by default, same
+   * direction as every other "no data yet" choice in this file.
+   */
+  scopeToPlaidAccountId?: string | null
 ): Promise<Pick<TrustSignals, 'avgMonthlyInflowCents' | 'currentBalanceCents' | 'accountAgeMonths' | 'overdraftsLast90d'> | null> {
   const items = await prisma.plaidItem.findMany({ where: { userId } });
   if (items.length === 0) return null;
@@ -171,6 +190,7 @@ async function derivePlaidSignals(
         const res = await plaid.accountsBalanceGet({ access_token: decrypt(item.accessTokenEnc) });
         for (const acct of res.data.accounts) {
           if (acct.type !== 'depository') continue;
+          if (scopeToPlaidAccountId && acct.account_id !== scopeToPlaidAccountId) continue;
           const available = acct.balances.available ?? acct.balances.current;
           if (typeof available === 'number') {
             balanceCents = (balanceCents ?? 0) + Math.round(available * 100);
@@ -242,6 +262,47 @@ async function deriveInstallmentSignals(
 }
 
 /**
+ * Pay in 4's ONE funding account (User.payIn4InstrumentId), resolved and, if
+ * necessary, auto-picked.
+ *
+ * Settings' account picker (PayIn4AccountPicker.tsx) is the deliberate way to
+ * set this. But SpendingPowerSheet.tsx's "Use connected bank" must keep
+ * working for the (overwhelmingly common) one-bank case without sending
+ * everyone through Settings first — so when nothing is chosen yet, or the
+ * stored choice no longer resolves (the bank was disconnected outside this
+ * flow, say), this auto-picks the oldest eligible (non-credit) linked
+ * account and PERSISTS that pick. That is a deliberate tradeoff: Settings
+ * then shows a real, editable choice instead of "No account chosen" forever
+ * for someone who has, in every practical sense, already chosen by using the
+ * only bank they have.
+ */
+async function resolvePayIn4Instrument(userId: string) {
+  const user = await prisma.user.findUnique({ where: { id: userId }, select: { payIn4InstrumentId: true } });
+
+  if (user?.payIn4InstrumentId) {
+    const chosen = await prisma.fundingInstrument.findFirst({
+      where: { id: user.payIn4InstrumentId, userId, type: 'bank' },
+    });
+    if (chosen) return chosen;
+    // Stored id no longer resolves (disconnected) — fall through to auto-pick.
+  }
+
+  const fallback = await prisma.fundingInstrument.findFirst({
+    where: { userId, type: 'bank' },
+    orderBy: { createdAt: 'asc' },
+  });
+  if (fallback) {
+    await prisma.user
+      .update({ where: { id: userId }, data: { payIn4InstrumentId: fallback.id } })
+      .catch(() => {
+        // Best-effort — worst case the next assessment auto-picks the same
+        // account again, which is a no-op in every way that matters.
+      });
+  }
+  return fallback;
+}
+
+/**
  * Run the full underwriting decision for a user right now: Plaid signals
  * (floored to zero-signal defaults when no bank is linked — "no data" is not
  * a reason to look worse than the floor) plus Pay in 4 repayment history
@@ -256,7 +317,8 @@ async function deriveInstallmentSignals(
 export async function assessAccess(
   userId: string
 ): Promise<{ status: AccessStatus; limitCents: number; trustScore: number }> {
-  const plaid = await derivePlaidSignals(userId);
+  const account = await resolvePayIn4Instrument(userId);
+  const plaid = await derivePlaidSignals(userId, account?.plaidAccountId ?? null);
   const installments = await deriveInstallmentSignals(userId);
   const signals: TrustSignals = { ...(plaid ?? ZERO_SIGNALS), ...installments };
 

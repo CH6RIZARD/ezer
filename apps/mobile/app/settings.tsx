@@ -7,9 +7,9 @@
 // toggles, and a red Sign out row.
 // =============================================================================
 
-import React, { useEffect, useState } from 'react';
-import { View, Text, ScrollView, Pressable, Switch, StyleSheet } from 'react-native';
-import { router } from 'expo-router';
+import React, { useCallback, useState } from 'react';
+import { View, Text, ScrollView, Pressable, Switch, StyleSheet, ActivityIndicator } from 'react-native';
+import { router, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../utils/ThemeContext';
@@ -24,8 +24,10 @@ import {
   ScreenBody,
 } from '../components/redesign/Primitives';
 import { useConnectBank } from '../utils/useConnectBank';
-import { useData } from '../contexts/DataContext';
+import { fetchLinkedBanks, payIn4AccountFor, initialFor, type LinkedBanksData } from '../utils/linkedBanks';
+import { formatCents } from '../utils/calculations';
 import { getSpendingPowerOutcome } from '../utils/cardDesignStore';
+import PayIn4AccountPicker from '../components/redesign/PayIn4AccountPicker';
 
 const NOTIFS = [
   { key: 'renewals', title: 'Renewal alerts', sub: '3 days before' },
@@ -42,7 +44,6 @@ export default function SettingsScreen() {
     logout?: () => void;
   };
   const connectBank = useConnectBank();
-  const { instruments } = useData();
 
   const [notifs, setNotifs] = useState<Record<string, boolean>>({
     renewals: true,
@@ -50,21 +51,27 @@ export default function SettingsScreen() {
     digest: false,
   });
 
-  // Whether Pay in 4 has a real assessed limit right now. Used below to flag
-  // a Subscriptions-group account as "Also used for Pay in 4" when nobody
-  // ever linked a SEPARATE pay_in_4-tagged bank — i.e. they used "Use
-  // connected bank" in SpendingPowerSheet.tsx rather than "Connect a new
-  // bank". There is no per-instrument record of which account backed an
-  // assessment (trustScoring.ts aggregates across every linked PlaidItem on
-  // purpose), so this is inferred, not read back from the server — accurate
-  // for the overwhelmingly common case of one linked bank, and silent rather
-  // than wrong when there's more than one.
-  const [payIn4Assessed, setPayIn4Assessed] = useState(false);
-  useEffect(() => {
-    void getSpendingPowerOutcome().then(outcome =>
-      setPayIn4Assessed(outcome?.status === 'approved' && !!outcome.limitCents)
-    );
+  // Real per-account data (GET /plaid/linked-banks) — which bank groups
+  // funds Pay in 4, per PlaidItem.readForSubscriptions, etc. Refetched every
+  // time this screen regains focus (not just on mount) so returning from
+  // BankDetail or the account picker shows whatever just changed there.
+  const [linkedBanks, setLinkedBanks] = useState<LinkedBanksData | null>(null);
+  const [loadingBanks, setLoadingBanks] = useState(true);
+  const [payIn4LimitCents, setPayIn4LimitCents] = useState<number | null>(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
+
+  const loadLinkedBanks = useCallback(async () => {
+    const [data, outcome] = await Promise.all([fetchLinkedBanks(), getSpendingPowerOutcome()]);
+    setLinkedBanks(data);
+    setPayIn4LimitCents(outcome?.status === 'approved' ? outcome.limitCents ?? null : null);
+    setLoadingBanks(false);
   }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      void loadLinkedBanks();
+    }, [loadLinkedBanks])
+  );
 
   const signOut = () => {
     // The auth context has gone by both names across revisions; call whichever
@@ -172,90 +179,136 @@ export default function SettingsScreen() {
 
           {/* --- linked banks -------------------------------------------------- */}
           {/*
-            Real Plaid instruments, not a hardcoded list.
-            This rendered demoFundingInstruments, so it showed Chase Sapphire,
-            Amex Gold and an "Unknown Card •****" — none of which the user had
-            linked, and the last of which is not a card at all. The cards listed
-            here must be the cards the charges are actually billed to.
-
-            Grouped by `purpose` (FundingInstrument.purpose) into
-            Subscriptions vs Pay in 4 rather than one flat list. A bank
-            connected from the Spending Power sheet
-            (components/redesign/SpendingPowerSheet.tsx) via "Connect a new
-            bank" is tagged 'pay_in_4' and is there for ONE reason — running
-            the Pay in 4 trust assessment — and showing it mixed in with
-            banks that back subscription tracking made it look like every
-            linked account did the same thing. Untagged instruments (the
-            common case: linked from Wallet/onboarding, no specific purpose)
-            fall under "Subscriptions". "Use connected bank" reuses one of
-            those for the Pay in 4 assessment too WITHOUT retagging it (it
-            still, correctly, backs subscriptions) — `payIn4Assessed` flags
-            that row with "Also used for Pay in 4" instead, since there is no
-            per-instrument record of which account an assessment used.
+            Turn 3 model (PATCH-NOTES-early-access-sheet.md, "Patch 3"):
+            Pay in 4 has exactly ONE funding account (User.payIn4InstrumentId,
+            set via the picker sheet below or auto-picked by
+            trustScoring.ts's resolvePayIn4Instrument the first time an
+            assessment runs). Every OTHER linked bank is read for
+            subscriptions unless the user turned that off for it specifically
+            (PlaidItem.readForSubscriptions, flipped on BankDetail.tsx). This
+            replaced the earlier `FundingInstrument.purpose` grouping, which
+            only ever produced an inferred "also used for Pay in 4" guess —
+            GET /plaid/linked-banks now says exactly which account it is.
           */}
-          <SectionHeader style={styles.section}>Linked banks</SectionHeader>
-          {instruments.length === 0 ? (
+          <SectionHeader style={styles.section}>Pay in 4 pays from</SectionHeader>
+          {loadingBanks ? (
+            <ActivityIndicator style={{ marginTop: 10 }} color={colors.gold} />
+          ) : (
+            (() => {
+              const p4Item = linkedBanks?.items.find(i => payIn4AccountFor(i));
+              const p4Account = p4Item ? payIn4AccountFor(p4Item) : null;
+
+              return p4Account && p4Item ? (
+                <Pressable onPress={() => setPickerOpen(true)}>
+                  <View style={[styles.p4Card, { backgroundColor: colors.goldSoft, borderColor: colors.goldLine }]}>
+                    <View style={styles.p4Head}>
+                      <View style={[styles.bankTile, { backgroundColor: colors.accInk }]}>
+                        <Text style={styles.bankTileText}>{initialFor(p4Item.institutionName)}</Text>
+                      </View>
+                      <View style={{ flex: 1, minWidth: 0 }}>
+                        <Text style={[styles.kvValue, { color: colors.ink }]} numberOfLines={1}>
+                          {p4Item.institutionName} · {p4Account.displayName}
+                        </Text>
+                        <Text style={[styles.mono, { color: colors.mut }]}>{`•••• ${p4Account.last4}`}</Text>
+                      </View>
+                      <Text style={[styles.changeLink, { color: colors.gold }]}>Change</Text>
+                    </View>
+                    {payIn4LimitCents !== null && (
+                      <View style={[styles.p4Footer, { borderTopColor: colors.goldLine }]}>
+                        <Body style={{ fontSize: 12.5 }}>Spending power from this account</Body>
+                        <Text style={[styles.p4Amount, { color: colors.gold }]}>{formatCents(payIn4LimitCents)}</Text>
+                      </View>
+                    )}
+                  </View>
+                </Pressable>
+              ) : (
+                <Pressable onPress={() => setPickerOpen(true)}>
+                  <View style={[styles.p4Empty, { borderColor: colors.goldLine }]}>
+                    <Ionicons name="card-outline" size={20} color={colors.gold} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.kvValue, { color: colors.ink }]}>No account chosen</Text>
+                      <Body style={{ marginTop: 2 }}>Pick a checking account · sets your spending power</Body>
+                    </View>
+                    <Ionicons name="chevron-forward" size={16} color={colors.mut2} />
+                  </View>
+                </Pressable>
+              );
+            })()
+          )}
+          <Body style={{ marginTop: 8, fontSize: 11.5, lineHeight: 16 }}>
+            Installments are pulled from this account. Changing it re-checks your spending power.
+          </Body>
+
+          <View style={styles.connectedHeaderRow}>
+            <SectionHeader>Connected banks</SectionHeader>
+            {linkedBanks && linkedBanks.items.length > 0 && (
+              <Body>{linkedBanks.items.length} connected</Body>
+            )}
+          </View>
+          {!loadingBanks && (!linkedBanks || linkedBanks.items.length === 0) ? (
             <Surface style={{ padding: 16 }}>
-              <Body>
-                No accounts linked yet. Connect one below and your cards will appear here.
-              </Body>
+              <Body>No accounts linked yet. Connect one below and your cards will appear here.</Body>
             </Surface>
           ) : (
-            <>
-              {(() => {
-                const payIn4Tagged = instruments.filter(i => i.purpose === 'pay_in_4');
-                const subscriptionRows = instruments.filter(i => i.purpose !== 'pay_in_4');
-                // Only infer the badge when there's no dedicated pay_in_4
-                // link — a real separate link is the unambiguous signal and
-                // should not ALSO get the inferred one.
-                const showInferredBadge = payIn4Assessed && payIn4Tagged.length === 0;
-
-                return (
-                  [
-                    { key: 'subscriptions', title: 'Subscriptions', rows: subscriptionRows, badge: showInferredBadge },
-                    { key: 'pay_in_4', title: 'Pay in 4', rows: payIn4Tagged, badge: false },
-                  ] as const
-                ).map(group =>
-                  group.rows.length === 0 ? null : (
-                    <View key={group.key} style={{ marginTop: 10 }}>
-                      <Label style={{ marginBottom: 6 }}>{group.title}</Label>
-                      <Surface style={styles.block}>
-                        {group.rows.map((inst, i) => (
-                          <View key={inst.id}>
-                            {i > 0 && <View style={[styles.divider, { backgroundColor: colors.line }]} />}
-                            <View style={styles.bankRow}>
-                              <Ionicons name="card-outline" size={19} color={colors.mut} />
-                              <View style={{ flex: 1 }}>
-                                <Text style={[styles.kvValue, { color: colors.ink }]} numberOfLines={1}>
-                                  {inst.displayName || 'Account'}
-                                </Text>
-                                <Body style={{ marginTop: 2 }}>
-                                  {/* Only render the parts Plaid actually returned
-                                      — a missing brand/mask produced "Unknown
-                                      •****". */}
-                                  {[inst.brand, inst.last4 ? `•${inst.last4}` : null]
-                                    .filter(Boolean)
-                                    .join(' ') || 'Linked account'}
-                                </Body>
-                                {group.badge && (
-                                  <Body style={{ marginTop: 2, color: colors.gold }}>Also used for Pay in 4</Body>
-                                )}
-                              </View>
-                              {inst.isDefault && (
-                                <View style={[styles.defaultChip, { backgroundColor: colors.accSoft }]}>
-                                  <Text style={[typeScale.labelSm, { color: colors.accInk }]}>DEFAULT</Text>
+            linkedBanks && (
+              <Surface style={styles.block}>
+                {linkedBanks.items.map((item, i) => {
+                  const p4 = payIn4AccountFor(item);
+                  const accountsLine = item.accounts.map(a => `${a.displayName} •${a.last4}`).join(' · ');
+                  return (
+                    <View key={item.itemId}>
+                      {i > 0 && <View style={[styles.divider, { backgroundColor: colors.line }]} />}
+                      <PressScale
+                        onPress={() => router.push({ pathname: '/screens/BankDetail', params: { itemId: item.itemId } })}
+                        scaleTo={0.99}
+                      >
+                        <View style={styles.bankRow}>
+                          <View style={[styles.bankTile, { backgroundColor: colors.accInk }]}>
+                            <Text style={styles.bankTileText}>{initialFor(item.institutionName)}</Text>
+                          </View>
+                          <View style={{ flex: 1, minWidth: 0 }}>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                              <Text style={[styles.kvValue, { color: colors.ink }]} numberOfLines={1}>
+                                {item.institutionName || 'Bank'}
+                              </Text>
+                              {p4 && (
+                                <View style={[styles.chip, { backgroundColor: colors.goldSoft }]}>
+                                  <Text style={[typeScale.labelSm, { color: colors.gold }]}>PAY IN 4</Text>
                                 </View>
                               )}
                             </View>
+                            <Body style={{ marginTop: 2 }} numberOfLines={1}>
+                              {accountsLine || 'Linked account'}
+                            </Body>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 4 }}>
+                              <Ionicons
+                                name={item.readForSubscriptions ? 'eye-outline' : 'eye-off-outline'}
+                                size={12}
+                                color={item.readForSubscriptions ? colors.accInk : colors.mut}
+                              />
+                              <Text
+                                style={[styles.readLabel, { color: item.readForSubscriptions ? colors.accInk : colors.mut }]}
+                              >
+                                {item.readForSubscriptions ? 'Read for subscriptions' : 'Not read for subscriptions'}
+                              </Text>
+                            </View>
                           </View>
-                        ))}
-                      </Surface>
+                          <Ionicons name="chevron-forward" size={16} color={colors.mut2} />
+                        </View>
+                      </PressScale>
                     </View>
-                  )
-                );
-              })()}
-            </>
+                  );
+                })}
+              </Surface>
+            )
           )}
+
+          <PayIn4AccountPicker
+            visible={pickerOpen}
+            data={linkedBanks}
+            onClose={() => setPickerOpen(false)}
+            onSaved={loadLinkedBanks}
+          />
 
           {/* --- add a bank ----------------------------------------------------- */}
           {/*
@@ -264,8 +317,11 @@ export default function SettingsScreen() {
             where people look to add a SECOND account, which the dashboard tile
             is not a natural home for once the first one is connected.
           */}
-          <SectionHeader style={styles.section}>Banks</SectionHeader>
-          <PressScale onPress={() => void connectBank.connect()} disabled={connectBank.busy}>
+          <PressScale
+            onPress={() => void connectBank.connect(loadLinkedBanks)}
+            disabled={connectBank.busy}
+            style={{ marginTop: 10 }}
+          >
             <Surface style={[styles.connectRow, connectBank.busy && { opacity: 0.7 }]}>
               <View style={[styles.connectIcon, { backgroundColor: colors.accSoft }]}>
                 <Ionicons
@@ -421,5 +477,73 @@ const styles = StyleSheet.create({
   signOutText: {
     fontFamily: fontFamily.bold,
     fontSize: 14.5,
+  },
+  p4Card: {
+    borderRadius: radius.cardLg,
+    borderWidth: 1,
+    padding: 14,
+  },
+  p4Head: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  p4Footer: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    justifyContent: 'space-between',
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+  },
+  p4Amount: {
+    fontFamily: fontFamily.serif,
+    fontSize: 26,
+  },
+  p4Empty: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    borderRadius: radius.cardLg,
+    borderWidth: 1.5,
+    borderStyle: 'dashed',
+    padding: 16,
+  },
+  connectedHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    justifyContent: 'space-between',
+    marginTop: 24,
+    marginBottom: 10,
+  },
+  bankTile: {
+    width: 38,
+    height: 38,
+    borderRadius: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  bankTileText: {
+    fontFamily: fontFamily.bold,
+    fontSize: 13,
+    color: '#FFFFFF',
+  },
+  mono: {
+    fontFamily: fontFamily.regular,
+    fontSize: 12,
+    marginTop: 2,
+  },
+  changeLink: {
+    fontFamily: fontFamily.semibold,
+    fontSize: 13,
+  },
+  chip: {
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: radius.pill,
+  },
+  readLabel: {
+    fontFamily: fontFamily.medium,
+    fontSize: 11.5,
   },
 });

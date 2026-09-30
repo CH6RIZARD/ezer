@@ -210,4 +210,46 @@ export async function cardRoutes(server: FastifyInstance) {
       },
     };
   });
+
+  /**
+   * POST /cards/pay-in4-account — Settings' account picker
+   * (PayIn4AccountPicker.tsx). Sets User.payIn4InstrumentId to a SPECIFIC
+   * linked account and immediately re-runs the real assessment against it
+   * (assessAccess resolves the same id right back out — see trustScoring.ts),
+   * writing a fresh CardAccessList row exactly like a normal
+   * POST /cards/access-list would. Anonymous callers are rejected outright:
+   * unlike card design, there is no pre-signup reason to be choosing which
+   * bank funds Pay in 4.
+   */
+  server.post<{ Body: { instrumentId?: string } }>('/pay-in4-account', async (request, reply) => {
+    const userId = resolveUserId(request);
+    if (userId === 'anonymous') {
+      return reply.status(401).send({ success: false, error: 'Sign in required' });
+    }
+
+    const { instrumentId } = request.body || {};
+    if (!instrumentId || typeof instrumentId !== 'string') {
+      return reply.status(400).send({ success: false, error: 'instrumentId is required' });
+    }
+
+    const instrument = await prisma.fundingInstrument.findFirst({ where: { id: instrumentId, userId } });
+    if (!instrument) {
+      return reply.status(404).send({ success: false, error: 'Account not found' });
+    }
+    if (instrument.type !== 'bank') {
+      // Mirrors the mock's own rule verbatim: "Credit cards can't fund Pay
+      // in 4, so they're not listed" — enforced here too, not just hidden
+      // from the picker's list, in case a stale client sends one anyway.
+      return reply.status(400).send({ success: false, error: 'Only checking or savings accounts can fund Pay in 4' });
+    }
+
+    await prisma.user.update({ where: { id: userId }, data: { payIn4InstrumentId: instrument.id } });
+
+    const { status, limitCents, trustScore } = await assessAccess(userId);
+    await prisma.cardAccessList.create({
+      data: { userId, designId: null, mode: 'plaid', status, limitCents, trustScore },
+    });
+
+    return { success: true, data: { status, limitCents, trustScore } };
+  });
 }

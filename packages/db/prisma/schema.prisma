@@ -29,6 +29,15 @@ model User {
   /// time — every check compares against the SERVER's clock, never the
   /// device's, so changing the phone's local time cannot extend or fake it.
   devUnlockedUntil DateTime?
+  /// Pay in 4's ONE funding account — a FundingInstrument.id, not enforced as
+  /// a DB foreign key so disconnecting that bank (routes/plaid.ts's DELETE
+  /// /plaid/items/:id) can clear this with a plain update rather than
+  /// fighting a FK constraint. Null means "not chosen yet" (assessAccess
+  /// auto-picks the first eligible — non-credit — linked account) or "the
+  /// chosen one was disconnected." Settings' account picker
+  /// (PayIn4AccountPicker.tsx) is the only place this is set deliberately;
+  /// see CLAUDE.md's Linked banks section.
+  payIn4InstrumentId String?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
@@ -172,6 +181,19 @@ model FundingInstrument {
   // whichever instrument happened to be first in the array. See the note in
   // syncTransactionsForItem (apps/api/src/routes/plaid.ts).
   plaidAccountId  String?
+  // Plaid's account.subtype ('checking', 'savings', 'credit card', ...) —
+  // display-only (Settings' bank-detail screen labels an account "Checking"
+  // vs "Savings"). Pay in 4 ELIGIBILITY does not read this: `type == 'bank'`
+  // (i.e. not a credit card) is already the complete eligibility check, since
+  // `type` only ever collapses to 'card' (credit) or 'bank' (any depository).
+  subtype         String?
+  // The owning PlaidItem, so Settings can group accounts by bank and a
+  // per-item disconnect (DELETE /plaid/items/:id) can cascade-delete the
+  // accounts that came from it. Nullable because this backfilled onto rows
+  // created before the column existed — a NULL itemId just means "predates
+  // grouping," not "orphaned."
+  itemId          String?
+  item            PlaidItem?            @relation(fields: [itemId], references: [id], onDelete: Cascade)
   // Which product this bank link was made FOR, when the user linked it from
   // a specific flow rather than general onboarding. Null means "general" —
   // it can back subscriptions, Wallet, anything. 'pay_in_4' means the user
@@ -189,6 +211,7 @@ model FundingInstrument {
   subscriptionCharges SubscriptionCharge[]
 
   @@index([userId])
+  @@index([itemId])
 }
 
 // ============================================================================
@@ -504,11 +527,23 @@ model PlaidItem {
   institutionId   String?
   institutionName String?
   accounts        Json      // Array of Plaid account objects
+  /// Whether /plaid/sync reads THIS item's transactions to find recurring
+  /// charges. Defaults true — every pre-existing item and every general-
+  /// purpose new link keeps working exactly as before. Only turns false when
+  /// someone links a bank specifically for Pay in 4 (SpendingPowerSheet's
+  /// "Connect a new bank") and declines subscription-reading in the purpose
+  /// prompt, or later flips the "Read this bank for subscriptions" switch on
+  /// Settings' bank-detail screen. Pay in 4's own assessment (trustScoring.ts)
+  /// never checks this — a read-off bank still funds Pay in 4 fine, since
+  /// balance/deposit signals are a different read than subscription-charge
+  /// detection.
+  readForSubscriptions Boolean @default(true)
   lastSyncAt      DateTime?
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user               User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  fundingInstruments FundingInstrument[]
 
   @@index([userId])
 }
