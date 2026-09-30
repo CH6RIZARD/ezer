@@ -284,15 +284,36 @@ export async function plaidRoutes(server: FastifyInstance) {
       return reply.status(404).send({ success: false, error: 'No linked bank accounts found' });
     }
 
+    // One bad item must not take every other linked account down with it.
+    // Before this, a single revoked/expired OAuth connection (Plaid's
+    // ITEM_LOGIN_REQUIRED — the user changed their bank password, re-auth
+    // expired, etc.) threw out of transactionsSync with nothing here to
+    // catch it, aborting the loop entirely: every OTHER linked item — even
+    // ones syncing fine — silently stopped getting new data the moment any
+    // one item broke, with no error surfaced anywhere except a generic 400
+    // on every subsequent sync call.
     let totalNew = 0;
+    const failed: { plaidItemId: string; institutionName: string | null; reason: string }[] = [];
     for (const item of items) {
-      const accessToken = decrypt(item.accessTokenEnc);
-      const count = await syncTransactionsForItem(userId, item.plaidItemId, accessToken);
-      totalNew += count;
-      await prisma.plaidItem.update({ where: { id: item.id }, data: { lastSyncAt: new Date() } });
+      try {
+        const accessToken = decrypt(item.accessTokenEnc);
+        const count = await syncTransactionsForItem(userId, item.plaidItemId, accessToken);
+        totalNew += count;
+        await prisma.plaidItem.update({ where: { id: item.id }, data: { lastSyncAt: new Date() } });
+      } catch (err: any) {
+        const reason = err?.response?.data?.error_code || err?.message || 'unknown';
+        request.log.warn({ err, plaidItemId: item.plaidItemId }, 'sync failed for one item; continuing with the rest');
+        failed.push({ plaidItemId: item.plaidItemId, institutionName: item.institutionName, reason });
+      }
     }
 
-    return { success: true, data: { newSubscriptionsDetected: totalNew } };
+    return {
+      success: true,
+      data: {
+        newSubscriptionsDetected: totalNew,
+        ...(failed.length > 0 ? { itemsNeedingReauth: failed } : {}),
+      },
+    };
   });
 
   /**
