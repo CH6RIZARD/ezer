@@ -35,6 +35,14 @@ export interface FundingInstrument {
   last4: string;
   issuerColorHint?: string;
   networkArt?: string;
+  /**
+   * Issuer-approved card art from Visa/Mastercard, for a card we hold a network
+   * token for. RESERVED: nothing populates this yet. It becomes available only
+   * once a card is entered in full (e.g. the BNPL repayment card) and tokenized
+   * through a vault that returns card art; aggregator-linked cards never get it,
+   * because aggregators do not provide the card number. See utils/cardArt/.
+   */
+  networkTokenArtUri?: string;
   /** The BANK's name ("PNC Bank"), distinct from displayName (the account's
    *  own nickname, e.g. "Spend") — a real card shows the bank's name. */
   institutionName?: string;

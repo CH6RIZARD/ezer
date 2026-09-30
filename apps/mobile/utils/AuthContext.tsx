@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { api } from './api';
+import { clearAllCardArtPrefs } from './cardArt/prefs';
 
 interface User {
   id: string;
@@ -227,6 +228,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await Promise.all([
       AsyncStorage.removeItem(USER_KEY),
       api.clearToken(),
+      // Photos of the user's own cards are stored on this device only; they
+      // must not outlive the session (this also covers account deletion,
+      // which ends in logout()).
+      clearAllCardArtPrefs(),
     ]);
     setUser(null);
   };

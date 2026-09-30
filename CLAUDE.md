@@ -135,6 +135,43 @@ style problem.
   hand-copied implementation. Edit the physics there; `VirtualCard.tsx` and
   `PhysicalCardReview.tsx` should only ever supply front/back content to it.
 
+## Wallet card art (`apps/mobile/utils/cardArt/`)
+
+- **No data source returns what a linked card physically looks like.** Plaid,
+  MX, Finicity, Yodlee, Teller and Akoya return at most an institution logo,
+  a brand colour and a product name — never card art, and never the card
+  number. The only licensed source of real card art is a Visa/Mastercard
+  **network token**, which needs the full card number, so it is only ever
+  possible for a card the user enters in full (e.g. the BNPL repayment card),
+  never an aggregator-linked one. `FundingInstrument.networkTokenArtUri` is
+  RESERVED for that and nothing populates it yet.
+- **`resolveCardArt()` is the single place that decides a card's look**, first
+  hit wins: user photo → design the user picked → network-token art → catalog
+  design for the matched bank → bank colour + logo template. Explicit user
+  choices deliberately outrank automatic sources. `BankCardFace` draws every
+  tier; don't reintroduce a second inline card in `wallet.tsx`.
+- **Do not add scraped or copied issuer card art** (PNC's marketing PNGs and the
+  like) to the catalog. It is copyrighted, carries trademarks and third-party
+  marks (teams, universities), and is a legal risk in a shipped consumer
+  fintech app. The catalog is EZER's own renderings in approximate brand
+  colours; replace an issuer's designs only with assets a bank has licensed.
+- **Network art display rules are load-bearing** (Visa/Mastercard): the
+  `network_token` tier shows the art untouched with only last-4 at bottom-left
+  ("Visa 4865") — no subs pill or other overlay. Don't add any.
+- **Card photos never leave the device** (`prefs.ts`, AsyncStorage, one key per
+  card) and are wiped by `AuthContext.logout()`, which account deletion also
+  goes through. `docs/privacy.html` says so; if photos ever get uploaded or
+  synced, that document must change in the same commit. The stored file is not
+  redacted (the number band is only covered when drawn) — burning redaction in
+  needs `expo-image-manipulator` or a view-shot dependency; it was left out
+  because adding one rewrites `pnpm-lock.yaml` (`lockfileVersion: '6.0'`).
+- **`utils/cardArt/resolver.test.ts` uses Node's runner**, not Jest (the mobile
+  app has none): `pnpm --filter @ezer/mobile exec npx tsx --test utils/cardArt/resolver.test.ts`.
+  It is excluded from `tsc` in `apps/mobile/tsconfig.json`.
+- Bank-name matching is whole-word on purpose ("Citizens" must not match "citi",
+  and "First Citizens" is its own issuer). Add issuers in `catalog.ts`; the
+  test checks every alias resolves to its own issuer.
+
 ## Routing and the app's front door
 
 - **`app/onboarding.tsx` is the entry point for signed-out users**, not
