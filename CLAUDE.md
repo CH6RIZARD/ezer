@@ -93,12 +93,11 @@ style problem.
   transaction pooler. Apply migrations manually.
   `20260907000000_add_consent_record` and `20260908000000_add_card_designer`
   HAVE both been applied to the live Supabase database; future migrations still
-  need running by hand. **`20260930020000_add_installment_engine` has NOT been
-  applied yet** as of this writing — `InstallmentPlan`/`Installment` and
-  `FundingSource.purpose`/`Transfer.installmentId` exist only in the schema
-  file and the generated Prisma client, not in production Postgres. Apply it
-  by hand (session-mode connection, same as every other migration here)
-  before relying on anything in the Spending Power / Pay in 4 section below.
+  need running by hand. `20260930020000_add_installment_engine` (the Pay in 4
+  installment engine: `InstallmentPlan`/`Installment`,
+  `FundingSource.purpose`/`Transfer.installmentId`) HAS been applied — the
+  `POST /cards/installments/sweep` endpoint returned a real 200 after, not
+  the P2021/P2022 "table/column does not exist" errors it threw before.
 
 ## Card Studio
 
