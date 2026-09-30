@@ -332,6 +332,18 @@ export default function DrainReviewScreen() {
     setRest(r => ({ ...r, [row.id]: 'done' }));
     snapshotRow(row);
   }
+  /** The small X on a "Cancelled" pill — reverts a row confirmed by mistake.
+   *  Clears the snapshot too, not just the rest state: leaving a stale one
+   *  behind would let the AUTO_CLEAR_DAYS check below hide this row again a
+   *  couple of days later, silently undoing the very undo the user just did. */
+  function onRestUndo(row: DrainRow) {
+    setRest(r => ({ ...r, [row.id]: 'idle' }));
+    setSnapshot(s => {
+      const n = { ...s };
+      delete n[row.id];
+      return n;
+    });
+  }
 
   // --- summary + hints ------------------------------------------------------
   const counted = allRows.filter(r => marked[r.id] || (rest[r.id] && rest[r.id] !== 'idle'));
@@ -525,8 +537,20 @@ export default function DrainReviewScreen() {
                       )}
 
                       {done && (
-                        <View style={[styles.restPill, { backgroundColor: colors.red, borderColor: colors.red }]}>
-                          <Text style={[styles.restPillText, { color: '#FFFFFF' }]}>Cancelled</Text>
+                        <View style={{ position: 'relative' }}>
+                          <View style={[styles.restPill, { backgroundColor: colors.red, borderColor: colors.red }]}>
+                            <Text style={[styles.restPillText, { color: '#FFFFFF' }]}>Cancelled</Text>
+                          </View>
+                          {/* Undo for a mistaken confirm — the auto-revert
+                              below already handles "it actually billed
+                              again," this is for "I didn't mean to tap ✓." */}
+                          <Pressable
+                            onPress={() => onRestUndo(row)}
+                            hitSlop={8}
+                            style={[styles.restPillUndo, { backgroundColor: colors.ink, borderColor: colors.bg }]}
+                          >
+                            <Ionicons name="close" size={10} color="#FFFFFF" />
+                          </Pressable>
                         </View>
                       )}
                     </Surface>
@@ -706,6 +730,17 @@ const styles = StyleSheet.create({
   restPillText: {
     fontFamily: fontFamily.bold,
     fontSize: 11,
+  },
+  restPillUndo: {
+    position: 'absolute',
+    top: -6,
+    right: -6,
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    borderWidth: 1.5,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   restIconBtn: {
     width: 30,
