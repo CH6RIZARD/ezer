@@ -230,8 +230,14 @@ export default function HomeScreen() {
     // (local storage, then the server — see useCardFlowStatus.ts's own
     // fallback), so this tile only needs to reflect whatever `cardAccess`
     // already resolved to.
+    // `t` is a nonce, not a real param — Expo Router's tab screens stay
+    // mounted across tab switches, so pushing the SAME params object twice
+    // (sheet: 'spending' both times) looked identical to payin4.tsx's
+    // dedupe guard and only opened the sheet on the FIRST tap ever; every
+    // tap after that just landed on the tab with the sheet closed. A fresh
+    // value on every tap makes each one a genuine change again.
     const goToSpendingPower = () =>
-      router.push({ pathname: '/(tabs)/payin4', params: { sheet: 'spending' } });
+      router.push({ pathname: '/(tabs)/payin4', params: { sheet: 'spending', t: String(Date.now()) } });
 
     // Automated underwriting never leaves a real outcome at "review" or "no
     // limit" — apps/api/src/routes/cards.ts's `limitForScore` has no zero

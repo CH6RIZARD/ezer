@@ -87,7 +87,7 @@ export default function PayInFourScreen() {
   const [sheetVisible, setSheetVisible] = useState(false);
   const [sheetViaJoin, setSheetViaJoin] = useState(false);
   const [joined, setJoined] = useState(false);
-  const params = useLocalSearchParams<{ sheet?: string }>();
+  const params = useLocalSearchParams<{ sheet?: string; t?: string }>();
   const handledSheetParam = useRef<string | undefined>(undefined);
 
   const refreshJoined = useCallback(() => {
@@ -95,16 +95,20 @@ export default function PayInFourScreen() {
   }, []);
   useEffect(refreshJoined, [refreshJoined]);
 
-  // Home's Spending Power tile pushes here with ?sheet=spending. Guarded by a
-  // ref (not just the param value) so navigating back to this same param
-  // doesn't reopen the sheet a second time within one mount.
+  // Home's Spending Power tile pushes here with ?sheet=spending&t=<nonce>.
+  // Keyed on sheet+t together (not just 'sheet' — this tab screen stays
+  // mounted across tab switches, so pushing the SAME params twice looked
+  // like nothing changed and only opened the sheet on the very first tap
+  // ever; the nonce makes every tap a genuine, distinct param change).
   useEffect(() => {
-    if (params.sheet === 'spending' && handledSheetParam.current !== params.sheet) {
-      handledSheetParam.current = params.sheet;
+    if (params.sheet !== 'spending') return;
+    const key = `${params.sheet}:${params.t ?? ''}`;
+    if (handledSheetParam.current !== key) {
+      handledSheetParam.current = key;
       setSheetViaJoin(false);
       setSheetVisible(true);
     }
-  }, [params.sheet]);
+  }, [params.sheet, params.t]);
 
   const openSheet = useCallback(
     (viaJoin: boolean) => {

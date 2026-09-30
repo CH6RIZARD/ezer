@@ -26,13 +26,26 @@
 // were already reading from it). A first tap with `hasBank` true swaps the
 // single pill for "Use connected bank" (runs the SAME assessment, no Link)
 // vs "Connect a new bank" (Plaid Link tagged 'pay_in_4', separate from
-// whatever backs subscriptions). The mock's slide/wipe circle animation is
-// simplified here to a plain swap between the single pill and the two-pill
-// row — same end states and API calls, less animation fidelity.
+// whatever backs subscriptions). The slide animation itself (circle
+// left→right, covering the label as it passes) is done with a plain
+// Animated.Value translateX rather than the mock's CSS clip-path — the
+// circle is simply opaque and rendered AFTER the label in the JSX, so
+// sliding it over the text covers it with no masking trickery needed.
 // =============================================================================
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { View, Text, Modal, Pressable, ScrollView, StyleSheet, ActivityIndicator } from 'react-native';
+import {
+  View,
+  Text,
+  Modal,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  ActivityIndicator,
+  Animated,
+  Easing,
+} from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../utils/ThemeContext';
 import { fontFamily, radius, motion } from '../../theme/type';
@@ -58,8 +71,6 @@ const CHECK_STEPS = [
   'Calculating your spending power',
 ];
 const STEP_MS = 620;
-/** Offline/no-Plaid-build fallback so the flow always resolves to something. */
-const DEMO_LIMIT_CENTS = 100_000;
 const FEATURE_PLAID = process.env.EXPO_PUBLIC_FEATURE_PLAID === '1';
 
 type Phase = 'ask' | 'assessing' | 'reveal' | 'status';
@@ -81,6 +92,7 @@ export default function SpendingPowerSheet({
   onClose: () => void;
 }) {
   const { colors } = useTheme();
+  const insets = useSafeAreaInsets();
   const { openPlaidLink } = usePlaid();
   // Whether ANY bank is already linked — for subscriptions, cards, a prior
   // Pay in 4 link, anything. Drives the "Use connected bank" vs "Connect a
@@ -105,6 +117,31 @@ export default function SpendingPowerSheet({
    *  linked — shows the "Use connected bank" / "Connect a new bank" choice
    *  in place of the single pill. Reset on every fresh sheet open. */
   const [showChoice, setShowChoice] = useState(false);
+  /**
+   * True when the most recent assessment attempt failed (network down, or a
+   * real server error — e.g. this app hit exactly this once in testing,
+   * when a not-yet-applied migration made every POST /cards/access-list
+   * 500). This used to be silently swallowed and covered with a hardcoded
+   * demo limit shown as if it were a real approval — a fabricated number in
+   * a screen about real money is worse than an honest "couldn't check right
+   * now," so failure now renders its own retry state instead of a fake one.
+   */
+  const [assessmentError, setAssessmentError] = useState(false);
+  /** "Opening your bank…" — the idle pill's post-slide label when there is
+   *  NO bank to reuse, while handleConnect's Plaid Link is opening. Cleared
+   *  the moment Plaid exits (cancel) or an assessment starts. */
+  const [opening, setOpening] = useState(false);
+
+  // Slide animation for the idle primary pill (Patch 2): the circle starts
+  // at the left and slides to the right, covering the label as it passes —
+  // achieved by simple z-order (circle renders after the label) rather than
+  // a clip mask. `pillWidth` comes from the pill's own onLayout since the
+  // slide distance depends on it (pillWidth - circle size).
+  const slideAnim = useRef(new Animated.Value(0)).current;
+  const [pillWidth, setPillWidth] = useState(0);
+  const CIRCLE = 40;
+  const CIRCLE_MARGIN = 8;
+  const slideDistance = Math.max(0, pillWidth - CIRCLE - CIRCLE_MARGIN * 2);
 
   const alive = useRef(true);
   useEffect(
@@ -122,6 +159,9 @@ export default function SpendingPowerSheet({
     setBusy(false);
     setJustJoined(false);
     setShowChoice(false);
+    setAssessmentError(false);
+    setOpening(false);
+    slideAnim.setValue(0);
 
     const [outcome, revealSeen, design] = await Promise.all([
       getSpendingPowerOutcome(),
@@ -178,42 +218,47 @@ export default function SpendingPowerSheet({
   const runAssessment = useCallback(async () => {
     setPhase('assessing');
     setStepIndex(0);
+    setAssessmentError(false);
     for (let i = 0; i < CHECK_STEPS.length; i++) {
       await wait(STEP_MS);
       if (!alive.current) return;
       setStepIndex(i + 1);
     }
 
-    let cents = DEMO_LIMIT_CENTS;
-    let status: CardAccessOutcome['status'] = 'approved';
-    let ok = false;
     try {
       const res = await api.post<AccessResponse>('/cards/access-list', { mode: 'plaid', designId: null });
       const payload = res?.data ?? res;
-      cents = typeof payload?.limitCents === 'number' ? payload.limitCents : DEMO_LIMIT_CENTS;
-      status = mapServerStatus(payload?.status) ?? 'approved';
+      const cents = typeof payload?.limitCents === 'number' ? payload.limitCents : 0;
+      const status = mapServerStatus(payload?.status) ?? 'approved';
       const outcome: CardAccessOutcome = { status, limitCents: cents, joinedAt: new Date().toISOString() };
       await saveSpendingPowerOutcome(outcome);
       await mirrorServerAccessOutcome(outcome);
-      ok = true;
+      if (!alive.current) return;
+
+      setJoined(true);
+      setLimitCents(cents);
+      setSuspended(status === 'suspended');
+      setBusy(false);
+
+      if (status === 'approved' && cents > 0) {
+        const revealSeen = await getSpendingPowerRevealSeen();
+        setPhase(revealSeen ? 'status' : 'reveal');
+      } else {
+        setPhase('status');
+      }
     } catch {
-      // Offline / not signed in: the demo band still resolves the screen,
-      // but is deliberately NOT persisted — it is not a real assessment.
+      // A failed assessment must NEVER show a number — not even a "demo"
+      // one. Showing a fabricated limit as if it were real is a worse
+      // outcome than an honest error in a screen whose entire job is
+      // stating a real spending figure. Land back wherever the primary CTA
+      // already renders (ask if never joined, status otherwise) with the
+      // error banner up, not a fake reveal.
+      if (!alive.current) return;
+      setBusy(false);
+      setAssessmentError(true);
+      setPhase(joined ? 'status' : 'ask');
     }
-    if (!alive.current) return;
-
-    setJoined(true);
-    setLimitCents(cents);
-    setSuspended(ok && status === 'suspended');
-    setBusy(false);
-
-    if (ok && status === 'approved' && cents > 0) {
-      const revealSeen = await getSpendingPowerRevealSeen();
-      setPhase(revealSeen ? 'status' : 'reveal');
-    } else {
-      setPhase('status');
-    }
-  }, [wait]);
+  }, [wait, joined]);
 
   /** "Connect a new bank" — opens Plaid Link tagged 'pay_in_4', separate from
    *  whatever bank (if any) already backs subscriptions. This is also the
@@ -227,20 +272,37 @@ export default function SpendingPowerSheet({
     if (!FEATURE_PLAID) {
       void runAssessment().finally(() => {
         if (alive.current) setBusy(false);
+        setOpening(false);
+        slideAnim.setValue(0);
       });
       return;
     }
 
+    setOpening(true);
     // Tagged 'pay_in_4' so Settings lists this link under Pay in 4 rather
     // than mixed in with banks connected for other reasons.
     openPlaidLink(
-      () => void runAssessment(),
       () => {
+        setOpening(false);
+        void runAssessment();
+      },
+      () => {
+        // Cancelled — animate the circle back to idle rather than leaving it
+        // parked mid-slide (only visible when the idle pill is what was
+        // tapped; harmless no-op otherwise since the split pills don't
+        // touch slideAnim at all).
         if (alive.current) setBusy(false);
+        setOpening(false);
+        Animated.timing(slideAnim, {
+          toValue: 0,
+          duration: 550,
+          easing: Easing.bezier(0.22, 1, 0.36, 1),
+          useNativeDriver: true,
+        }).start();
       },
       'pay_in_4'
     );
-  }, [busy, openPlaidLink, runAssessment]);
+  }, [busy, openPlaidLink, runAssessment, slideAnim]);
 
   /**
    * "Use connected bank" — runs the SAME assessment as "Connect a new bank",
@@ -258,17 +320,30 @@ export default function SpendingPowerSheet({
     void runAssessment();
   }, [busy, runAssessment]);
 
-  /** Primary pill's idle tap: reveal the connected/new-bank choice when a
-   *  bank is already linked, otherwise go straight to Plaid — there is
-   *  nothing to choose between for someone starting from zero. */
+  /**
+   * Primary pill's idle tap (Patch 2): slide the circle left→right over
+   * 550ms first — covering the label as it passes, since the circle is
+   * opaque and stacks above the text — THEN branch: a bank already linked
+   * reveals the connected/new-bank choice; no bank at all goes straight to
+   * Plaid (nothing to choose between for someone starting from zero).
+   */
   const handlePrimaryTap = useCallback(() => {
     if (busy) return;
-    if (hasBank) {
-      setShowChoice(true);
-      return;
-    }
-    handleConnect();
-  }, [busy, hasBank, handleConnect]);
+    Animated.timing(slideAnim, {
+      toValue: 1,
+      duration: 550,
+      easing: Easing.bezier(0.22, 1, 0.36, 1),
+      useNativeDriver: true,
+    }).start(({ finished }) => {
+      if (!finished || !alive.current) return;
+      if (hasBank) {
+        slideAnim.setValue(0);
+        setShowChoice(true);
+      } else {
+        handleConnect();
+      }
+    });
+  }, [busy, hasBank, handleConnect, slideAnim]);
 
   const finishReveal = useCallback(async () => {
     await markSpendingPowerRevealSeen();
@@ -278,6 +353,15 @@ export default function SpendingPowerSheet({
   if (!loaded && phase === 'ask' && !visible) return null;
 
   const hasLimit = limitCents !== null && limitCents > 0 && !suspended;
+
+  const errorBanner = assessmentError && (
+    <View style={[styles.errorBanner, { backgroundColor: colors.card, borderColor: colors.red }]}>
+      <Ionicons name="alert-circle-outline" size={16} color={colors.red} />
+      <Text style={[styles.errorBannerText, { color: colors.red }]}>
+        Couldn't check your spending power just now. Try again.
+      </Text>
+    </View>
+  );
 
   /**
    * The primary pill, shared between the 'ask' and no-limit 'status' phases.
@@ -301,11 +385,31 @@ export default function SpendingPowerSheet({
       </View>
     ) : (
       <PressScale onPress={handlePrimaryTap} scaleTo={motion.pressScale} disabled={busy}>
-        <View style={[styles.ctaPill, { backgroundColor: colors.ink, opacity: busy ? 0.6 : 1 }]}>
-          <Text style={styles.ctaPillText}>{busy ? busyLabel : idleLabel}</Text>
-          <View style={[styles.ctaCircle, { backgroundColor: colors.gold }]}>
-            <Ionicons name="arrow-forward" size={18} color="#FFFFFF" />
+        <View
+          style={[styles.ctaPill, { backgroundColor: colors.ink, opacity: busy && !opening ? 0.6 : 1 }]}
+          onLayout={e => setPillWidth(e.nativeEvent.layout.width)}
+        >
+          <View style={styles.ctaPillLabelWrap}>
+            <Text style={styles.ctaPillText} numberOfLines={1}>
+              {opening ? 'Opening your bank…' : busy ? busyLabel : idleLabel}
+            </Text>
           </View>
+          {/* Rendered AFTER the label so it stacks visually on top — sliding
+              it right covers the label as it passes, with no clip mask
+              needed. */}
+          <Animated.View
+            style={[
+              styles.ctaCircle,
+              {
+                backgroundColor: colors.gold,
+                transform: [
+                  { translateX: slideAnim.interpolate({ inputRange: [0, 1], outputRange: [0, slideDistance] }) },
+                ],
+              },
+            ]}
+          >
+            <Ionicons name="arrow-forward" size={18} color="#FFFFFF" />
+          </Animated.View>
         </View>
       </PressScale>
     );
@@ -317,7 +421,15 @@ export default function SpendingPowerSheet({
       </Pressable>
 
       <View style={styles.sheetWrap} pointerEvents="box-none">
-        <View style={[styles.sheet, { backgroundColor: colors.card }]}>
+        <View
+          style={[
+            styles.sheet,
+            // The fixed paddingBottom:34 sat flush against a gesture-nav bar
+            // on devices with one, clipping the last assessing step's text
+            // ("Calculating your spending power") right at the screen edge.
+            { backgroundColor: colors.card, paddingBottom: 34 + insets.bottom },
+          ]}
+        >
           <View style={[styles.grabber, { backgroundColor: colors.line2 }]} />
 
           {!loaded ? (
@@ -360,7 +472,10 @@ export default function SpendingPowerSheet({
                     </View>
                   </View>
 
-                  <View style={{ marginTop: 30 }}>{renderPrimaryCta('Find out my spending power', 'Opening…')}</View>
+                  {errorBanner}
+                  <View style={{ marginTop: errorBanner ? 14 : 30 }}>
+                    {renderPrimaryCta('Find out my spending power', 'Opening…')}
+                  </View>
                   <Pressable onPress={onClose} disabled={busy} style={styles.laterBtn}>
                     <Text style={[styles.laterText, { color: colors.mut }]}>Later</Text>
                   </Pressable>
@@ -532,9 +647,12 @@ export default function SpendingPowerSheet({
                   )}
 
                   {!hasLimit ? (
-                    <View style={{ marginTop: 22 }}>
-                      {renderPrimaryCta(suspended ? 'Check again' : 'Check spending power', 'Checking…')}
-                    </View>
+                    <>
+                      {errorBanner}
+                      <View style={{ marginTop: errorBanner ? 14 : 22 }}>
+                        {renderPrimaryCta(suspended ? 'Check again' : 'Check spending power', 'Checking…')}
+                      </View>
+                    </>
                   ) : (
                     <PressScale onPress={onClose} scaleTo={motion.pressScale} style={{ marginTop: 22 }}>
                       <View style={[styles.ctaPillCentered, { backgroundColor: colors.ink }]}>
@@ -606,14 +724,22 @@ const styles = StyleSheet.create({
   checkCircle: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
   factRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   factText: { fontFamily: fontFamily.regular, fontSize: 13 },
+  // Idle primary pill: children are ABSOLUTELY positioned (not flex
+  // siblings) so the circle can slide freely across the full width and
+  // visually cover the label as it passes — see handlePrimaryTap.
   ctaPill: {
     height: 56,
     borderRadius: radius.pill,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingLeft: 24,
-    paddingRight: 8,
+    position: 'relative',
+    overflow: 'hidden',
+  },
+  ctaPillLabelWrap: {
+    position: 'absolute',
+    left: 56,
+    right: 8,
+    top: 0,
+    bottom: 0,
+    justifyContent: 'center',
   },
   ctaPillCentered: {
     height: 56,
@@ -622,7 +748,16 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   ctaPillText: { fontFamily: fontFamily.bold, fontSize: 15, color: '#FFFFFF' },
-  ctaCircle: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
+  ctaCircle: {
+    position: 'absolute',
+    left: 8,
+    top: 8,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   splitPillFilled: { flex: 1, height: 56, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center' },
   splitPillFilledText: { fontFamily: fontFamily.bold, fontSize: 13.5, color: '#FFFFFF' },
   splitPillOutline: {
@@ -634,6 +769,16 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   splitPillOutlineText: { fontFamily: fontFamily.bold, fontSize: 13.5 },
+  errorBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 18,
+    padding: 12,
+    borderRadius: radius.chip,
+    borderWidth: 1,
+  },
+  errorBannerText: { fontFamily: fontFamily.semibold, fontSize: 12.5, flex: 1 },
   laterBtn: { height: 44, alignItems: 'center', justifyContent: 'center', marginTop: 4 },
   laterText: { fontFamily: fontFamily.semibold, fontSize: 14 },
   stepRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 8 },
