@@ -159,6 +159,16 @@ model FundingInstrument {
   // ("Spend", "Checking Plus"). The wallet card shows this as the primary
   // issuer label; a real card says the bank's name, not the account's.
   institutionName String?
+  // Plaid's own stable account identifier (`account.account_id`) — the ONLY
+  // reliable key for matching a synced transaction back to the funding
+  // instrument it belongs to. `last4` is NOT unique enough on its own (two
+  // real accounts can share a mask) and was never the actual bug here: the
+  // sync path was deriving a fake "mask" from the last 4 CHARACTERS of
+  // `transaction.account_id` — an opaque Plaid id, not a digit string — so
+  // it essentially never matched and every charge silently fell back to
+  // whichever instrument happened to be first in the array. See the note in
+  // syncTransactionsForItem (apps/api/src/routes/plaid.ts).
+  plaidAccountId  String?
   isDefault       Boolean               @default(false)
   createdAt       DateTime              @default(now())
   updatedAt       DateTime              @updatedAt

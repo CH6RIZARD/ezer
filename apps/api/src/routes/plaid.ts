@@ -244,9 +244,15 @@ export async function plaidRoutes(server: FastifyInstance) {
               issuerColorHint,
               networkArt,
               institutionName,
+              // Plaid's own stable account id — the real key
+              // syncTransactionsForItem needs to attribute a charge to THIS
+              // instrument rather than the mask-derived guess that used to
+              // sit there. See the schema comment for why that guess never
+              // actually worked.
+              plaidAccountId: account.id,
             },
           });
-        } else if (issuerColorHint || networkArt || institutionName) {
+        } else if (issuerColorHint || networkArt || institutionName || account.id) {
           // Re-linking an account that predates this feature: backfill the
           // branding onto the existing row instead of leaving it stuck with
           // the generic skin forever.
@@ -256,6 +262,7 @@ export async function plaidRoutes(server: FastifyInstance) {
               issuerColorHint: existing.issuerColorHint ?? issuerColorHint,
               networkArt: existing.networkArt ?? networkArt,
               institutionName: existing.institutionName ?? institutionName,
+              plaidAccountId: existing.plaidAccountId ?? account.id,
             },
           });
         }
@@ -423,7 +430,35 @@ async function syncTransactionsForItem(userId: string, itemId: string, accessTok
   });
 
   // Get user's funding instruments for matching
-  const instruments = await prisma.fundingInstrument.findMany({ where: { userId } });
+  let instruments = await prisma.fundingInstrument.findMany({ where: { userId } });
+
+  // Backfill plaidAccountId for any instrument that predates it, or that was
+  // linked before this fix — not just at initial link time. This used to
+  // live ONLY in the public-token-exchange handler, which a routine
+  // POST /plaid/sync never runs, so an instrument created before this fix
+  // (or a second account added to the same institution, which never
+  // re-triggers exchange) could go on missing its real matching key forever.
+  // Cheap to check every sync: this only calls Plaid when something is
+  // actually still missing.
+  if (instruments.some(i => !i.plaidAccountId)) {
+    try {
+      const acctRes = await plaid.accountsGet({ access_token: accessToken });
+      for (const inst of instruments) {
+        if (inst.plaidAccountId) continue;
+        const match = acctRes.data.accounts.find(a => a.mask === inst.last4);
+        if (match) {
+          await prisma.fundingInstrument.update({
+            where: { id: inst.id },
+            data: { plaidAccountId: match.account_id },
+          });
+          inst.plaidAccountId = match.account_id;
+        }
+      }
+    } catch (err) {
+      // Best-effort — matching falls back to instruments[0] below exactly as
+      // it did before this fix, for whichever instruments stay unmatched.
+    }
+  }
 
   // Group transactions by normalized merchant name
   const byMerchant = new Map<string, { txs: Transaction[]; amounts: number[] }>();
@@ -514,10 +549,29 @@ async function syncTransactionsForItem(userId: string, itemId: string, accessTok
       const amountCents = Math.round(tx.amount * 100);
       const chargeDate = new Date(tx.date);
 
-      // Find best matching funding instrument by account_id mask
-      const accountMask = (tx as any).account_id ? tx.account_id.slice(-4) : null;
-      const instrument = instruments.find(i => accountMask && i.last4 === accountMask)
-        || instruments[0];
+      // Match by Plaid's own account id — the one stable key that actually
+      // identifies which linked account this transaction came from.
+      //
+      // This used to take the last 4 CHARACTERS of `tx.account_id` and
+      // compare that against `instrument.last4` — but `account_id` is an
+      // opaque Plaid identifier (e.g. "vozxg8Pgn1TWv...Wq9GxXNVYVsGO"), not
+      // a digit string, so its last 4 characters are essentially random and
+      // almost never equal a real 4-digit mask. Every charge silently fell
+      // through to `instruments[0]` instead — for a user with more than one
+      // account at the same bank (exactly this user's two "Spend" accounts),
+      // that meant charges were attributed to whichever instrument happened
+      // to be first in an unordered query result, not the account that
+      // actually paid. That's why a per-card breakdown (Wallet's "Total
+      // drained", the per-card subs count, any date-range filter scoped to
+      // one card) could silently omit real charges or show the wrong count.
+      //
+      // plaidAccountId is only populated going forward from the link/re-link
+      // path above; an instrument from before that still falls back to the
+      // first instrument, same as before, rather than silently dropping the
+      // charge.
+      const instrument =
+        instruments.find(i => i.plaidAccountId && i.plaidAccountId === tx.account_id) ||
+        instruments[0];
 
       if (!instrument) continue;
 
