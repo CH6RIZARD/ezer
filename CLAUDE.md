@@ -135,6 +135,20 @@ style problem.
   has — worked through however many queued moves had piled up during the
   drag. Removing the throttle to "simplify" reintroduces that hang on web; it
   is a no-op on native, where the native driver already ran at display rate.
+- **Never `addListener` on SpinCard's Animated values (`rx`, `ry`, `float`).**
+  They are `useNativeDriver: true`, and a JS listener on a native-driven value
+  forces every animation frame back across the bridge to JS. The idle float
+  loops from mount on a tab that stays mounted, so three such listeners kept
+  the JS thread busy ~60×/sec from app launch on every screen — measured as
+  "high input latency" on 65–84% of frames app-wide (`dumpsys gfxinfo`). It
+  read as "the whole app is laggy." The plain-number mirrors `rxVal`/`ryVal`
+  are written where THIS code sets the values (`applyMove`, the release snap),
+  and `freezeFloat` reads the float through `stopAnimation`'s callback. If you
+  need the current value of one of these, use `stopAnimation(cb)`, not a
+  listener. Related: `app/(tabs)/_layout.tsx` sets `freezeOnBlur: true` so a
+  blurred tab's subtree stops rendering at all — don't remove it to "fix" a
+  stale-looking tab; use `useFocusEffect` on that screen instead (Wallet
+  already does, for its carousel position).
 - **The Pay in 4 card's free-drag spin physics live in
   `components/redesign/SpinCard.tsx`**, not in `VirtualCard.tsx` — extracted
   so `PhysicalCardReview.tsx`'s finished-design preview gets the exact same
@@ -356,6 +370,17 @@ style problem.
 - **The onboarding reads `darkTokens` directly, not `useTheme().colors`.** The
   flow is a committed dark design; the light palette washes out the gold and
   coral that carry the meaning (a trial about to convert, money leaving).
+- **There are three theme modes, not two: `'light' | 'dark' | 'black'`**
+  (`utils/ThemeContext.tsx`, `ThemeMode`). `'black'` is the true-black
+  AMOLED variant (`blackTokens` in `theme/tokens.ts` — only the surfaces
+  differ from `darkTokens`; text/accent/gold are shared). `isDark` is `true`
+  for BOTH dark modes on purpose, so every existing `isDark` consumer (status
+  bar, calendar, popovers) needed no change — read `mode` only when the
+  distinction matters. The stored preference is the mode string; the old
+  `'dark'`/`'light'` values remain valid. Settings' appearance control is three
+  UNLABELLED swatches, each painted the real `bg` of the theme it selects,
+  requested that way explicitly ("don't label them, just leave the colour") —
+  don't add Light/Dark/Black captions back.
 - **`inset: 0` is not implemented in React Native.** It is dropped silently, so
   an absolutely positioned box written that way has no dimensions. Use
   top/left/right/bottom.
