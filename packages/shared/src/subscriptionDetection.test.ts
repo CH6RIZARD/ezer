@@ -193,8 +193,20 @@ describe('hasStableAmount', () => {
     expect(hasStableAmount([1099, 1299, 1299])).toBe(true);
   });
 
+  it('accepts a real price drop, any size — e.g. Brigit $14.99 -> $8.99', () => {
+    // A single clean step down, not three different numbers that never
+    // repeat — that's what separates a real plan change from noise.
+    expect(hasStableAmount([1499, 899, 899])).toBe(true);
+  });
+
   it('rejects amounts that vary like ordinary shopping', () => {
     expect(hasStableAmount([433, 1200, 5000])).toBe(false);
+  });
+
+  it('still rejects usage-based billing that drifts every single cycle', () => {
+    // Three genuinely distinct amounts, not a clean two-tier step — this is
+    // Railway-style variable hosting cost, not a subscription price.
+    expect(hasStableAmount([1933, 2449, 2783])).toBe(false);
   });
 });
 

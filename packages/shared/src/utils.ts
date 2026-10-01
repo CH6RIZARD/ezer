@@ -441,15 +441,33 @@ export function inferBillingInterval(dates: Date[]): BillingInterval {
 export const MAX_AMOUNT_SPREAD = 1.25;
 
 /**
- * Subscriptions bill a stable amount. Price rises are real, so this is a
- * tolerance rather than equality — but a merchant you spend a different amount
- * at every visit is a shop, not a subscription.
+ * Subscriptions bill a stable amount. Price changes are real, so this is a
+ * tolerance rather than equality — but a merchant you spend a different
+ * amount at every visit is a shop, not a subscription.
+ *
+ * At most two DISTINCT exact amounts passes regardless of how far apart they
+ * are: a merchant's own price tier repeats to the exact cent across billing
+ * cycles, which ordinary variable spending essentially never does by
+ * coincidence — a real plan change (upgrade, downgrade, a promo ending) is
+ * still a subscription on the day after the price changed, not a new kind of
+ * merchant. This was previously gated by the same tight MAX_AMOUNT_SPREAD
+ * ratio as everything else, so a subscription that genuinely got CHEAPER
+ * (e.g. $14.99 → $8.99, a 40% drop) failed here and never got detected at
+ * all — including never reaching the price-history feature that exists
+ * specifically to show a user when a subscription's price changed, since
+ * that feature only ever sees subscriptions this function already promoted.
+ * Three or more genuinely distinct amounts falls back to the original tight
+ * ratio check, which still exists to reject ordinary shopping ($4.33, $12,
+ * $50) and usage-based billing that drifts a little every cycle.
  */
 export function hasStableAmount(amountsCents: number[]): boolean {
   const positive = amountsCents.filter(a => a > 0);
   if (positive.length < 2) return false;
+
+  const distinct = Array.from(new Set(positive));
+  if (distinct.length <= 2) return true;
+
   const min = Math.min(...positive);
   const max = Math.max(...positive);
-  if (min <= 0) return false;
   return max / min <= MAX_AMOUNT_SPREAD;
 }
