@@ -55,7 +55,7 @@ export default function IndexScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: colors.background, justifyContent: 'center', alignItems: 'center', paddingTop: insets.top }}>
       <Animated.View style={{ opacity }}>
-        <Wordmark />
+        <Wordmark style={{ fontSize: 34, letterSpacing: 5 }} />
       </Animated.View>
       {__DEV__ && (
         <Text style={{ marginTop: 16, fontSize: 14, color: colors.textSecondary }}>Loading…</Text>
