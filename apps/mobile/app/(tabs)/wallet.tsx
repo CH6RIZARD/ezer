@@ -21,9 +21,18 @@ import {
   Platform,
   Pressable,
   StyleSheet,
+  LayoutAnimation,
+  UIManager,
   type NativeSyntheticEvent,
   type NativeScrollEvent,
 } from 'react-native';
+
+// Android needs this opt-in for LayoutAnimation; iOS has it on by default.
+// New-architecture (Fabric) builds no-op the call harmlessly if it's already
+// unnecessary — safe to call unconditionally rather than feature-detecting.
+if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -287,6 +296,10 @@ export default function WalletScreen() {
     { merchantId: string; merchantName: string; logo?: string; totalCents: number; count: number; subscriptionId: string | null }[]
   >([]);
   const [loadingBreakdown, setLoadingBreakdown] = useState(false);
+  /** Which card's data `merchants` currently holds, so the effect below can
+   *  tell "the card changed" apart from "only the date range changed" on
+   *  the SAME card — see the effect's own comment. */
+  const merchantsCardId = useRef<string | undefined>(undefined);
 
   useEffect(() => {
     let cancelled = false;
@@ -294,16 +307,32 @@ export default function WalletScreen() {
 
     if (!cardId) {
       setMerchants([]);
+      merchantsCardId.current = undefined;
       return;
     }
 
-    // Clear the PREVIOUS card's/range's rows immediately, not just once the
-    // new fetch resolves. Leaving them in place until then is exactly why
-    // swiping cards flashed the wrong sub count — `active?.id` updates
-    // synchronously, so the render briefly paired the new card with the
-    // old card's still-in-state merchant list before the fetch below
-    // caught up.
-    setMerchants([]);
+    const switchedCard = merchantsCardId.current !== cardId;
+
+    if (switchedCard) {
+      // A genuinely different card's numbers have nothing to do with what's
+      // on screen — clear immediately, not just once the new fetch
+      // resolves. Leaving the old rows in place until then is exactly why
+      // swiping cards flashed the wrong sub count — `active?.id` updates
+      // synchronously, so the render briefly paired the new card with the
+      // old card's still-in-state merchant list before the fetch below
+      // caught up.
+      setMerchants([]);
+      setLoadingBreakdown(true);
+    }
+    // else: same card, only the date range changed (a preset tap). Leave
+    // the current rows on screen rather than blanking the list for every
+    // single range tap — LayoutAnimation below animates the add/remove/
+    // reorder once the new numbers land, so it reads as the list settling
+    // into its new shape, not disappearing and reappearing. No loading
+    // state either: this screen already has SOMETHING real to show for
+    // this exact card, so there is nothing to "load" from the user's
+    // perspective, only an update to apply once it arrives.
+    merchantsCardId.current = cardId;
 
     // ALWAYS send explicit dates computed on the DEVICE (`range`, from
     // presetRange() above — already correct for every preset, not just
@@ -316,10 +345,16 @@ export default function WalletScreen() {
     // 'thisMonth'/'lastYear' cases (apps/api/.../utils.ts) still exist for
     // any other caller that doesn't have a device clock to compute from, but
     // this screen always has one, so it always uses it.
-    setLoadingBreakdown(true);
     getMerchants(cardId, 'custom', { startDate: range.start.toISOString(), endDate: range.end.toISOString() })
       .then(rows => {
         if (cancelled) return;
+        if (!switchedCard) {
+          // Animate the swap instead of a hard cut — rows that are gone in
+          // the new range fade/collapse out, rows that are newly present
+          // fade in, and surviving rows glide to their new sort position
+          // instead of the whole list vanishing and rebuilding.
+          LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+        }
         setMerchants(
           rows.map(m => ({
             merchantId: m.merchantId,
