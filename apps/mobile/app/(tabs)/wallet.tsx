@@ -314,6 +314,21 @@ export default function WalletScreen() {
       // caught up.
       setMerchants([]);
       setLoadingBreakdown(true);
+      // The real "info shifts when I switch card" bug: a new card's merchant
+      // list is usually a different length than the old one (often much
+      // shorter, down to the "No charges on this card" empty state), which
+      // shrinks the page's total content height. If the user had scrolled
+      // down past where that new, shorter content ends, Android's ScrollView
+      // snaps the offset back into bounds the instant the layout shrinks —
+      // yanking the ENTIRE page, card included, up the screen in one frame.
+      // That native clamp is what read as "the card art/number shifts" —
+      // the card itself never moved, the page scrolled out from under it.
+      // Scrolling to the top ourselves, right when the switch happens,
+      // turns that into a deliberate, smooth transition instead of an
+      // uncontrolled jump, and it reliably lands the new card's top at the
+      // top of the page, matching a genuine card switch rather than a
+      // same-card range update.
+      pageRef.current?.scrollTo({ y: 0, animated: true });
     }
     // else: same card, only the date range changed (a preset tap). Leave
     // the current rows on screen rather than blanking the list for every
@@ -381,6 +396,7 @@ export default function WalletScreen() {
       : 'Custom';
 
   const carouselRef = useRef<ScrollView>(null);
+  const pageRef = useRef<ScrollView>(null);
 
   /** Inverse of cardOffset(): undo the leading offset before dividing. */
   const nearestIndex = (x: number) =>
@@ -454,6 +470,7 @@ export default function WalletScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
       <ScrollView
+        ref={pageRef}
         contentContainerStyle={{
           paddingTop: insets.top + 10,
           paddingBottom: insets.bottom + layout.contentBottom,
