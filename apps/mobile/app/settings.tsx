@@ -7,10 +7,9 @@
 // toggles, and a red Sign out row.
 // =============================================================================
 
-import React, { useCallback, useState } from 'react';
-import { View, Text, ScrollView, Pressable, Switch, StyleSheet, ActivityIndicator } from 'react-native';
-import { router, useFocusEffect } from 'expo-router';
-import { LinearGradient } from 'expo-linear-gradient';
+import React, { useState } from 'react';
+import { View, Text, ScrollView, Pressable, Switch, StyleSheet } from 'react-native';
+import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../utils/ThemeContext';
@@ -24,11 +23,6 @@ import {
   PressScale,
   ScreenBody,
 } from '../components/redesign/Primitives';
-import { useConnectBank } from '../utils/useConnectBank';
-import { fetchLinkedBanks, payIn4AccountFor, initialFor, tintFor, type LinkedBanksData } from '../utils/linkedBanks';
-import { formatCents } from '../utils/calculations';
-import { getSpendingPowerOutcome } from '../utils/cardDesignStore';
-import PayIn4AccountPicker from '../components/redesign/PayIn4AccountPicker';
 
 const NOTIFS = [
   { key: 'renewals', title: 'Renewal alerts', sub: '3 days before' },
@@ -44,35 +38,11 @@ export default function SettingsScreen() {
     signOut?: () => void;
     logout?: () => void;
   };
-  const connectBank = useConnectBank();
-
   const [notifs, setNotifs] = useState<Record<string, boolean>>({
     renewals: true,
     trials: true,
     digest: false,
   });
-
-  // Real per-account data (GET /plaid/linked-banks) — which bank groups
-  // funds Pay in 4, per PlaidItem.readForSubscriptions, etc. Refetched every
-  // time this screen regains focus (not just on mount) so returning from
-  // BankDetail or the account picker shows whatever just changed there.
-  const [linkedBanks, setLinkedBanks] = useState<LinkedBanksData | null>(null);
-  const [loadingBanks, setLoadingBanks] = useState(true);
-  const [payIn4LimitCents, setPayIn4LimitCents] = useState<number | null>(null);
-  const [pickerOpen, setPickerOpen] = useState(false);
-
-  const loadLinkedBanks = useCallback(async () => {
-    const [data, outcome] = await Promise.all([fetchLinkedBanks(), getSpendingPowerOutcome()]);
-    setLinkedBanks(data);
-    setPayIn4LimitCents(outcome?.status === 'approved' ? outcome.limitCents ?? null : null);
-    setLoadingBanks(false);
-  }, []);
-
-  useFocusEffect(
-    useCallback(() => {
-      void loadLinkedBanks();
-    }, [loadLinkedBanks])
-  );
 
   const signOut = () => {
     // The auth context has gone by both names across revisions; call whichever
@@ -180,181 +150,24 @@ export default function SettingsScreen() {
 
           {/* --- linked banks -------------------------------------------------- */}
           {/*
-            Turn 3 model (PATCH-NOTES-early-access-sheet.md, "Patch 3"):
-            Pay in 4 has exactly ONE funding account (User.payIn4InstrumentId,
-            set via the picker sheet below or auto-picked by
-            trustScoring.ts's resolvePayIn4Instrument the first time an
-            assessment runs). Every OTHER linked bank is read for
-            subscriptions unless the user turned that off for it specifically
-            (PlaidItem.readForSubscriptions, flipped on BankDetail.tsx). This
-            replaced the earlier `FundingInstrument.purpose` grouping, which
-            only ever produced an inferred "also used for Pay in 4" guess —
-            GET /plaid/linked-banks now says exactly which account it is.
+            Its OWN screen (settings/linked-banks.tsx), per the mock's 3a·1 —
+            not inlined here. This row is the only thing on the main Settings
+            page; "Pay in 4 pays from", the connected-banks list and
+            "Connect a bank" all live on the far side of this tap.
           */}
-          <SectionHeader style={styles.section}>Pay in 4 pays from</SectionHeader>
-          {loadingBanks ? (
-            <ActivityIndicator style={{ marginTop: 10 }} color={colors.gold} />
-          ) : (
-            (() => {
-              const p4Item = linkedBanks?.items.find(i => payIn4AccountFor(i));
-              const p4Account = p4Item ? payIn4AccountFor(p4Item) : null;
-
-              return p4Account && p4Item ? (
-                <Pressable onPress={() => setPickerOpen(true)}>
-                  <LinearGradient
-                    colors={colors.goldTile as unknown as readonly [string, string, ...string[]]}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 1 }}
-                    style={[styles.p4Card, { borderColor: colors.goldLine }]}
-                  >
-                    <View style={styles.p4Head}>
-                      <View style={[styles.bankTile, { backgroundColor: tintFor(p4Item.institutionName) ?? colors.accInk }]}>
-                        <Text style={styles.bankTileText}>{initialFor(p4Item.institutionName)}</Text>
-                      </View>
-                      <View style={{ flex: 1, minWidth: 0 }}>
-                        <Text style={[styles.kvValue, { color: colors.ink }]} numberOfLines={1}>
-                          {p4Item.institutionName} · {p4Account.displayName}
-                        </Text>
-                        <Text style={[styles.mono, { color: colors.mut }]}>{`•••• ${p4Account.last4}`}</Text>
-                      </View>
-                      <Text style={[styles.changeLink, { color: colors.gold }]}>Change</Text>
-                    </View>
-                    {payIn4LimitCents !== null && (
-                      <View style={[styles.p4Footer, { borderTopColor: colors.goldLine }]}>
-                        <Body style={{ fontSize: 12.5 }}>Spending power from this account</Body>
-                        <Text style={[styles.p4Amount, { color: colors.gold }]}>{formatCents(payIn4LimitCents)}</Text>
-                      </View>
-                    )}
-                  </LinearGradient>
-                </Pressable>
-              ) : (
-                <Pressable onPress={() => setPickerOpen(true)}>
-                  <View style={[styles.p4Empty, { borderColor: colors.goldLine }]}>
-                    <Ionicons name="card-outline" size={20} color={colors.gold} />
-                    <View style={{ flex: 1 }}>
-                      <Text style={[styles.kvValue, { color: colors.ink }]}>No account chosen</Text>
-                      <Body style={{ marginTop: 2 }}>Pick a checking account · sets your spending power</Body>
-                    </View>
-                    <Ionicons name="chevron-forward" size={16} color={colors.mut2} />
-                  </View>
-                </Pressable>
-              );
-            })()
-          )}
-          <Body style={{ marginTop: 8, fontSize: 11.5, lineHeight: 16 }}>
-            Installments are pulled from this account. Changing it re-checks your spending power.
-          </Body>
-
-          <View style={styles.connectedHeaderRow}>
-            <SectionHeader>Connected banks</SectionHeader>
-            {linkedBanks && linkedBanks.items.length > 0 && (
-              <Body>{linkedBanks.items.length} connected</Body>
-            )}
-          </View>
-          {!loadingBanks && (!linkedBanks || linkedBanks.items.length === 0) ? (
-            <Surface style={{ padding: 16 }}>
-              <Body>No accounts linked yet. Connect one below and your cards will appear here.</Body>
-            </Surface>
-          ) : (
-            linkedBanks && (
-              <Surface style={styles.block}>
-                {linkedBanks.items.map((item, i) => {
-                  const p4 = payIn4AccountFor(item);
-                  const accountsLine = item.accounts.map(a => `${a.displayName} •${a.last4}`).join(' · ');
-                  return (
-                    <View key={item.itemId}>
-                      {i > 0 && <View style={[styles.divider, { backgroundColor: colors.line }]} />}
-                      <PressScale
-                        onPress={() => router.push({ pathname: '/screens/BankDetail', params: { itemId: item.itemId } })}
-                        scaleTo={0.99}
-                      >
-                        <View style={styles.bankRow}>
-                          <View style={[styles.bankTile, { backgroundColor: tintFor(item.institutionName) ?? colors.accInk }]}>
-                            <Text style={styles.bankTileText}>{initialFor(item.institutionName)}</Text>
-                          </View>
-                          <View style={{ flex: 1, minWidth: 0 }}>
-                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                              <Text style={[styles.kvValue, { color: colors.ink }]} numberOfLines={1}>
-                                {item.institutionName || 'Bank'}
-                              </Text>
-                              {p4 && (
-                                <View style={[styles.chip, { backgroundColor: colors.goldSoft }]}>
-                                  <Text style={[typeScale.labelSm, { color: colors.gold }]}>PAY IN 4</Text>
-                                </View>
-                              )}
-                            </View>
-                            <Body style={{ marginTop: 2 }} numberOfLines={1}>
-                              {accountsLine || 'Linked account'}
-                            </Body>
-                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 4 }}>
-                              <Ionicons
-                                name={item.readForSubscriptions ? 'eye-outline' : 'eye-off-outline'}
-                                size={12}
-                                color={item.readForSubscriptions ? colors.accInk : colors.mut}
-                              />
-                              <Text
-                                style={[styles.readLabel, { color: item.readForSubscriptions ? colors.accInk : colors.mut }]}
-                              >
-                                {item.readForSubscriptions ? 'Read for subscriptions' : 'Not read for subscriptions'}
-                              </Text>
-                            </View>
-                          </View>
-                          <Ionicons name="chevron-forward" size={16} color={colors.mut2} />
-                        </View>
-                      </PressScale>
-                    </View>
-                  );
-                })}
-              </Surface>
-            )
-          )}
-
-          <PayIn4AccountPicker
-            visible={pickerOpen}
-            data={linkedBanks}
-            onClose={() => setPickerOpen(false)}
-            onSaved={loadLinkedBanks}
-          />
-
-          {/* --- add a bank ----------------------------------------------------- */}
-          {/*
-            Same hook as the dashboard call-out, so linking behaves identically
-            wherever it starts: Link -> exchange -> sync -> refresh. Settings is
-            where people look to add a SECOND account, which the dashboard tile
-            is not a natural home for once the first one is connected.
-          */}
-          <PressScale
-            onPress={() => void connectBank.connect(loadLinkedBanks)}
-            disabled={connectBank.busy}
-            style={{ marginTop: 10 }}
-          >
-            <Surface style={[styles.connectRow, connectBank.busy && { opacity: 0.7 }]}>
+          <SectionHeader style={styles.section}>Banks</SectionHeader>
+          <PressScale onPress={() => router.push('/settings/linked-banks')}>
+            <Surface style={styles.connectRow}>
               <View style={[styles.connectIcon, { backgroundColor: colors.accSoft }]}>
-                <Ionicons
-                  name={connectBank.busy ? 'sync-outline' : 'add-outline'}
-                  size={19}
-                  color={colors.accInk}
-                />
+                <Ionicons name="card-outline" size={19} color={colors.accInk} />
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={[styles.kvValue, { color: colors.ink }]}>
-                  {connectBank.busy ? connectBank.label : 'Connect a bank account'}
-                </Text>
-                <Body style={{ marginTop: 2 }}>
-                  {connectBank.busy
-                    ? 'Keep the app open while this finishes'
-                    : 'Securely via Plaid — we never see your login'}
-                </Body>
+                <Text style={[styles.kvValue, { color: colors.ink }]}>Linked banks</Text>
+                <Body style={{ marginTop: 2 }}>Pay in 4's account, and every connected bank</Body>
               </View>
-              {!connectBank.busy && (
-                <Ionicons name="chevron-forward" size={16} color={colors.mut2} />
-              )}
+              <Ionicons name="chevron-forward" size={16} color={colors.mut2} />
             </Surface>
           </PressScale>
-
-          {connectBank.error && (
-            <Body style={{ marginTop: 8, color: colors.red }}>{connectBank.error}</Body>
-          )}
 
           {/* --- notifications -------------------------------------------------- */}
           <SectionHeader style={styles.section}>Notifications</SectionHeader>
@@ -442,17 +255,6 @@ const styles = StyleSheet.create({
   divider: {
     height: 1,
   },
-  bankRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    paddingVertical: 13,
-  },
-  defaultChip: {
-    paddingHorizontal: 9,
-    paddingVertical: 4,
-    borderRadius: radius.pill,
-  },
   connectRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -483,73 +285,5 @@ const styles = StyleSheet.create({
   signOutText: {
     fontFamily: fontFamily.bold,
     fontSize: 14.5,
-  },
-  p4Card: {
-    borderRadius: radius.cardLg,
-    borderWidth: 1,
-    padding: 14,
-  },
-  p4Head: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  p4Footer: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-    justifyContent: 'space-between',
-    marginTop: 12,
-    paddingTop: 12,
-    borderTopWidth: 1,
-  },
-  p4Amount: {
-    fontFamily: fontFamily.serif,
-    fontSize: 26,
-  },
-  p4Empty: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    borderRadius: radius.cardLg,
-    borderWidth: 1.5,
-    borderStyle: 'dashed',
-    padding: 16,
-  },
-  connectedHeaderRow: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-    justifyContent: 'space-between',
-    marginTop: 24,
-    marginBottom: 10,
-  },
-  bankTile: {
-    width: 38,
-    height: 38,
-    borderRadius: 13,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  bankTileText: {
-    fontFamily: fontFamily.bold,
-    fontSize: 13,
-    color: '#FFFFFF',
-  },
-  mono: {
-    fontFamily: fontFamily.regular,
-    fontSize: 12,
-    marginTop: 2,
-  },
-  changeLink: {
-    fontFamily: fontFamily.semibold,
-    fontSize: 13,
-  },
-  chip: {
-    paddingHorizontal: 7,
-    paddingVertical: 3,
-    borderRadius: radius.pill,
-  },
-  readLabel: {
-    fontFamily: fontFamily.medium,
-    fontSize: 11.5,
   },
 });
