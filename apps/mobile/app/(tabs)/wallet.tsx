@@ -21,18 +21,9 @@ import {
   Platform,
   Pressable,
   StyleSheet,
-  LayoutAnimation,
-  UIManager,
   type NativeSyntheticEvent,
   type NativeScrollEvent,
 } from 'react-native';
-
-// Android needs this opt-in for LayoutAnimation; iOS has it on by default.
-// New-architecture (Fabric) builds no-op the call harmlessly if it's already
-// unnecessary — safe to call unconditionally rather than feature-detecting.
-if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
-  UIManager.setLayoutAnimationEnabledExperimental(true);
-}
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -326,12 +317,18 @@ export default function WalletScreen() {
     }
     // else: same card, only the date range changed (a preset tap). Leave
     // the current rows on screen rather than blanking the list for every
-    // single range tap — LayoutAnimation below animates the add/remove/
-    // reorder once the new numbers land, so it reads as the list settling
-    // into its new shape, not disappearing and reappearing. No loading
-    // state either: this screen already has SOMETHING real to show for
-    // this exact card, so there is nothing to "load" from the user's
-    // perspective, only an update to apply once it arrives.
+    // single range tap — they get replaced in place once the new numbers
+    // land. No loading state either: this screen already has SOMETHING
+    // real to show for this exact card, so there is nothing to "load" from
+    // the user's perspective, only an update to apply once it arrives.
+    //
+    // Deliberately NOT using LayoutAnimation.configureNext here, even
+    // though it would animate the reorder/fade nicely — it arms EVERY
+    // layout change in the next render across the WHOLE screen, not just
+    // this list, which made the card carousel above visibly shift/jump on
+    // the exact same tap. A plain instant swap is a smaller visual price
+    // than a global animation sweeping up views it was never meant to
+    // touch.
     merchantsCardId.current = cardId;
 
     // ALWAYS send explicit dates computed on the DEVICE (`range`, from
@@ -348,13 +345,6 @@ export default function WalletScreen() {
     getMerchants(cardId, 'custom', { startDate: range.start.toISOString(), endDate: range.end.toISOString() })
       .then(rows => {
         if (cancelled) return;
-        if (!switchedCard) {
-          // Animate the swap instead of a hard cut — rows that are gone in
-          // the new range fade/collapse out, rows that are newly present
-          // fade in, and surviving rows glide to their new sort position
-          // instead of the whole list vanishing and rebuilding.
-          LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-        }
         setMerchants(
           rows.map(m => ({
             merchantId: m.merchantId,
