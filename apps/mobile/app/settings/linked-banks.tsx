@@ -21,10 +21,11 @@ import { useTheme } from '../../utils/ThemeContext';
 import { fontFamily, typeScale, radius, layout } from '../../theme/type';
 import { Body, SectionHeader, Surface, PressScale, ScreenBody } from '../../components/redesign/Primitives';
 import { useConnectBank } from '../../utils/useConnectBank';
-import { fetchLinkedBanks, payIn4AccountFor, initialFor, tintFor, type LinkedBanksData } from '../../utils/linkedBanks';
+import { fetchLinkedBanks, payIn4AccountFor, type LinkedBanksData } from '../../utils/linkedBanks';
 import { formatCents } from '../../utils/calculations';
 import { getSpendingPowerOutcome } from '../../utils/cardDesignStore';
 import PayIn4AccountPicker from '../../components/redesign/PayIn4AccountPicker';
+import BankTile from '../../components/redesign/BankTile';
 
 export default function LinkedBanksScreen() {
   const insets = useSafeAreaInsets();
@@ -97,9 +98,7 @@ export default function LinkedBanksScreen() {
                     style={[styles.p4Card, { borderColor: colors.goldLine }]}
                   >
                     <View style={styles.p4Head}>
-                      <View style={[styles.bankTile, { backgroundColor: tintFor(p4Item.institutionName) ?? colors.accInk }]}>
-                        <Text style={styles.bankTileText}>{initialFor(p4Item.institutionName)}</Text>
-                      </View>
+                      <BankTile institutionName={p4Item.institutionName} networkArt={p4Item.networkArt} size={40} />
                       <View style={{ flex: 1, minWidth: 0 }}>
                         <Text style={[styles.kvValue, { color: colors.ink }]} numberOfLines={1}>
                           {p4Item.institutionName} · {p4Account.displayName}
@@ -156,9 +155,7 @@ export default function LinkedBanksScreen() {
                         scaleTo={0.99}
                       >
                         <View style={styles.bankRow}>
-                          <View style={[styles.bankTile, { backgroundColor: tintFor(item.institutionName) ?? colors.accInk }]}>
-                            <Text style={styles.bankTileText}>{initialFor(item.institutionName)}</Text>
-                          </View>
+                          <BankTile institutionName={item.institutionName} networkArt={item.networkArt} />
                           <View style={{ flex: 1, minWidth: 0 }}>
                             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                               <Text style={[styles.kvValue, { color: colors.ink }]} numberOfLines={1}>
@@ -261,8 +258,6 @@ const styles = StyleSheet.create({
     marginTop: 24,
     marginBottom: 10,
   },
-  bankTile: { width: 38, height: 38, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
-  bankTileText: { fontFamily: fontFamily.bold, fontSize: 13, color: '#FFFFFF' },
   mono: { fontFamily: fontFamily.regular, fontSize: 12, marginTop: 2 },
   changeLink: { fontFamily: fontFamily.semibold, fontSize: 13 },
   chip: { paddingHorizontal: 7, paddingVertical: 3, borderRadius: radius.pill },

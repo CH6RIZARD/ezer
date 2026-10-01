@@ -26,6 +26,12 @@ export type LinkedBankItem = {
   institutionName: string | null;
   connectedAt: string;
   readForSubscriptions: boolean;
+  /** The bank's real logo — Plaid's own institution branding, or the
+   *  favicon-guess fallback (see routes/plaid.ts's exchange-public-token).
+   *  The same source Wallet's card art already renders; null for an
+   *  institution Plaid has no branding for and no guessable domain. */
+  networkArt: string | null;
+  issuerColorHint: string | null;
   accounts: LinkedBankAccount[];
 };
 

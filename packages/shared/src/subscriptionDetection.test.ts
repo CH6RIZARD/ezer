@@ -35,10 +35,14 @@ describe('isSubscriptionCandidate', () => {
     ).toBe(false);
   });
 
-  it('rejects credit-card and loan payments', () => {
+  it('accepts credit-card and loan payments — on direct request, not an oversight', () => {
+    // LOAN_PAYMENTS used to be excluded (credit-card and loan payments "are
+    // not subscriptions"). Reversed deliberately: Wallet is "everywhere your
+    // money recurringly goes," not narrowly "things you could cancel" — a
+    // student loan payment belongs in the same list as a Netflix charge.
     expect(
       isSubscriptionCandidate({ amount: 2078.5, personalFinanceCategory: 'LOAN_PAYMENTS' })
-    ).toBe(false);
+    ).toBe(true);
   });
 
   it('rejects a CD deposit', () => {
@@ -199,14 +203,26 @@ describe('end to end: the sandbox rows that used to become subscriptions', () =>
   const rows: { name: string; amountCents: number; pfc: string; dates: Date[] }[] = [
     { name: 'ACH Electronic CreditGUSTO PAY 123456', amountCents: 585000, pfc: 'TRANSFER_OUT', dates: everyNDays(30, 3) },
     { name: 'CD DEPOSIT .INITIAL.', amountCents: 100000, pfc: 'TRANSFER_OUT', dates: everyNDays(30, 3) },
-    { name: 'AUTOMATIC PAYMENT - THANK', amountCents: 207850, pfc: 'LOAN_PAYMENTS', dates: everyNDays(30, 3) },
-    { name: 'CREDIT CARD 3333 PAYMENT *//', amountCents: 2500, pfc: 'LOAN_PAYMENTS', dates: everyNDays(30, 3) },
   ];
 
   it.each(rows)('rejects $name', ({ amountCents, pfc }) => {
     expect(isSubscriptionCandidate({ amount: amountCents / 100, personalFinanceCategory: pfc })).toBe(
       false
     );
+  });
+
+  // LOAN_PAYMENTS rows moved out of the "rejects" table above — the
+  // exclusion was reversed on direct request (see the isSubscriptionCandidate
+  // test for why). Both still pass every OTHER criterion (3 charges, 30-day
+  // gaps, stable amount), so they now correctly show up as recurring.
+  it.each([
+    { name: 'AUTOMATIC PAYMENT - THANK', amountCents: 207850, pfc: 'LOAN_PAYMENTS', dates: everyNDays(30, 3) },
+    { name: 'CREDIT CARD 3333 PAYMENT *//', amountCents: 2500, pfc: 'LOAN_PAYMENTS', dates: everyNDays(30, 3) },
+  ])('accepts $name as a recurring payment', ({ amountCents, pfc, dates }) => {
+    expect(isSubscriptionCandidate({ amount: amountCents / 100, personalFinanceCategory: pfc })).toBe(
+      true
+    );
+    expect(inferBillingInterval(dates)).toBe('monthly');
   });
 
   it('still accepts a genuine streaming subscription', () => {

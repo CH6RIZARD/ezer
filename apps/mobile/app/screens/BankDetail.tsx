@@ -21,6 +21,7 @@ import { fontFamily, typeScale, radius, layout } from '../../theme/type';
 import { Body, Label, SectionHeader, Surface, PressScale, ScreenBody } from '../../components/redesign/Primitives';
 import { useData } from '../../contexts/DataContext';
 import { fetchLinkedBanks, type LinkedBankItem } from '../../utils/linkedBanks';
+import BankTile from '../../components/redesign/BankTile';
 import { api } from '../../utils/api';
 
 function typeLabel(subtype: string | null): string {
@@ -123,7 +124,15 @@ export default function BankDetailScreen() {
                 <Ionicons name="chevron-back" size={18} color={colors.ink} />
               </View>
             </PressScale>
-            <Text style={[typeScale.screenTitle, { color: colors.ink, marginLeft: 12 }]} numberOfLines={1}>
+            {item && (
+              <View style={{ marginLeft: 12 }}>
+                <BankTile institutionName={item.institutionName} networkArt={item.networkArt} size={36} />
+              </View>
+            )}
+            <Text
+              style={[typeScale.screenTitle, { color: colors.ink, marginLeft: 10, flexShrink: 1 }]}
+              numberOfLines={1}
+            >
               {item?.institutionName ?? (loading ? '' : 'Bank')}
             </Text>
           </View>

@@ -17,7 +17,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../utils/ThemeContext';
 import { fontFamily, radius, motion } from '../../theme/type';
 import { Body, PressScale } from './Primitives';
-import { type LinkedBanksData, type LinkedBankAccount, initialFor, tintFor } from '../../utils/linkedBanks';
+import { type LinkedBanksData, type LinkedBankAccount } from '../../utils/linkedBanks';
+import BankTile from './BankTile';
 import { api } from '../../utils/api';
 import { useConnectBank } from '../../utils/useConnectBank';
 import {
@@ -27,7 +28,7 @@ import {
   type CardAccessOutcome,
 } from '../../utils/cardDesignStore';
 
-type Row = LinkedBankAccount & { bankName: string | null };
+type Row = LinkedBankAccount & { bankName: string | null; networkArt: string | null };
 
 export default function PayIn4AccountPicker({
   visible,
@@ -52,7 +53,9 @@ export default function PayIn4AccountPicker({
   }, [visible, data?.payIn4InstrumentId]);
 
   const rows: Row[] = (data?.items ?? []).flatMap(item =>
-    item.accounts.filter(a => a.eligibleForPayIn4).map(a => ({ ...a, bankName: item.institutionName }))
+    item.accounts
+      .filter(a => a.eligibleForPayIn4)
+      .map(a => ({ ...a, bankName: item.institutionName, networkArt: item.networkArt }))
   );
 
   const changed = pending !== (data?.payIn4InstrumentId ?? null);
@@ -125,9 +128,7 @@ export default function PayIn4AccountPicker({
                     <View style={[styles.radio, { borderColor: on ? colors.gold : colors.line2, backgroundColor: on ? colors.gold : 'transparent' }]}>
                       {on && <Ionicons name="checkmark" size={13} color="#FFFFFF" />}
                     </View>
-                    <View style={[styles.bankTile, { backgroundColor: tintFor(row.bankName) ?? colors.accInk }]}>
-                      <Text style={styles.bankTileText}>{initialFor(row.bankName)}</Text>
-                    </View>
+                    <BankTile institutionName={row.bankName} networkArt={row.networkArt} size={30} />
                     <View style={{ flex: 1, minWidth: 0 }}>
                       <Text style={[styles.rowTitle, { color: colors.ink }]} numberOfLines={1}>
                         {row.bankName ? `${row.bankName} · ${row.displayName}` : row.displayName}
@@ -203,8 +204,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  bankTile: { width: 30, height: 30, borderRadius: 9, alignItems: 'center', justifyContent: 'center' },
-  bankTileText: { fontFamily: fontFamily.bold, fontSize: 11, color: '#FFFFFF' },
   rowTitle: { fontFamily: fontFamily.semibold, fontSize: 14 },
   rowSub: { fontFamily: fontFamily.regular, fontSize: 12, marginTop: 2 },
   finePrint: { fontFamily: fontFamily.regular, fontSize: 11, lineHeight: 16, marginTop: 14 },

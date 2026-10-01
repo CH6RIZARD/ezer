@@ -476,11 +476,33 @@ export async function plaidRoutes(server: FastifyInstance) {
       success: true,
       data: {
         payIn4InstrumentId,
-        items: items.map(item => ({
+        // Items with zero accounts are leftover rows from a bank being
+        // RE-linked through Plaid Link rather than reconnected via the
+        // existing item — the exchange handler always upserts the item by
+        // its Plaid item id, but a fresh Link session can mint a brand new
+        // item id for what is, to the user, "the same bank," leaving the
+        // earlier item behind with no FundingInstrument rows pointing at it
+        // (see FundingInstrument.itemId's own schema comment). They showed
+        // up as empty duplicate "PNC" rows with no accounts, no last-4,
+        // nothing to tap into — filtered here rather than deleted, since
+        // deleting still means revoking a real Plaid access token, which
+        // should be a deliberate disconnect action, not a side effect of
+        // loading a list.
+        items: items
+          .filter(item => item.fundingInstruments.length > 0)
+          .map(item => ({
           itemId: item.id,
           institutionName: item.institutionName,
           connectedAt: item.createdAt.toISOString(),
           readForSubscriptions: item.readForSubscriptions,
+          // The bank's real logo (Plaid's own institution branding, or the
+          // favicon-guess fallback — see exchange-public-token's comment)
+          // and brand color, from whichever account on this item has them.
+          // Same source Wallet's own card art already uses
+          // (utils/cardArt → BankCardFace's art.logoUri); Settings never
+          // rendered it at all before, just a flat colored initial letter.
+          networkArt: item.fundingInstruments.find(i => i.networkArt)?.networkArt ?? null,
+          issuerColorHint: item.fundingInstruments.find(i => i.issuerColorHint)?.issuerColorHint ?? null,
           accounts: item.fundingInstruments.map(inst => ({
             instrumentId: inst.id,
             displayName: inst.displayName,

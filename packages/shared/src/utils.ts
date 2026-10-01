@@ -301,7 +301,6 @@ export function getCurrentMonthString(): string {
  * Plaid personal_finance_category primaries that can never be a subscription.
  *
  *   TRANSFER_IN/OUT  moving your own money — CD deposits, payroll ACH pushes
- *   LOAN_PAYMENTS    credit-card and loan payments
  *   INCOME           wages and deposits
  *   BANK_FEES        recurring, but not a subscription
  *
@@ -309,11 +308,18 @@ export function getCurrentMonthString(): string {
  * can arrive with a positive (money-out) amount and sail past a `amount > 0`
  * check, which is how a real user's payroll was listed as a $5,850/mo
  * subscription.
+ *
+ * LOAN_PAYMENTS (credit-card and loan payments) is deliberately NOT excluded,
+ * on direct request: Wallet is "everywhere your money recurringly goes," not
+ * narrowly "subscriptions you could cancel" — a student loan payment belongs
+ * next to a Netflix charge here even though tapping it won't find anything
+ * useful to "cancel" (resolveCancellationUrl just falls through to its own
+ * honest "no confirmed link" message for a loan servicer, same as any other
+ * merchant it can't resolve — not a crash, just not a useful tap).
  */
 export const NON_SUBSCRIPTION_CATEGORIES = [
   'TRANSFER_IN',
   'TRANSFER_OUT',
-  'LOAN_PAYMENTS',
   'INCOME',
   'BANK_FEES',
 ] as const;
