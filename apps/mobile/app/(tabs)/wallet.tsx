@@ -397,6 +397,7 @@ export default function WalletScreen() {
 
   const carouselRef = useRef<ScrollView>(null);
   const pageRef = useRef<ScrollView>(null);
+  const rafRef = useRef<number | null>(null);
 
   /** Inverse of cardOffset(): undo the leading offset before dividing. */
   const nearestIndex = (x: number) =>
@@ -422,7 +423,24 @@ export default function WalletScreen() {
     useCallback(() => {
       if (cards.length === 0) return;
       const i = Math.min(index, cards.length - 1);
-      carouselRef.current?.scrollTo({ x: cardOffset(i), animated: false });
+      // A single requestAnimationFrame fires before the tab's native surface
+      // has actually finished re-attaching after being off-screen, so the
+      // very first attempt at this silently no-ops — scrollTo on a ScrollView
+      // that hasn't committed its layout yet just does nothing, with no
+      // error. Confirmed on-device: a single rAF left the card showing index
+      // 0 while the dots still read index 1. Nesting a second rAF defers it
+      // one more frame, past that re-attach, which is the standard fix for
+      // "imperative scroll right after a screen regains focus doesn't take."
+      const raf1 = requestAnimationFrame(() => {
+        const raf2 = requestAnimationFrame(() => {
+          carouselRef.current?.scrollTo({ x: cardOffset(i), animated: false });
+        });
+        rafRef.current = raf2;
+      });
+      rafRef.current = raf1;
+      return () => {
+        if (rafRef.current != null) cancelAnimationFrame(rafRef.current);
+      };
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [cards.length])
   );
