@@ -652,8 +652,15 @@ export default function WalletScreen() {
               <Text style={[typeScale.totalValue, { color: colors.red, marginTop: 4 }]}>
                 {formatCents(drained)}
               </Text>
+              {/* "0 active subscriptions" directly above a "$450.12
+                  predicted" pill read as contradictory — the card obviously
+                  HAS subscriptions, none have charged yet in this range.
+                  When there's nothing real to report but there IS a
+                  predicted count, say that instead of a bare zero. */}
               <Body style={{ marginTop: 2 }}>
-                {merchants.length} active subscription{merchants.length === 1 ? '' : 's'} on this card
+                {merchants.length === 0 && !loadingBreakdown && predicted.length > 0
+                  ? `${predicted.length} subscription${predicted.length === 1 ? '' : 's'} predicted to charge`
+                  : `${merchants.length} active subscription${merchants.length === 1 ? '' : 's'} on this card`}
               </Body>
               {/* Only when there are zero REAL charges — a range with any
                   real charge already tells the true story, so this never
