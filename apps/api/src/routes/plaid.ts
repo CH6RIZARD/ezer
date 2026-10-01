@@ -690,8 +690,22 @@ async function syncTransactionsForItem(userId: string, itemId: string, accessTok
     }
   }
 
-  // Group transactions by normalized merchant name
-  const byMerchant = new Map<string, { txs: Transaction[]; amounts: number[] }>();
+  // Group transactions by normalized merchant name.
+  //
+  // Deduped by (merchant, calendar day, amount): this account has been
+  // relinked multiple times over development, and Plaid's sandbox re-issues
+  // the SAME canned test charge under a brand-new transaction_id on every
+  // relink — so the same logical "Brigit, Aug 1, $14.99" charge can arrive
+  // here two or three times with different ids. Without this, those
+  // same-day duplicates inject 0-day gaps into inferBillingInterval's input
+  // (`all(25, 35)` requires EVERY gap to be in range, so one 0 anywhere
+  // fails the whole merchant to 'unknown'), silently blocking a genuinely
+  // regular subscription from ever being promoted no matter how clean the
+  // real monthly pattern is. A real, never-relinked bank would never
+  // produce this duplication in the first place, but there is no reason to
+  // trust that it couldn't (a pending-then-posted pair, a retried charge),
+  // so this is correct defensively, not just a workaround for this account.
+  const byMerchant = new Map<string, { txs: Transaction[]; amounts: number[]; seenDayKeys: Set<string> }>();
 
   for (const tx of allTransactions) {
     // Category filter first: transfers, loan payments and income can never be
@@ -702,12 +716,17 @@ async function syncTransactionsForItem(userId: string, itemId: string, accessTok
     const canonical = normalizeMerchantName(stripReferenceNumbers(raw));
     if (!canonical) continue;
 
+    const amountCents = Math.round(tx.amount * 100);
+    const dayKey = `${tx.date}|${amountCents}`;
+
     const existing = byMerchant.get(canonical);
     if (existing) {
+      if (existing.seenDayKeys.has(dayKey)) continue;
+      existing.seenDayKeys.add(dayKey);
       existing.txs.push(tx);
-      existing.amounts.push(Math.round(tx.amount * 100));
+      existing.amounts.push(amountCents);
     } else {
-      byMerchant.set(canonical, { txs: [tx], amounts: [Math.round(tx.amount * 100)] });
+      byMerchant.set(canonical, { txs: [tx], amounts: [amountCents], seenDayKeys: new Set([dayKey]) });
     }
   }
 
