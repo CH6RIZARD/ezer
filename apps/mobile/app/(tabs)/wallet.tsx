@@ -256,6 +256,9 @@ export default function WalletScreen() {
    * flicker.
    */
   const subsLabelFor = (cardId: string): string | undefined => {
+    if (cardId === active?.id) {
+      console.log('[PILL_SYNC] subsLabelFor active card', cardId, 'loadingBreakdown=', loadingBreakdown, 'merchants.length=', merchants.length);
+    }
     if (cardId !== active?.id || loadingBreakdown) return undefined;
     const n = merchants.length;
     return `${n} sub${n === 1 ? '' : 's'}`;
@@ -300,6 +303,7 @@ export default function WalletScreen() {
   useEffect(() => {
     let cancelled = false;
     const cardId = active?.id;
+    console.log('[PILL_SYNC] merchants effect fired, index=', index, 'cardId=', cardId, 'prevCardId=', merchantsCardId.current);
 
     if (!cardId) {
       setMerchants([]);
@@ -309,6 +313,7 @@ export default function WalletScreen() {
     }
 
     const switchedCard = merchantsCardId.current !== cardId;
+    console.log('[PILL_SYNC] switchedCard=', switchedCard);
 
     if (switchedCard) {
       // A genuinely different card's numbers have nothing to do with what's
@@ -364,8 +369,10 @@ export default function WalletScreen() {
     // preset cases (apps/api/.../utils.ts) still exist for any other caller
     // that doesn't have a device clock to compute from, but this screen
     // always has one, so it always uses it.
+    console.log('[PILL_SYNC] fetching merchants for cardId=', cardId);
     getMerchants(cardId, 'custom', { startDate: range.start.toISOString(), endDate: range.end.toISOString() })
       .then(({ merchants: rows, predicted: predictedRows }) => {
+        console.log('[PILL_SYNC] fetch resolved for cardId=', cardId, 'cancelled=', cancelled, 'rows.length=', rows.length);
         if (cancelled) return;
         setMerchants(
           rows.map(m => ({
@@ -385,10 +392,12 @@ export default function WalletScreen() {
         setPredicted(predictedRows);
       })
       .finally(() => {
+        console.log('[PILL_SYNC] finally for cardId=', cardId, 'cancelled=', cancelled);
         if (!cancelled) setLoadingBreakdown(false);
       });
 
     return () => {
+      console.log('[PILL_SYNC] effect cleanup for cardId=', cardId);
       cancelled = true;
     };
   }, [active?.id, preset, range.start, range.end, getMerchants]);
@@ -446,14 +455,17 @@ export default function WalletScreen() {
       // that hasn't committed its layout yet just does nothing, with no
       // error. Nesting a second rAF defers it one more frame, past that
       // re-attach.
+      console.log('[PILL_SYNC] FOCUS_EFFECT firing, index=', index);
       const raf1 = requestAnimationFrame(() => {
         const raf2 = requestAnimationFrame(() => {
+          console.log('[PILL_SYNC] FOCUS_EFFECT scrollTo i=', i, 'offset=', cardOffset(i));
           carouselRef.current?.scrollTo({ x: cardOffset(i), animated: false });
         });
         rafRef.current = raf2;
       });
       rafRef.current = raf1;
       return () => {
+        console.log('[PILL_SYNC] FOCUS_EFFECT cleanup, index was', index);
         if (rafRef.current != null) cancelAnimationFrame(rafRef.current);
       };
     }, [cards.length, index])
