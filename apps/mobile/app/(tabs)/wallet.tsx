@@ -497,28 +497,35 @@ export default function WalletScreen() {
    */
   const momentumActive = useRef(false);
 
-  const commitIndex = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+  const commitIndex = (e: NativeSyntheticEvent<NativeScrollEvent>, source: string) => {
     const i = nearestIndex(e.nativeEvent.contentOffset.x);
+    console.log('[PILL_SYNC] commitIndex from', source, 'offsetX=', e.nativeEvent.contentOffset.x, 'computed i=', i, 'current index=', index);
     if (i !== index) setIndex(i);
   };
 
   const handleMomentumBegin = () => {
+    console.log('[PILL_SYNC] onMomentumScrollBegin');
     momentumActive.current = true;
   };
 
   const handleMomentumEnd = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+    console.log('[PILL_SYNC] onMomentumScrollEnd offsetX=', e.nativeEvent.contentOffset.x);
     momentumActive.current = false;
-    commitIndex(e);
+    commitIndex(e, 'momentumEnd');
   };
 
   const handleScrollEndDrag = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+    console.log('[PILL_SYNC] onScrollEndDrag offsetX=', e.nativeEvent.contentOffset.x);
     momentumActive.current = false;
     const offsetX = e.nativeEvent.contentOffset.x;
     requestAnimationFrame(() => {
       // Momentum claimed this release in the meantime — onMomentumScrollEnd
       // will commit the real settled index; this offset is stale.
-      if (momentumActive.current) return;
-      commitIndex({ nativeEvent: { contentOffset: { x: offsetX } } } as NativeSyntheticEvent<NativeScrollEvent>);
+      if (momentumActive.current) {
+        console.log('[PILL_SYNC] onScrollEndDrag rAF: momentum claimed it, skipping');
+        return;
+      }
+      commitIndex({ nativeEvent: { contentOffset: { x: offsetX } } } as NativeSyntheticEvent<NativeScrollEvent>, 'scrollEndDragRAF');
     });
   };
 
@@ -609,6 +616,7 @@ export default function WalletScreen() {
                   key={c.id}
                   hitSlop={10}
                   onPress={() => {
+                    console.log('[PILL_SYNC] dot tap, i=', i);
                     setIndex(i);
                     carouselRef.current?.scrollTo({ x: cardOffset(i), animated: true });
                   }}
