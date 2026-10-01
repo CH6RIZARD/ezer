@@ -418,31 +418,37 @@ export default function WalletScreen() {
    * this screen regains focus is the actual fix, not another tweak to the
    * pill's own rendering — the pill was always correct for the index it was
    * given, the index just stopped matching what was on screen.
+   *
+   * `index` MUST be in this callback's own dependency array. Leaving it out
+   * (matching it only on `cards.length`) is what broke the first two attempts
+   * at this fix: the callback then only gets recreated when the card COUNT
+   * changes, so after the very first swipe moves `index` away from 0, this
+   * closure keeps the `index` it captured at mount — 0 — forever. Confirmed
+   * on-device via logging: this effect kept scrolling back to card 0 on every
+   * focus, fighting the correct state, while the dots (rendered fresh from
+   * live state every render) correctly showed card 1 active the whole time.
    */
   useFocusEffect(
     useCallback(() => {
-      console.log('[WALLET_SYNC] focus effect firing, cards.length=', cards.length, 'index=', index);
       if (cards.length === 0) return;
       const i = Math.min(index, cards.length - 1);
-      console.log('[WALLET_SYNC] target index', i, 'offset', cardOffset(i), 'ref null?', carouselRef.current == null);
+      // A single requestAnimationFrame fires before the tab's native surface
+      // has actually finished re-attaching after being off-screen, so the
+      // very first attempt at this silently no-ops — scrollTo on a ScrollView
+      // that hasn't committed its layout yet just does nothing, with no
+      // error. Nesting a second rAF defers it one more frame, past that
+      // re-attach.
       const raf1 = requestAnimationFrame(() => {
-        console.log('[WALLET_SYNC] raf1 fired, ref null?', carouselRef.current == null);
         const raf2 = requestAnimationFrame(() => {
-          console.log('[WALLET_SYNC] raf2 fired, calling scrollTo, ref null?', carouselRef.current == null);
           carouselRef.current?.scrollTo({ x: cardOffset(i), animated: false });
-          setTimeout(() => {
-            console.log('[WALLET_SYNC] 300ms after scrollTo, index state is', index);
-          }, 300);
         });
         rafRef.current = raf2;
       });
       rafRef.current = raf1;
       return () => {
-        console.log('[WALLET_SYNC] focus effect cleanup');
         if (rafRef.current != null) cancelAnimationFrame(rafRef.current);
       };
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [cards.length])
+    }, [cards.length, index])
   );
 
   /**
@@ -545,16 +551,10 @@ export default function WalletScreen() {
               gap: CARD_GAP,
               paddingTop: 18,
             }}
-            onScroll={(e) => {
-              console.log('[WALLET_SYNC] onScroll x=', e.nativeEvent.contentOffset.x);
-              if (IS_WEB) handleWebScroll(e);
-            }}
+            onScroll={IS_WEB ? handleWebScroll : undefined}
             onMomentumScrollBegin={IS_WEB ? undefined : handleMomentumBegin}
             onMomentumScrollEnd={IS_WEB ? undefined : handleMomentumEnd}
             onScrollEndDrag={IS_WEB ? undefined : handleScrollEndDrag}
-            onLayout={(e) => {
-              console.log('[WALLET_SYNC] carousel onLayout', JSON.stringify(e.nativeEvent.layout));
-            }}
             scrollEventThrottle={16}
           >
             {cards.map(c => (
