@@ -247,16 +247,19 @@ export default function WalletScreen() {
   /**
    * The count shown on a card; only the focused card has a fetched count.
    *
-   * Returns undefined (hides the pill entirely — BankCardFace already skips
-   * rendering it when subsLabel is falsy) rather than a literal "…" while
-   * loading. An ellipsis sitting there and then being replaced by a number
-   * is still a visible two-step transition on every single swipe, which is
-   * exactly the "glitch" this was meant to fix in the first place — no pill
-   * at all until the real count is ready reads as a clean pop-in, not a
-   * flicker.
+   * Hiding the pill entirely while `loadingBreakdown` was true — an earlier
+   * version of this — was itself the bug: the pill box mounting and
+   * unmounting on every single swipe IS the flicker, regardless of how clean
+   * each individual appearance looks. The pill must stay mounted for the
+   * active card the whole time; only the digit inside it may change. Since
+   * `merchants` is cleared to [] the instant a card switch starts (so the
+   * dollar amounts below never pair with the wrong card — see the merchants
+   * effect), this naturally shows "0 subs" for a beat and then updates in
+   * place to the real count once the fetch resolves, rather than the pill
+   * disappearing and reappearing.
    */
   const subsLabelFor = (cardId: string): string | undefined => {
-    if (cardId !== active?.id || loadingBreakdown) return undefined;
+    if (cardId !== active?.id) return undefined;
     const n = merchants.length;
     return `${n} sub${n === 1 ? '' : 's'}`;
   };
