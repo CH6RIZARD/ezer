@@ -275,6 +275,13 @@ async function deriveInstallmentSignals(
  * then shows a real, editable choice instead of "No account chosen" forever
  * for someone who has, in every practical sense, already chosen by using the
  * only bank they have.
+ *
+ * `GET /plaid/linked-banks` (routes/plaid.ts) duplicates this same
+ * auto-pick-and-persist logic in miniature rather than importing it from
+ * here — this file already imports getPlaidClient FROM routes/plaid.ts, so
+ * the reverse import would close a circular dependency. Keep both in sync if
+ * the eligibility rule (`type === 'bank'`) or the "oldest first" tiebreak
+ * ever changes.
  */
 async function resolvePayIn4Instrument(userId: string) {
   const user = await prisma.user.findUnique({ where: { id: userId }, select: { payIn4InstrumentId: true } });

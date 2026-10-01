@@ -244,16 +244,19 @@ export default function WalletScreen() {
   const cardIds = useMemo(() => cards.map(c => c.id), [cards]);
   const { prefs: artPrefs } = useCardArtPrefs(cardIds);
 
-  /** The count shown on a card; only the focused card has a fetched count. */
-  const subsLabelFor = (cardId: string) => {
-    // `merchants` is the API breakdown fetched for whichever card is currently
-    // focused (see the effect keyed on active?.id below) — the only card this
-    // component has a real count for. A card that isn't focused, or whose
-    // fetch for THIS card hasn't resolved yet, shows "…" rather than a wrong
-    // "0 subs" — the count that used to flash during a swipe or a range
-    // change, because the previous card's/range's number was still sitting
-    // in state.
-    if (cardId !== active?.id || loadingBreakdown) return '…';
+  /**
+   * The count shown on a card; only the focused card has a fetched count.
+   *
+   * Returns undefined (hides the pill entirely — BankCardFace already skips
+   * rendering it when subsLabel is falsy) rather than a literal "…" while
+   * loading. An ellipsis sitting there and then being replaced by a number
+   * is still a visible two-step transition on every single swipe, which is
+   * exactly the "glitch" this was meant to fix in the first place — no pill
+   * at all until the real count is ready reads as a clean pop-in, not a
+   * flicker.
+   */
+  const subsLabelFor = (cardId: string): string | undefined => {
+    if (cardId !== active?.id || loadingBreakdown) return undefined;
     const n = merchants.length;
     return `${n} sub${n === 1 ? '' : 's'}`;
   };
@@ -302,14 +305,19 @@ export default function WalletScreen() {
     // caught up.
     setMerchants([]);
 
-    const rangeKey = preset === 'thisMonth' ? 'thisMonth' : preset === 'lastYear' ? 'lastYear' : preset === 'custom' ? 'custom' : 'last30';
-    const customDates =
-      rangeKey === 'custom'
-        ? { startDate: range.start.toISOString(), endDate: range.end.toISOString() }
-        : undefined;
-
+    // ALWAYS send explicit dates computed on the DEVICE (`range`, from
+    // presetRange() above — already correct for every preset, not just
+    // 'custom') rather than letting the server recompute "this month" /
+    // "last year" from its own clock. The server runs in UTC; a user west of
+    // UTC near a month boundary — 9:23pm Sept 30 local is already 1:23am
+    // Oct 1 UTC — had the server's own "this month" silently mean October
+    // while every real charge was from September, so "This month" showed
+    // $0 / 0 subs on a card with six active subscriptions. getDateRange's
+    // 'thisMonth'/'lastYear' cases (apps/api/.../utils.ts) still exist for
+    // any other caller that doesn't have a device clock to compute from, but
+    // this screen always has one, so it always uses it.
     setLoadingBreakdown(true);
-    getMerchants(cardId, rangeKey, customDates)
+    getMerchants(cardId, 'custom', { startDate: range.start.toISOString(), endDate: range.end.toISOString() })
       .then(rows => {
         if (cancelled) return;
         setMerchants(

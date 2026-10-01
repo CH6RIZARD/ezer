@@ -447,7 +447,30 @@ export async function plaidRoutes(server: FastifyInstance) {
       }),
     ]);
 
-    const payIn4InstrumentId = user?.payIn4InstrumentId ?? null;
+    let payIn4InstrumentId = user?.payIn4InstrumentId ?? null;
+
+    // Auto-pick the oldest eligible (non-credit) account the moment someone
+    // VIEWS this screen, not only once an assessment has actually run
+    // (trustScoring.ts's own resolvePayIn4Instrument — duplicated here in
+    // miniature rather than imported, to avoid a circular import: that file
+    // already imports getPlaidClient from this one). Before this, a user
+    // with real linked banks but no assessment yet saw "No account chosen"
+    // and a "Connect a new bank" prompt as if nothing were linked at all —
+    // technically accurate (nothing WAS chosen) but a confusing thing to
+    // show someone who very visibly already has banks connected.
+    if (!payIn4InstrumentId) {
+      const fallback = items
+        .flatMap(item => item.fundingInstruments)
+        .filter(inst => inst.type === 'bank')
+        .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())[0];
+      if (fallback) {
+        payIn4InstrumentId = fallback.id;
+        await prisma.user.update({ where: { id: userId }, data: { payIn4InstrumentId } }).catch(() => {
+          // Best-effort — worst case this screen re-picks the same account
+          // next time it's opened, which is a no-op in every way that matters.
+        });
+      }
+    }
 
     return {
       success: true,
