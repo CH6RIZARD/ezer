@@ -294,15 +294,16 @@ export default function WalletScreen() {
     const switchedCard = merchantsCardId.current !== cardId;
 
     if (switchedCard) {
-      // A genuinely different card's numbers have nothing to do with what's
-      // on screen — clear immediately, not just once the new fetch
-      // resolves. Leaving the old rows in place until then is exactly why
-      // swiping cards flashed the wrong sub count — `active?.id` updates
-      // synchronously, so the render briefly paired the new card with the
-      // old card's still-in-state merchant list before the fetch below
-      // caught up.
-      setMerchants([]);
-      setPredicted([]);
+      // Used to clear merchants/predicted to [] right here, on the theory
+      // that a genuinely different card's numbers "have nothing to do with
+      // what's on screen." In practice that just moved the same complaint
+      // down the page: "Total drained should have sat loaded, not start
+      // from 0." The thing that actually needed protecting from a stale
+      // pairing was the subs-count PILL sitting directly on the card art —
+      // and that pill is gone now. Total Drained and "Where it goes" are a
+      // separate block below the carousel; holding the previous card's
+      // numbers on screen for the ~700ms a real fetch takes, then swapping
+      // them in place once, reads as a normal refresh, not a wrong number.
       setLoadingBreakdown(true);
       // The real "info shifts when I switch card" bug: a new card's merchant
       // list is usually a different length than the old one (often much
