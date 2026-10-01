@@ -245,25 +245,6 @@ export default function WalletScreen() {
   const { prefs: artPrefs } = useCardArtPrefs(cardIds);
 
   /**
-   * The count shown on a card; only the focused card has a fetched count.
-   *
-   * Two earlier versions of this both still read as "glitchy": hiding the
-   * pill while loading made the box itself mount/unmount on every swipe,
-   * and showing "0 subs" as a momentary placeholder (reading straight off
-   * `merchants`, which clears to [] the instant a switch starts) made the
-   * number visibly bounce through a wrong value before landing on the real
-   * one. Reading from `pillCount` instead of `merchants.length` fixes both:
-   * `pillCount` only ever changes when a real fetch resolves, so the pill
-   * stays mounted continuously and its number goes directly from whatever
-   * it last showed to the new real value — never blank, never a 0 detour.
-   */
-  const subsLabelFor = (cardId: string): string | undefined => {
-    if (cardId !== active?.id || pillCount === null) return undefined;
-    const n = pillCount;
-    return `${n} sub${n === 1 ? '' : 's'}`;
-  };
-
-  /**
    * Exact scroll offset that centres each card, per the derivation at the top
    * of this file: offset(i) = FIRST_OFFSET + i * CARD_STEP.
    *
@@ -289,19 +270,6 @@ export default function WalletScreen() {
     { merchantId: string; merchantName: string; logo?: string; totalCents: number; count: number; subscriptionId: string | null }[]
   >([]);
   const [loadingBreakdown, setLoadingBreakdown] = useState(false);
-  /**
-   * The pill's own number, deliberately NOT the same state as `merchants`.
-   * `merchants` has to clear to [] the instant a card switch starts — the
-   * dollar amounts below can never show one card's breakdown under another
-   * card's art. But holding the pill to that same rule means it either
-   * hides or flashes "0 subs" for every switch and every range tap, which
-   * is its own bug: "it should never not show, and I don't want it rotating
-   * between multiple numbers — should just go from the last number to the
-   * current." This updates ONLY when a real fetch resolves, for any card or
-   * range, so the pill always shows a real number and changes value exactly
-   * once per load, never a blank or a zero in between.
-   */
-  const [pillCount, setPillCount] = useState<number | null>(null);
   /** Recurring charges projected to land inside the current range that
    *  haven't posted yet — see GET /wallet/instruments/:id/merchants. Shown
    *  only when `merchants` is empty, so a real $0 range (nothing was ever
@@ -398,7 +366,6 @@ export default function WalletScreen() {
           }))
         );
         setPredicted(predictedRows);
-        setPillCount(rows.length);
       })
       .finally(() => {
         if (!cancelled) setLoadingBreakdown(false);
@@ -584,7 +551,6 @@ export default function WalletScreen() {
                 // — a real linked card branded with the app's name instead of
                 // the person who owns it reads as a demo card.
                 holderName={user?.name || 'EZER MEMBER'}
-                subsLabel={subsLabelFor(c.id)}
                 width={CARD_W}
                 height={CARD_H}
                 style={WEB_SNAP_CHILD}

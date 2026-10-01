@@ -5,7 +5,7 @@
 // wallet carousel and the picker preview cannot drift apart (the same reason
 // CardCanvas.tsx owns the physical card's layout).
 //
-//   gradient tiers   bank name, logo, chip, masked number, holder, subs pill.
+//   gradient tiers   bank name, logo, chip, masked number, holder.
 //   user_photo       the photo full-bleed; the printed-number band is covered
 //                    and our own "•••• 1234" drawn over it.
 //   network_token    the network's art, untouched. Visa/Mastercard display
@@ -33,8 +33,6 @@ export interface BankCardFaceProps {
   network: string;
   last4: string;
   holderName: string;
-  /** Text for the pill at bottom-right, e.g. "6 subs". Omit to hide the pill. */
-  subsLabel?: string;
   width: number;
   height: number;
   borderRadius?: number;
@@ -110,7 +108,6 @@ export default function BankCardFace({
   network,
   last4,
   holderName,
-  subsLabel,
   width,
   height,
   borderRadius = radius.virtualCard,
@@ -133,7 +130,6 @@ export default function BankCardFace({
   // ---- full-bleed artwork tiers ---------------------------------------------
   if (showImage) {
     const isPhoto = art.tier === 'user_photo';
-    const showPill = isPhoto && !!subsLabel;
     // Visa's rules want "Visa 1234"; other networks just the digits.
     const networkLabel = hasNetwork ? `${network[0]}${network.slice(1).toLowerCase()} ` : '';
     return (
@@ -159,18 +155,11 @@ export default function BankCardFace({
             {last4}
           </Text>
         )}
-
-        {showPill && (
-          <View style={[styles.subsPill, styles.subsPillAbs, { backgroundColor: 'rgba(0,0,0,0.55)' }]}>
-            <Text style={[styles.subsText, { color: '#FFFFFF' }]}>{subsLabel}</Text>
-          </View>
-        )}
       </View>
     );
   }
 
   // ---- gradient tiers (catalog / user_design / template) --------------------
-  const pillBg = art.fg === '#FFFFFF' ? 'rgba(255,255,255,0.16)' : 'rgba(36,26,56,0.12)';
   return (
     <LinearGradient
       colors={art.gradient}
@@ -231,11 +220,6 @@ export default function BankCardFace({
           {holderName.toUpperCase()}
           {accountLabel ? `  ·  ${accountLabel.toUpperCase()}` : ''}
         </Text>
-        {subsLabel ? (
-          <View style={[styles.subsPill, { backgroundColor: pillBg }]}>
-            <Text style={[styles.subsText, { color: art.fg }]}>{subsLabel}</Text>
-          </View>
-        ) : null}
       </View>
     </LinearGradient>
   );
@@ -251,21 +235,8 @@ const styles = StyleSheet.create({
   chipRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   chip: { width: 36, height: 26, borderRadius: 5 },
   pan: { fontFamily: fontFamily.semibold, fontSize: 15.5, letterSpacing: 1.8 },
-  // minHeight pins this row to the subs pill's own rendered height (8 of
-  // vertical padding + an 11px bold line), so it occupies the same space
-  // whether the pill is showing or not. Without it, the card's outer
-  // container (`gradientPad`, justifyContent: 'space-between' across this
-  // row, the bank name row, and the chip row above) redistributes the gaps
-  // between ALL of them every time this row's height changes — which is
-  // every time the pill appears, disappears, or its text changes length.
-  // That's what read as "the chip, the digits, and the subs pill keep
-  // shifting": none of them move on their own, this row's height silently
-  // nudging the whole stack moves all three at once.
-  bottom: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', minHeight: 24 },
+  bottom: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end' },
   holder: { fontFamily: fontFamily.regular, fontSize: 11, flexShrink: 1 },
-  subsPill: { paddingHorizontal: 9, paddingVertical: 4, borderRadius: radius.pill },
-  subsPillAbs: { position: 'absolute', right: 14, bottom: 12 },
-  subsText: { fontFamily: fontFamily.bold, fontSize: 11 },
   maskBand: {
     position: 'absolute',
     left: 0,
