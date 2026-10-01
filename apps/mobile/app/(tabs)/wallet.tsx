@@ -471,62 +471,34 @@ export default function WalletScreen() {
    * NATIVE: onMomentumScrollEnd fires when the platform snap settles, and
    * onScrollEndDrag covers a drag released without enough velocity to coast.
    *
-   * A fast flick fires BOTH, in that order, and `onScrollEndDrag`'s offset is
-   * captured the instant the finger lifts — BEFORE momentum has carried the
-   * card the rest of the way to its snap point. Trusting it directly set the
-   * index to whatever card was under the finger at release, fetched THAT
-   * card's sub count, and then onMomentumScrollEnd corrected the index a
-   * moment later once the card actually settled — a real flash of the wrong
-   * number (0, 6, whichever the mid-flight card was) before the right one
-   * landed, not just a loading blip. `momentumActive` defers acting on
-   * onScrollEndDrag so a follow-up onMomentumScrollBegin can claim the
-   * correction instead — the settle event is always the one that actually
-   * wins.
+   * A fast flick fires BOTH, in that order, and trusting onScrollEndDrag's
+   * offset directly set the index to whatever card was under the finger at
+   * release — BEFORE momentum carried it the rest of the way to its snap
+   * point — fetched THAT card's sub count, and then onMomentumScrollEnd
+   * corrected the index a moment later once the card actually settled. Two
+   * commits for one real swipe, each re-running the full switchedCard cycle
+   * (clear → loading → fetch → show): the pill disappearing and reappearing
+   * multiple times.
    *
-   * That defer used to be a single requestAnimationFrame (~16ms). On-device
-   * logging during a real card-switch session showed this was too tight a
-   * window: onMomentumScrollBegin is a native event that has to cross the
-   * bridge, and a drag released with just enough velocity to coast could
-   * have its onScrollEndDrag rAF fire and commit a STALE mid-drag index
-   * before the native "yes, this is coasting" event arrives — a second,
-   * separate commitIndex call followed moments later once
-   * onMomentumScrollEnd corrected it. Each commit re-runs the full
-   * switchedCard cycle (clear → loading → fetch → show), so two commits for
-   * one real swipe is exactly "the pill disappears and reappears multiple
-   * times." 100ms comfortably covers that bridge round-trip while still
-   * being imperceptible for a drag that genuinely stops dead with no coast.
+   * Two earlier attempts at this tried to guess WHICH event would arrive and
+   * race a timer against it (first one requestAnimationFrame, then a 100ms
+   * timeout) — both still double-committed on a real finger swipe, because
+   * the real problem isn't the timing of any one guess, it's trying to
+   * predict ordering between two native events AT ALL. This instead treats
+   * every settle-ish event (onScrollEndDrag AND onMomentumScrollEnd) as
+   * "maybe settled, reset the clock" and only acts once 100ms have passed
+   * with no further settle event — so whichever one is actually LAST always
+   * wins, however many of them fire and in whatever order, with no guessing.
    */
-  const momentumActive = useRef(false);
-  const scrollEndDragTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const settleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const commitIndex = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
-    const i = nearestIndex(e.nativeEvent.contentOffset.x);
-    if (i !== index) setIndex(i);
-  };
-
-  const handleMomentumBegin = () => {
-    momentumActive.current = true;
-    if (scrollEndDragTimer.current != null) {
-      clearTimeout(scrollEndDragTimer.current);
-      scrollEndDragTimer.current = null;
-    }
-  };
-
-  const handleMomentumEnd = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
-    momentumActive.current = false;
-    commitIndex(e);
-  };
-
-  const handleScrollEndDrag = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
-    momentumActive.current = false;
+  const scheduleCommit = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
     const offsetX = e.nativeEvent.contentOffset.x;
-    if (scrollEndDragTimer.current != null) clearTimeout(scrollEndDragTimer.current);
-    scrollEndDragTimer.current = setTimeout(() => {
-      scrollEndDragTimer.current = null;
-      // Momentum claimed this release in the meantime — onMomentumScrollEnd
-      // will commit the real settled index; this offset is stale.
-      if (momentumActive.current) return;
-      commitIndex({ nativeEvent: { contentOffset: { x: offsetX } } } as NativeSyntheticEvent<NativeScrollEvent>);
+    if (settleTimer.current != null) clearTimeout(settleTimer.current);
+    settleTimer.current = setTimeout(() => {
+      settleTimer.current = null;
+      const i = nearestIndex(offsetX);
+      setIndex(current => (i !== current ? i : current));
     }, 100);
   };
 
@@ -580,9 +552,8 @@ export default function WalletScreen() {
               paddingTop: 18,
             }}
             onScroll={IS_WEB ? handleWebScroll : undefined}
-            onMomentumScrollBegin={IS_WEB ? undefined : handleMomentumBegin}
-            onMomentumScrollEnd={IS_WEB ? undefined : handleMomentumEnd}
-            onScrollEndDrag={IS_WEB ? undefined : handleScrollEndDrag}
+            onMomentumScrollEnd={IS_WEB ? undefined : scheduleCommit}
+            onScrollEndDrag={IS_WEB ? undefined : scheduleCommit}
             scrollEventThrottle={16}
           >
             {cards.map(c => (
