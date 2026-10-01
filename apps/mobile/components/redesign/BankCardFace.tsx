@@ -251,7 +251,17 @@ const styles = StyleSheet.create({
   chipRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   chip: { width: 36, height: 26, borderRadius: 5 },
   pan: { fontFamily: fontFamily.semibold, fontSize: 15.5, letterSpacing: 1.8 },
-  bottom: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end' },
+  // minHeight pins this row to the subs pill's own rendered height (8 of
+  // vertical padding + an 11px bold line), so it occupies the same space
+  // whether the pill is showing or not. Without it, the card's outer
+  // container (`gradientPad`, justifyContent: 'space-between' across this
+  // row, the bank name row, and the chip row above) redistributes the gaps
+  // between ALL of them every time this row's height changes — which is
+  // every time the pill appears, disappears, or its text changes length.
+  // That's what read as "the chip, the digits, and the subs pill keep
+  // shifting": none of them move on their own, this row's height silently
+  // nudging the whole stack moves all three at once.
+  bottom: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', minHeight: 24 },
   holder: { fontFamily: fontFamily.regular, fontSize: 11, flexShrink: 1 },
   subsPill: { paddingHorizontal: 9, paddingVertical: 4, borderRadius: radius.pill },
   subsPillAbs: { position: 'absolute', right: 14, bottom: 12 },

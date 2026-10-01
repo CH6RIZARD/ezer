@@ -13,7 +13,7 @@
 // demo data.
 // =============================================================================
 
-export type RangePreset = 'custom' | 'thisMonth' | 'lastYear';
+export type RangePreset = 'custom' | 'thisMonth' | 'lastMonth' | 'ytd';
 
 export function presetRange(preset: Exclude<RangePreset, 'custom'>): { start: Date; end: Date } {
   const now = new Date();
@@ -25,9 +25,16 @@ export function presetRange(preset: Exclude<RangePreset, 'custom'>): { start: Da
     };
   }
 
-  // lastYear: the trailing 12 months up to today.
+  if (preset === 'lastMonth') {
+    return {
+      start: new Date(now.getFullYear(), now.getMonth() - 1, 1),
+      end: new Date(now.getFullYear(), now.getMonth(), 0),
+    };
+  }
+
+  // ytd: January 1st of this year through today.
   return {
-    start: new Date(now.getFullYear() - 1, now.getMonth(), now.getDate()),
+    start: new Date(now.getFullYear(), 0, 1),
     end: now,
   };
 }

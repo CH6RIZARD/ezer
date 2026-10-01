@@ -228,9 +228,62 @@ export async function walletRoutes(server: FastifyInstance) {
     // Sort by total drained
     merchants.sort((a, b) => b.totalDrainedCents - a.totalDrainedCents);
 
+    // Predicted charges: for a merchant with no REAL charge inside [start,
+    // end] — most often because the range is "this month" and it's still
+    // early in the month — project its most recent charge forward by one
+    // billing interval. If that projected date falls inside the range, it's
+    // a charge that hasn't posted yet, not a merchant that stopped billing.
+    // A card's real recurring charges don't vanish just because the request
+    // landed on the 1st; the UI uses this to show "predicted" instead of a
+    // bare $0 that reads as "no subscriptions."
+    const merchantIdsWithRealCharge = new Set(merchantMap.keys());
+    const priorCharges = await prisma.subscriptionCharge.findMany({
+      where: { userId, fundingInstrumentId: id, chargeTimestamp: { lt: start } },
+      include: { merchant: true },
+      orderBy: { chargeTimestamp: 'desc' },
+    });
+
+    function addInterval(date: Date, interval: string): Date {
+      const d = new Date(date);
+      if (interval === 'yearly') d.setFullYear(d.getFullYear() + 1);
+      else if (interval === 'weekly') d.setDate(d.getDate() + 7);
+      else d.setMonth(d.getMonth() + 1); // monthly and unknown both default to monthly
+      return d;
+    }
+
+    const predicted: {
+      merchantId: string;
+      merchantName: string;
+      logo?: string;
+      amountCents: number;
+      predictedDate: string;
+    }[] = [];
+    const seenPredicted = new Set<string>();
+
+    for (const charge of priorCharges) {
+      if (merchantIdsWithRealCharge.has(charge.merchantId)) continue;
+      if (seenPredicted.has(charge.merchantId)) continue;
+      seenPredicted.add(charge.merchantId); // priorCharges is sorted desc, so this is its latest charge
+
+      const nextDate = addInterval(charge.chargeTimestamp, charge.billingInterval);
+      if (nextDate >= start && nextDate <= end) {
+        predicted.push({
+          merchantId: charge.merchantId,
+          merchantName: charge.merchantName,
+          logo: charge.merchant.logo || undefined,
+          amountCents: charge.amountCents,
+          predictedDate: nextDate.toISOString(),
+        });
+      }
+    }
+
     return {
       success: true,
       data: merchants,
+      predicted: {
+        items: predicted,
+        totalCents: predicted.reduce((sum, p) => sum + p.amountCents, 0),
+      },
     };
   });
 

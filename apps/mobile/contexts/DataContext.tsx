@@ -73,6 +73,20 @@ export interface MerchantCharge {
   confidenceBadge: 'high' | 'medium' | 'low';
 }
 
+/**
+ * A recurring charge that hasn't posted yet inside the requested range —
+ * most often "this month" on the 1st-2nd, before any real charge has hit.
+ * Projected server-side from the merchant's last real charge + one billing
+ * interval; see GET /wallet/instruments/:id/merchants.
+ */
+export interface PredictedCharge {
+  merchantId: string;
+  merchantName: string;
+  logo?: string;
+  amountCents: number;
+  predictedDate: string;
+}
+
 export interface Subscription {
   id: string;
   merchantId: string;
@@ -114,7 +128,7 @@ interface DataContextType extends DataState {
     id: string,
     range?: string,
     customDates?: { startDate: string; endDate: string }
-  ) => Promise<MerchantCharge[]>;
+  ) => Promise<{ merchants: MerchantCharge[]; predicted: PredictedCharge[] }>;
 }
 
 const DataContext = createContext<DataContextType | undefined>(undefined);
@@ -232,7 +246,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       id: string,
       range = 'last30',
       customDates?: { startDate: string; endDate: string }
-    ): Promise<MerchantCharge[]> => {
+    ): Promise<{ merchants: MerchantCharge[]; predicted: PredictedCharge[] }> => {
       try {
         // The API's `custom` range (apps/api/src/routes/wallet.ts,
         // @ezer/shared's getDateRange) requires startDate/endDate query
@@ -246,9 +260,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
             ? `range=custom&startDate=${encodeURIComponent(customDates.startDate)}&endDate=${encodeURIComponent(customDates.endDate)}`
             : `range=${range}`;
         const res: any = await api.get(`/wallet/instruments/${id}/merchants?${qs}`);
-        return res.data || [];
+        return { merchants: res.data || [], predicted: res.predicted?.items || [] };
       } catch {
-        return [];
+        return { merchants: [], predicted: [] };
       }
     },
     []

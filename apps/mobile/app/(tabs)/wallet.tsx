@@ -2,9 +2,9 @@
 // EZER Redesign — Wallet (handoff §4)
 //
 // Horizontally snapping bank cards (300x178 r20) with animated page dots,
-// range chips (Custom · This month · Last year), the custom range picker, a
-// serif-italic total drained card, "Where it goes" merchant rows and a
-// "Review card drain" CTA.
+// range chips (Custom · This month · Last month · Year to date), the custom
+// range picker, a serif-italic total drained card, "Where it goes" merchant
+// rows and a "Review card drain" CTA.
 //
 // Range logic is the handoff's, implemented in utils/chargeOccurrences.ts:
 // expand every subscription into monthly occurrences over the trailing 18
@@ -31,7 +31,7 @@ import { useTheme } from '../../utils/ThemeContext';
 import { useAuth } from '../../utils/AuthContext';
 import { usePremiumGate } from '../../utils/usePremiumGate';
 import { usePremium } from '../../utils/PremiumContext';
-import { useData } from '../../contexts/DataContext';
+import { useData, type PredictedCharge } from '../../contexts/DataContext';
 import { formatCents } from '../../utils/calculations';
 import { gradients } from '../../theme/tokens';
 import { fontFamily, typeScale, radius, layout } from '../../theme/type';
@@ -287,6 +287,11 @@ export default function WalletScreen() {
     { merchantId: string; merchantName: string; logo?: string; totalCents: number; count: number; subscriptionId: string | null }[]
   >([]);
   const [loadingBreakdown, setLoadingBreakdown] = useState(false);
+  /** Recurring charges projected to land inside the current range that
+   *  haven't posted yet — see GET /wallet/instruments/:id/merchants. Shown
+   *  only when `merchants` is empty, so a real $0 range (nothing was ever
+   *  due) still reads as $0, not as a false "predicted" claim. */
+  const [predicted, setPredicted] = useState<PredictedCharge[]>([]);
   /** Which card's data `merchants` currently holds, so the effect below can
    *  tell "the card changed" apart from "only the date range changed" on
    *  the SAME card — see the effect's own comment. */
@@ -298,6 +303,7 @@ export default function WalletScreen() {
 
     if (!cardId) {
       setMerchants([]);
+      setPredicted([]);
       merchantsCardId.current = undefined;
       return;
     }
@@ -313,6 +319,7 @@ export default function WalletScreen() {
       // old card's still-in-state merchant list before the fetch below
       // caught up.
       setMerchants([]);
+      setPredicted([]);
       setLoadingBreakdown(true);
       // The real "info shifts when I switch card" bug: a new card's merchant
       // list is usually a different length than the old one (often much
@@ -354,11 +361,11 @@ export default function WalletScreen() {
     // Oct 1 UTC — had the server's own "this month" silently mean October
     // while every real charge was from September, so "This month" showed
     // $0 / 0 subs on a card with six active subscriptions. getDateRange's
-    // 'thisMonth'/'lastYear' cases (apps/api/.../utils.ts) still exist for
-    // any other caller that doesn't have a device clock to compute from, but
-    // this screen always has one, so it always uses it.
+    // preset cases (apps/api/.../utils.ts) still exist for any other caller
+    // that doesn't have a device clock to compute from, but this screen
+    // always has one, so it always uses it.
     getMerchants(cardId, 'custom', { startDate: range.start.toISOString(), endDate: range.end.toISOString() })
-      .then(rows => {
+      .then(({ merchants: rows, predicted: predictedRows }) => {
         if (cancelled) return;
         setMerchants(
           rows.map(m => ({
@@ -375,6 +382,7 @@ export default function WalletScreen() {
             subscriptionId: m.subscriptionId,
           }))
         );
+        setPredicted(predictedRows);
       })
       .finally(() => {
         if (!cancelled) setLoadingBreakdown(false);
@@ -611,7 +619,8 @@ export default function WalletScreen() {
                 [
                   ['custom', chipLabel],
                   ['thisMonth', 'This month'],
-                  ['lastYear', 'Last year'],
+                  ['lastMonth', 'Last month'],
+                  ['ytd', 'Year to date'],
                 ] as const
               ).map(([key, label]) => {
                 const on = preset === key;
@@ -669,6 +678,19 @@ export default function WalletScreen() {
               <Body style={{ marginTop: 2 }}>
                 {merchants.length} active subscription{merchants.length === 1 ? '' : 's'} on this card
               </Body>
+              {/* Only when there are zero REAL charges — a range with any
+                  real charge already tells the true story, so this never
+                  overrides an actual number with a guess. Most common case:
+                  "This month" checked on the 1st or 2nd, before this card's
+                  usual billing day. */}
+              {!loadingBreakdown && merchants.length === 0 && predicted.length > 0 && (
+                <View style={[styles.predictedPill, { backgroundColor: colors.goldSoft, borderColor: colors.gold }]}>
+                  <Ionicons name="time-outline" size={13} color={colors.gold} />
+                  <Text style={[styles.predictedPillText, { color: colors.gold }]}>
+                    Nothing charged yet — {formatCents(predicted.reduce((s, p) => s + p.amountCents, 0))} predicted
+                  </Text>
+                </View>
+              )}
             </Surface>
 
             {/* --- where it goes --------------------------------------------- */}
@@ -761,6 +783,21 @@ const styles = StyleSheet.create({
   totalCard: {
     padding: 18,
     marginTop: 16,
+  },
+  predictedPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    alignSelf: 'flex-start',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    marginTop: 10,
+  },
+  predictedPillText: {
+    fontFamily: fontFamily.semibold,
+    fontSize: 11.5,
   },
   row: {
     flexDirection: 'row',
