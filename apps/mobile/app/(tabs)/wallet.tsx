@@ -421,24 +421,24 @@ export default function WalletScreen() {
    */
   useFocusEffect(
     useCallback(() => {
+      console.log('[WALLET_SYNC] focus effect firing, cards.length=', cards.length, 'index=', index);
       if (cards.length === 0) return;
       const i = Math.min(index, cards.length - 1);
-      // A single requestAnimationFrame fires before the tab's native surface
-      // has actually finished re-attaching after being off-screen, so the
-      // very first attempt at this silently no-ops — scrollTo on a ScrollView
-      // that hasn't committed its layout yet just does nothing, with no
-      // error. Confirmed on-device: a single rAF left the card showing index
-      // 0 while the dots still read index 1. Nesting a second rAF defers it
-      // one more frame, past that re-attach, which is the standard fix for
-      // "imperative scroll right after a screen regains focus doesn't take."
+      console.log('[WALLET_SYNC] target index', i, 'offset', cardOffset(i), 'ref null?', carouselRef.current == null);
       const raf1 = requestAnimationFrame(() => {
+        console.log('[WALLET_SYNC] raf1 fired, ref null?', carouselRef.current == null);
         const raf2 = requestAnimationFrame(() => {
+          console.log('[WALLET_SYNC] raf2 fired, calling scrollTo, ref null?', carouselRef.current == null);
           carouselRef.current?.scrollTo({ x: cardOffset(i), animated: false });
+          setTimeout(() => {
+            console.log('[WALLET_SYNC] 300ms after scrollTo, index state is', index);
+          }, 300);
         });
         rafRef.current = raf2;
       });
       rafRef.current = raf1;
       return () => {
+        console.log('[WALLET_SYNC] focus effect cleanup');
         if (rafRef.current != null) cancelAnimationFrame(rafRef.current);
       };
       // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -545,10 +545,16 @@ export default function WalletScreen() {
               gap: CARD_GAP,
               paddingTop: 18,
             }}
-            onScroll={IS_WEB ? handleWebScroll : undefined}
+            onScroll={(e) => {
+              console.log('[WALLET_SYNC] onScroll x=', e.nativeEvent.contentOffset.x);
+              if (IS_WEB) handleWebScroll(e);
+            }}
             onMomentumScrollBegin={IS_WEB ? undefined : handleMomentumBegin}
             onMomentumScrollEnd={IS_WEB ? undefined : handleMomentumEnd}
             onScrollEndDrag={IS_WEB ? undefined : handleScrollEndDrag}
+            onLayout={(e) => {
+              console.log('[WALLET_SYNC] carousel onLayout', JSON.stringify(e.nativeEvent.layout));
+            }}
             scrollEventThrottle={16}
           >
             {cards.map(c => (
