@@ -120,6 +120,27 @@ export const darkTokens: ThemeTokens = {
   scrim: 'rgba(20,10,46,.42)',
 };
 
+/**
+ * True-black theme. The handoff's dark palette is purple-tinted (#151021);
+ * this is the neutral AMOLED-black variant requested on top of it. Text,
+ * accent and gold tokens are shared with `darkTokens` — only the surfaces
+ * change, so everything that reads as "a dark theme" keeps working: the two
+ * differ only in what colour the black is.
+ */
+export const blackTokens: ThemeTokens = {
+  ...darkTokens,
+  bg: '#000000',
+  bg2: '#0C0C0E',
+  card: '#121214',
+  line: '#1F1F23',
+  line2: '#2C2C32',
+  cellBg: '#101013',
+  cellHl: '#1A1A1F',
+  tabBg: '#0A0A0C',
+  goldTile: ['#141416', '#1C1A16'],
+  scrim: 'rgba(0,0,0,.55)',
+};
+
 // =============================================================================
 // Theme-independent gradients and finishes.
 // These do NOT flip with light/dark — the virtual card and chart card keep the

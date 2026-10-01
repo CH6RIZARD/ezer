@@ -257,4 +257,7 @@ const styles = StyleSheet.create({
   },
 });
 
-export default MerchantMark;
+// Memoised: one per "Where it goes" row, each with its own Image and state;
+// a preset tap or card switch that doesn't change a row's name/id/logo has
+// no reason to re-render it.
+export default React.memo(MerchantMark);

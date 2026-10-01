@@ -101,7 +101,7 @@ function PatternLayer({ pattern, color, w, h }: { pattern: DesignPattern; color:
   );
 }
 
-export default function BankCardFace({
+function BankCardFace({
   art,
   bankName,
   accountLabel,
@@ -258,3 +258,9 @@ const styles = StyleSheet.create({
     textShadowOffset: { width: 0, height: 1 },
   },
 });
+
+// Memoised: three LinearGradients plus an SVG pattern layer per card is the
+// most expensive thing on the Wallet screen, and none of its props change
+// when a preset is tapped or a fetch resolves. Only works because wallet.tsx
+// now passes a stable `art` object (see its cardArts useMemo).
+export default React.memo(BankCardFace);

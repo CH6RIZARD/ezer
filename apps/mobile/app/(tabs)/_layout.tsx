@@ -68,6 +68,14 @@ export default function TabLayout() {
     <Tabs
       screenOptions={{
         headerShown: false,
+        // Expo Router keeps every tab mounted. Without this, a blurred tab's
+        // whole subtree keeps rendering and its effects keep running — the
+        // Pay in 4 card's idle-float loop, Home's rotating-tile interval —
+        // competing with whichever tab the user is actually touching.
+        // freezeOnBlur (react-native-screens) suspends a tab's React tree
+        // while it's off-screen and resumes it on focus; useFocusEffect
+        // resyncs (e.g. Wallet's carousel position) still fire on return.
+        freezeOnBlur: true,
         tabBarShowLabel: false,
         // The bar floats over content, so screens pad their own bottom by
         // layout.contentBottom (96) to clear it.

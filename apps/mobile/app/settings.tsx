@@ -15,6 +15,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../utils/ThemeContext';
 import { useAuth } from '../utils/AuthContext';
 import { fontFamily, typeScale, radius, layout } from '../theme/type';
+import { lightTokens, darkTokens, blackTokens } from '../theme/tokens';
 import {
   Body,
   Label,
@@ -32,7 +33,7 @@ const NOTIFS = [
 
 export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
-  const { colors, isDark, setTheme } = useTheme();
+  const { colors, mode, setMode } = useTheme();
   const auth = useAuth() as {
     user?: { email?: string; createdAt?: string };
     signOut?: () => void;
@@ -77,25 +78,36 @@ export default function SettingsScreen() {
 
           {/* --- appearance --------------------------------------------------- */}
           <SectionHeader style={styles.section}>Appearance</SectionHeader>
+          {/* Three unlabelled swatches, each painted the actual screen
+              background of the theme it selects — light (cream), dark (the
+              handoff's purple-tinted dark) and true black. The colour IS the
+              label; a ring marks the active one. */}
           <View style={[styles.segment, { backgroundColor: colors.card, borderColor: colors.line }]}>
-            {([['Light', false], ['Dark', true]] as const).map(([label, dark]) => {
-              const active = isDark === dark;
+            {(
+              [
+                ['light', lightTokens.bg],
+                ['dark', darkTokens.bg],
+                ['black', blackTokens.bg],
+              ] as const
+            ).map(([m, swatch]) => {
+              const active = mode === m;
               return (
                 <Pressable
-                  key={label}
-                  onPress={() => setTheme(dark)}
-                  style={[styles.segmentItem, active && { backgroundColor: colors.accent }]}
+                  key={m}
+                  onPress={() => setMode(m)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`${m} theme`}
+                  accessibilityState={{ selected: active }}
+                  style={styles.swatchItem}
                 >
-                  <Ionicons
-                    name={dark ? 'moon' : 'sunny'}
-                    size={15}
-                    color={active ? '#FFFFFF' : colors.mut}
-                  />
-                  <Text
-                    style={[styles.segmentLabel, { color: active ? '#FFFFFF' : colors.mut }]}
+                  <View
+                    style={[
+                      styles.swatchRing,
+                      { borderColor: active ? colors.accInk : 'transparent' },
+                    ]}
                   >
-                    {label}
-                  </Text>
+                    <View style={[styles.swatch, { backgroundColor: swatch, borderColor: colors.line2 }]} />
+                  </View>
                 </Pressable>
               );
             })}
@@ -228,18 +240,25 @@ const styles = StyleSheet.create({
     padding: 4,
     gap: 4,
   },
-  segmentItem: {
+  swatchItem: {
     flex: 1,
-    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 6,
-    paddingVertical: 10,
-    borderRadius: radius.chip,
+    paddingVertical: 8,
   },
-  segmentLabel: {
-    fontFamily: fontFamily.bold,
-    fontSize: 13,
+  swatchRing: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    borderWidth: 2.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  swatch: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    borderWidth: 1,
   },
   block: {
     paddingHorizontal: 14,

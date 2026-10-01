@@ -389,7 +389,7 @@ export default function SpendingPowerSheet({
       <View style={{ flexDirection: 'row', gap: 8, height: 56 }}>
         <PressScale onPress={handleUseConnected} scaleTo={motion.pressScale} disabled={busy} style={{ flex: 1 }}>
           <View style={[styles.splitPillFilled, { backgroundColor: colors.ink }]}>
-            <Text style={styles.splitPillFilledText}>Use connected bank</Text>
+            <Text style={[styles.splitPillFilledText, { color: colors.bg }]}>Use connected bank</Text>
           </View>
         </PressScale>
         <PressScale onPress={handleConnect} scaleTo={motion.pressScale} disabled={busy} style={{ flex: 1 }}>
@@ -404,11 +404,27 @@ export default function SpendingPowerSheet({
           style={[styles.ctaPill, { backgroundColor: colors.ink, opacity: busy && !opening ? 0.6 : 1 }]}
           onLayout={e => setPillWidth(e.nativeEvent.layout.width)}
         >
-          <View style={styles.ctaPillLabelWrap}>
+          {/* The idle label fades out as the circle starts across, so the
+              word is gone before the circle reaches it — the circle is only
+              40px wide, so without this the label peeked out on both sides
+              of it mid-slide ("Check spending pow[●]"). The post-slide
+              labels ("Opening your bank…", busyLabel) show at full opacity
+              with the circle parked at the right. */}
+          <Animated.View
+            style={[
+              styles.ctaPillLabelWrap,
+              {
+                opacity:
+                  opening || busy
+                    ? 1
+                    : slideAnim.interpolate({ inputRange: [0, 0.35], outputRange: [1, 0], extrapolate: 'clamp' }),
+              },
+            ]}
+          >
             <Text style={[styles.ctaPillText, { color: colors.bg }]} numberOfLines={1}>
               {opening ? 'Opening your bank…' : busy ? busyLabel : idleLabel}
             </Text>
-          </View>
+          </Animated.View>
           {/* Rendered AFTER the label so it stacks visually on top — sliding
               it right covers the label as it passes, with no clip mask
               needed. */}

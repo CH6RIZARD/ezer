@@ -6,7 +6,7 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { Platform, useColorScheme } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { lightTokens, darkTokens, type ThemeTokens } from '../theme/tokens';
+import { lightTokens, darkTokens, blackTokens, type ThemeTokens } from '../theme/tokens';
 
 // =============================================================================
 // The redesign token map (theme/tokens.ts) is the source of truth. Each theme
@@ -60,23 +60,48 @@ const darkColors = {
   ...darkTokens,
 };
 
+// True black: the dark palette's text/accent/gold on neutral black surfaces.
+const blackColors = {
+  ...darkColors,
+  background: blackTokens.bg,
+  border: blackTokens.line,
+  shadow: 'rgba(0,0,0,0.7)',
+  tabBar: blackTokens.tabBg,
+  ...blackTokens,
+};
+
 export type ThemeColors = typeof lightColors;
 export type { ThemeTokens };
 
+/**
+ * 'dark' is the handoff's purple-tinted dark; 'black' is the true-black
+ * variant. Both report `isDark: true` — every existing `isDark` consumer
+ * (status bar style, calendar, popovers) only cares that the surfaces are
+ * dark, not which dark, so nothing downstream had to change for the third
+ * mode to exist.
+ */
+export type ThemeMode = 'light' | 'dark' | 'black';
+
 interface ThemeContextType {
   isDark: boolean;
+  mode: ThemeMode;
   colors: ThemeColors;
   toggleTheme: () => void;
+  /** Legacy boolean setter — true picks 'dark', not 'black'. */
   setTheme: (dark: boolean) => void;
+  setMode: (mode: ThemeMode) => void;
 }
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
 const THEME_STORAGE_KEY = '@ezer_theme_preference';
 
+const isMode = (v: unknown): v is ThemeMode => v === 'light' || v === 'dark' || v === 'black';
+const colorsFor = (mode: ThemeMode) => (mode === 'light' ? lightColors : mode === 'black' ? blackColors : darkColors);
+
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const systemColorScheme = useColorScheme();
-  const [isDark, setIsDark] = useState(false);
+  const [mode, setModeState] = useState<ThemeMode>('light');
   const [isLoaded, setIsLoaded] = useState(false);
 
   // Load saved theme preference
@@ -87,43 +112,45 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   const loadThemePreference = async () => {
     try {
       const savedTheme = await AsyncStorage.getItem(THEME_STORAGE_KEY);
-      if (savedTheme !== null) {
-        setIsDark(savedTheme === 'dark');
+      // The stored value has always been 'dark' | 'light'; 'black' is the
+      // new third value, so anything already saved stays valid as-is.
+      if (isMode(savedTheme)) {
+        setModeState(savedTheme);
       } else {
         // Default to system preference
-        setIsDark(systemColorScheme === 'dark');
+        setModeState(systemColorScheme === 'dark' ? 'dark' : 'light');
       }
     } catch (error) {
       console.log('Error loading theme preference:', error);
-      setIsDark(systemColorScheme === 'dark');
+      setModeState(systemColorScheme === 'dark' ? 'dark' : 'light');
     } finally {
       setIsLoaded(true);
     }
   };
 
-  const saveThemePreference = async (dark: boolean) => {
+  const saveThemePreference = async (next: ThemeMode) => {
     try {
-      await AsyncStorage.setItem(THEME_STORAGE_KEY, dark ? 'dark' : 'light');
+      await AsyncStorage.setItem(THEME_STORAGE_KEY, next);
     } catch (error) {
       console.log('Error saving theme preference:', error);
     }
   };
 
-  const toggleTheme = () => {
-    const newValue = !isDark;
-    setIsDark(newValue);
-    saveThemePreference(newValue);
+  const setMode = (next: ThemeMode) => {
+    setModeState(next);
+    saveThemePreference(next);
   };
 
-  const setTheme = (dark: boolean) => {
-    setIsDark(dark);
-    saveThemePreference(dark);
-  };
+  const toggleTheme = () => setMode(mode === 'light' ? 'dark' : 'light');
 
-  const colors = isDark ? darkColors : lightColors;
+  const setTheme = (dark: boolean) => setMode(dark ? 'dark' : 'light');
+
+  const isDark = mode !== 'light';
+  const colors = colorsFor(mode);
   // Before storage loads, use system theme so first paint matches device (avoids light flash on dark-mode iPhone)
   const resolvedColors = isLoaded ? colors : (systemColorScheme === 'dark' ? darkColors : lightColors);
   const resolvedDark = isLoaded ? isDark : (systemColorScheme === 'dark');
+  const resolvedMode: ThemeMode = isLoaded ? mode : (systemColorScheme === 'dark' ? 'dark' : 'light');
 
   // ---------------------------------------------------------------------------
   // WEB: keep the DOCUMENT's colours on the app's theme, not the OS's.
@@ -165,7 +192,9 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   }, [resolvedDark, resolvedColors]);
 
   return (
-    <ThemeContext.Provider value={{ isDark: resolvedDark, colors: resolvedColors, toggleTheme, setTheme }}>
+    <ThemeContext.Provider
+      value={{ isDark: resolvedDark, mode: resolvedMode, colors: resolvedColors, toggleTheme, setTheme, setMode }}
+    >
       {children}
     </ThemeContext.Provider>
   );
@@ -180,4 +209,4 @@ export function useTheme() {
 }
 
 // Export colors for static usage (fallback)
-export { lightColors, darkColors };
+export { lightColors, darkColors, blackColors };

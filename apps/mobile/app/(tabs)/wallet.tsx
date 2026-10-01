@@ -244,6 +244,18 @@ export default function WalletScreen() {
   const cardIds = useMemo(() => cards.map(c => c.id), [cards]);
   const { prefs: artPrefs } = useCardArtPrefs(cardIds);
 
+  // Resolved once per (cards, prefs) change, not inline per render:
+  // resolveCardArt does a whole-catalog issuer match plus colour math and
+  // returns a fresh object every call, so inlining it in the JSX handed
+  // BankCardFace a new `art` identity on EVERY Wallet state change — every
+  // preset tap, every fetch resolving — re-rendering both cards' three
+  // gradients and SVG pattern layer each time. With a stable identity,
+  // React.memo on BankCardFace can actually skip them.
+  const cardArts = useMemo(
+    () => cards.map(c => resolveCardArt(c.input, artPrefs[c.id], c.fallback)),
+    [cards, artPrefs]
+  );
+
   /**
    * Exact scroll offset that centres each card, per the derivation at the top
    * of this file: offset(i) = FIRST_OFFSET + i * CARD_STEP.
@@ -540,10 +552,10 @@ export default function WalletScreen() {
             onScrollEndDrag={IS_WEB ? undefined : scheduleCommit}
             scrollEventThrottle={16}
           >
-            {cards.map(c => (
+            {cards.map((c, i) => (
               <BankCardFace
                 key={c.id}
-                art={resolveCardArt(c.input, artPrefs[c.id], c.fallback)}
+                art={cardArts[i]}
                 bankName={c.name}
                 accountLabel={c.accountLabel}
                 network={c.network}
@@ -623,8 +635,6 @@ export default function WalletScreen() {
                           { color: on ? '#FFFFFF' : colors.ink },
                         ]}
                         numberOfLines={1}
-                        adjustsFontSizeToFit
-                        minimumFontScale={0.8}
                       >
                         {label}
                       </Text>

@@ -97,11 +97,12 @@ export function SpinCard({ front, back, style, onTap, onDragChange, hint = 'Drag
   const startRx = useRef(0);
   const startRy = useRef(0);
 
-  useEffect(() => {
-    const a = rx.addListener(({ value }) => { rxVal.current = value; });
-    const b = ry.addListener(({ value }) => { ryVal.current = value; });
-    return () => { rx.removeListener(a); ry.removeListener(b); };
-  }, [rx, ry]);
+  // rxVal/ryVal are kept by hand at the two places THIS code writes the
+  // values (applyMove below, and the release settle's known snap target) —
+  // NOT via rx.addListener/ry.addListener. A JS listener on a
+  // useNativeDriver value forces every animation frame back across the
+  // bridge to JS, which defeats the native driver entirely and kept the JS
+  // thread busy on every frame of the settle animation.
 
   // --- move throttle ------------------------------------------------------
   // At most one applied rotation update per animation frame, however many
@@ -121,6 +122,8 @@ export function SpinCard({ front, back, style, onTap, onDragChange, hint = 'Drag
       // settle instead.
       ry.setValue(nextRy);
       rx.setValue(nextRx);
+      ryVal.current = nextRy;
+      rxVal.current = nextRx;
     },
     [rx, ry]
   );
@@ -158,13 +161,16 @@ export function SpinCard({ front, back, style, onTap, onDragChange, hint = 'Drag
 
   // --- idle float -------------------------------------------------------------
   const float = useRef(new Animated.Value(0)).current;
-  const floatVal = useRef(0);
   const floatLoop = useRef<Animated.CompositeAnimation | null>(null);
 
-  useEffect(() => {
-    const id = float.addListener(({ value }) => { floatVal.current = value; });
-    return () => float.removeListener(id);
-  }, [float]);
+  // No float.addListener here — see the rx/ry note above. This one was the
+  // worst of the three: the idle float loops from mount, this component
+  // sits on a tab that stays mounted, and `interacted` is false until the
+  // card is first touched — so from app launch, on every screen, the JS
+  // thread was receiving ~60 bridge messages a second forever. Measured as
+  // "high input latency" on 65-84% of frames app-wide on a Helio P23 device.
+  // freezeFloat gets the current value from stopAnimation's callback
+  // instead, which is the one-shot read this ever actually needed.
 
   useEffect(() => {
     if (interacted) return;
@@ -193,7 +199,9 @@ export function SpinCard({ front, back, style, onTap, onDragChange, hint = 'Drag
   const freezeFloat = useCallback(() => {
     if (interacted) return;
     floatLoop.current?.stop();
-    float.setValue(floatVal.current);
+    // stopAnimation hands back the value the native driver is currently at —
+    // the one-shot read the old per-frame listener was standing in for.
+    float.stopAnimation(v => float.setValue(v));
     setInteracted(true);
   }, [float, interacted]);
 
@@ -247,18 +255,24 @@ export function SpinCard({ front, back, style, onTap, onDragChange, hint = 'Drag
           }
 
           // Snap each axis to the nearest half-turn with a slow soft settle.
+          // The snap target is written into rxVal/ryVal up front: once the
+          // settle finishes that IS the value, and it's the only place other
+          // than applyMove that moves these — so the mirrors stay exact with
+          // no per-frame listener.
           const snap = (v: number) => Math.round(v / 180) * 180;
           const [c0, c1, c2, c3] = motion.cardSettleBezier;
+          ryVal.current = snap(ryVal.current);
+          rxVal.current = snap(rxVal.current);
 
           Animated.parallel([
             Animated.timing(ry, {
-              toValue: snap(ryVal.current),
+              toValue: ryVal.current,
               duration: motion.cardSettle,
               easing: Easing.bezier(c0, c1, c2, c3),
               useNativeDriver: true,
             }),
             Animated.timing(rx, {
-              toValue: snap(rxVal.current),
+              toValue: rxVal.current,
               duration: motion.cardSettle,
               easing: Easing.bezier(c0, c1, c2, c3),
               useNativeDriver: true,
