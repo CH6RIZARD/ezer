@@ -12,7 +12,7 @@
 // by merchant, and sum.
 // =============================================================================
 
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -24,7 +24,7 @@ import {
   type NativeSyntheticEvent,
   type NativeScrollEvent,
 } from 'react-native';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../utils/ThemeContext';
@@ -401,6 +401,31 @@ export default function WalletScreen() {
   /** Inverse of cardOffset(): undo the leading offset before dividing. */
   const nearestIndex = (x: number) =>
     Math.max(0, Math.min(Math.round((x - FIRST_OFFSET) / CARD_STEP), cards.length - 1));
+
+  /**
+   * The real cause of "a card that had subs now shows 0": `index` (which
+   * decides whose data gets fetched, below) lives in this component's state,
+   * but expo-router keeps tab screens mounted — switching to another tab and
+   * back never resets it. The horizontal ScrollView's own scroll position,
+   * though, is NOT guaranteed to survive that — Android can and does drop it
+   * back to x:0 for an off-screen tab's native view. The result: you come
+   * back to Wallet, see card 0 on screen (because the ScrollView reset), but
+   * `index` still says 1, so the pill and "Where it goes" below are showing
+   * card 1's numbers underneath a screen that's visibly displaying card 0.
+   * No swipe, no glitch animation — just two sources of "which card" silently
+   * disagreeing. Re-asserting the scroll position to match `index` every time
+   * this screen regains focus is the actual fix, not another tweak to the
+   * pill's own rendering — the pill was always correct for the index it was
+   * given, the index just stopped matching what was on screen.
+   */
+  useFocusEffect(
+    useCallback(() => {
+      if (cards.length === 0) return;
+      const i = Math.min(index, cards.length - 1);
+      carouselRef.current?.scrollTo({ x: cardOffset(i), animated: false });
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [cards.length])
+  );
 
   /**
    * Index tracking runs off real scroll events, NOT Animated.event.
