@@ -25,8 +25,6 @@ const PAD_X = 16;
 /** Baseline (min price) and height of the plot band. */
 const Y_BASE = 112;
 const Y_SPAN = 76;
-/** y of a flat history — the prototype's literal value, not (Y_BASE - Y_SPAN/2). */
-const Y_FLAT = 66;
 const LABEL_Y = 132;
 
 /** Dot core. The prototype fills against the gradient's TOP stop, not the end. */
@@ -50,7 +48,9 @@ export function PriceChart({ points, width }: { points: PricePoint[]; width: num
 
   const stepX = points.length > 1 ? (VB_W - PAD_X * 2) / (points.length - 1) : 0;
   const x = (i: number) => PAD_X + i * stepX;
-  const y = (cents: number) => (flat ? Y_FLAT : Y_BASE - ((cents - min) / (max - min)) * Y_SPAN);
+  // A flat history sits on the baseline, not floating mid-band — nothing
+  // above it is a real number, so there's nothing to leave room for.
+  const y = (cents: number) => (flat ? Y_BASE : Y_BASE - ((cents - min) / (max - min)) * Y_SPAN);
 
   const d = points
     .map((p, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)},${y(p.cents).toFixed(1)}`)
@@ -79,17 +79,24 @@ export function PriceChart({ points, width }: { points: PricePoint[]; width: num
         strokeLinecap="round"
       />
 
-      {points.map((p, i) => (
-        <Circle
-          key={`c${i}`}
-          cx={x(i)}
-          cy={y(p.cents)}
-          r={4.5}
-          fill={DOT_FILL}
-          stroke={chartColors.line}
-          strokeWidth={2.5}
-        />
-      ))}
+      {points.map((p, i) => {
+        // A flat line's middle dots mark nothing — every point already says
+        // the same number. Endpoints still bound the line visually; the
+        // ones between them are just clutter once price is the whole story.
+        const isEndpoint = i === 0 || i === points.length - 1;
+        if (flat && !isEndpoint) return null;
+        return (
+          <Circle
+            key={`c${i}`}
+            cx={x(i)}
+            cy={y(p.cents)}
+            r={4.5}
+            fill={DOT_FILL}
+            stroke={chartColors.line}
+            strokeWidth={2.5}
+          />
+        );
+      })}
 
       {points.map((p, i) => (
         <SvgText
