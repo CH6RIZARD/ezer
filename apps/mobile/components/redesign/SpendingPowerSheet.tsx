@@ -143,6 +143,21 @@ export default function SpendingPowerSheet({
   const CIRCLE_MARGIN = 8;
   const slideDistance = Math.max(0, pillWidth - CIRCLE - CIRCLE_MARGIN * 2);
 
+  // handlePrimaryTap slides the circle to 1 (fully right) and only resets it
+  // back to 0 on a few specific branches — a cancelled Plaid Link, or when
+  // the split choice appears. A SUCCESSFUL flow (Plaid Link completes,
+  // runAssessment finishes) never did, so slideAnim stayed at 1 after the
+  // sheet moved on to the 'reveal'/'status' phase. Those phases render their
+  // OWN primary pill sharing this same Animated.Value, so it mounted
+  // already-slid: the circle resting on top of its own label instead of at
+  // the left edge, exactly the "word should disappear as it slides, not sit
+  // under it already" bug. Resetting on every phase change guarantees each
+  // new pill starts at rest regardless of how the previous one's animation
+  // ended.
+  useEffect(() => {
+    slideAnim.setValue(0);
+  }, [phase, slideAnim]);
+
   const alive = useRef(true);
   useEffect(
     () => () => {
@@ -390,7 +405,7 @@ export default function SpendingPowerSheet({
           onLayout={e => setPillWidth(e.nativeEvent.layout.width)}
         >
           <View style={styles.ctaPillLabelWrap}>
-            <Text style={styles.ctaPillText} numberOfLines={1}>
+            <Text style={[styles.ctaPillText, { color: colors.bg }]} numberOfLines={1}>
               {opening ? 'Opening your bank…' : busy ? busyLabel : idleLabel}
             </Text>
           </View>
@@ -553,7 +568,7 @@ export default function SpendingPowerSheet({
 
                   <PressScale onPress={finishReveal} scaleTo={motion.pressScale} style={{ marginTop: 26 }}>
                     <View style={[styles.ctaPillCentered, { backgroundColor: colors.ink }]}>
-                      <Text style={styles.ctaPillText}>Done</Text>
+                      <Text style={[styles.ctaPillText, { color: colors.bg }]}>Done</Text>
                     </View>
                   </PressScale>
                 </>
@@ -656,7 +671,7 @@ export default function SpendingPowerSheet({
                   ) : (
                     <PressScale onPress={onClose} scaleTo={motion.pressScale} style={{ marginTop: 22 }}>
                       <View style={[styles.ctaPillCentered, { backgroundColor: colors.ink }]}>
-                        <Text style={styles.ctaPillText}>Done</Text>
+                        <Text style={[styles.ctaPillText, { color: colors.bg }]}>Done</Text>
                       </View>
                     </PressScale>
                   )}
