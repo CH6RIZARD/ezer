@@ -247,20 +247,19 @@ export default function WalletScreen() {
   /**
    * The count shown on a card; only the focused card has a fetched count.
    *
-   * Hiding the pill entirely while `loadingBreakdown` was true — an earlier
-   * version of this — was itself the bug: the pill box mounting and
-   * unmounting on every single swipe IS the flicker, regardless of how clean
-   * each individual appearance looks. The pill must stay mounted for the
-   * active card the whole time; only the digit inside it may change. Since
-   * `merchants` is cleared to [] the instant a card switch starts (so the
-   * dollar amounts below never pair with the wrong card — see the merchants
-   * effect), this naturally shows "0 subs" for a beat and then updates in
-   * place to the real count once the fetch resolves, rather than the pill
-   * disappearing and reappearing.
+   * Two earlier versions of this both still read as "glitchy": hiding the
+   * pill while loading made the box itself mount/unmount on every swipe,
+   * and showing "0 subs" as a momentary placeholder (reading straight off
+   * `merchants`, which clears to [] the instant a switch starts) made the
+   * number visibly bounce through a wrong value before landing on the real
+   * one. Reading from `pillCount` instead of `merchants.length` fixes both:
+   * `pillCount` only ever changes when a real fetch resolves, so the pill
+   * stays mounted continuously and its number goes directly from whatever
+   * it last showed to the new real value — never blank, never a 0 detour.
    */
   const subsLabelFor = (cardId: string): string | undefined => {
-    if (cardId !== active?.id) return undefined;
-    const n = merchants.length;
+    if (cardId !== active?.id || pillCount === null) return undefined;
+    const n = pillCount;
     return `${n} sub${n === 1 ? '' : 's'}`;
   };
 
@@ -290,6 +289,19 @@ export default function WalletScreen() {
     { merchantId: string; merchantName: string; logo?: string; totalCents: number; count: number; subscriptionId: string | null }[]
   >([]);
   const [loadingBreakdown, setLoadingBreakdown] = useState(false);
+  /**
+   * The pill's own number, deliberately NOT the same state as `merchants`.
+   * `merchants` has to clear to [] the instant a card switch starts — the
+   * dollar amounts below can never show one card's breakdown under another
+   * card's art. But holding the pill to that same rule means it either
+   * hides or flashes "0 subs" for every switch and every range tap, which
+   * is its own bug: "it should never not show, and I don't want it rotating
+   * between multiple numbers — should just go from the last number to the
+   * current." This updates ONLY when a real fetch resolves, for any card or
+   * range, so the pill always shows a real number and changes value exactly
+   * once per load, never a blank or a zero in between.
+   */
+  const [pillCount, setPillCount] = useState<number | null>(null);
   /** Recurring charges projected to land inside the current range that
    *  haven't posted yet — see GET /wallet/instruments/:id/merchants. Shown
    *  only when `merchants` is empty, so a real $0 range (nothing was ever
@@ -386,6 +398,7 @@ export default function WalletScreen() {
           }))
         );
         setPredicted(predictedRows);
+        setPillCount(rows.length);
       })
       .finally(() => {
         if (!cancelled) setLoadingBreakdown(false);

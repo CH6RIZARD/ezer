@@ -190,6 +190,10 @@ export const MERCHANT_DOMAIN: Record<string, string> = {
   bandlab: 'bandlab.com',
   proton: 'proton.me', // NOT proton.com — a different, unrelated site
   cursor: 'cursor.com',
+  // "self" is a 4-letter common word; the auto-guess `self.com` is someone
+  // else's parked/unrelated domain, not Self Financial's credit-builder
+  // product. Their real site is self.inc.
+  self: 'self.inc',
 };
 
 /** Fallback tile colours for merchants with neither a bundled mark nor a logo. */
