@@ -256,9 +256,6 @@ export default function WalletScreen() {
    * flicker.
    */
   const subsLabelFor = (cardId: string): string | undefined => {
-    if (cardId === active?.id) {
-      console.log('[PILL_SYNC] subsLabelFor active card', cardId, 'loadingBreakdown=', loadingBreakdown, 'merchants.length=', merchants.length);
-    }
     if (cardId !== active?.id || loadingBreakdown) return undefined;
     const n = merchants.length;
     return `${n} sub${n === 1 ? '' : 's'}`;
@@ -303,7 +300,6 @@ export default function WalletScreen() {
   useEffect(() => {
     let cancelled = false;
     const cardId = active?.id;
-    console.log('[PILL_SYNC] merchants effect fired, index=', index, 'cardId=', cardId, 'prevCardId=', merchantsCardId.current);
 
     if (!cardId) {
       setMerchants([]);
@@ -313,7 +309,6 @@ export default function WalletScreen() {
     }
 
     const switchedCard = merchantsCardId.current !== cardId;
-    console.log('[PILL_SYNC] switchedCard=', switchedCard);
 
     if (switchedCard) {
       // A genuinely different card's numbers have nothing to do with what's
@@ -369,10 +364,8 @@ export default function WalletScreen() {
     // preset cases (apps/api/.../utils.ts) still exist for any other caller
     // that doesn't have a device clock to compute from, but this screen
     // always has one, so it always uses it.
-    console.log('[PILL_SYNC] fetching merchants for cardId=', cardId);
     getMerchants(cardId, 'custom', { startDate: range.start.toISOString(), endDate: range.end.toISOString() })
       .then(({ merchants: rows, predicted: predictedRows }) => {
-        console.log('[PILL_SYNC] fetch resolved for cardId=', cardId, 'cancelled=', cancelled, 'rows.length=', rows.length);
         if (cancelled) return;
         setMerchants(
           rows.map(m => ({
@@ -392,12 +385,10 @@ export default function WalletScreen() {
         setPredicted(predictedRows);
       })
       .finally(() => {
-        console.log('[PILL_SYNC] finally for cardId=', cardId, 'cancelled=', cancelled);
         if (!cancelled) setLoadingBreakdown(false);
       });
 
     return () => {
-      console.log('[PILL_SYNC] effect cleanup for cardId=', cardId);
       cancelled = true;
     };
   }, [active?.id, preset, range.start, range.end, getMerchants]);
@@ -455,17 +446,14 @@ export default function WalletScreen() {
       // that hasn't committed its layout yet just does nothing, with no
       // error. Nesting a second rAF defers it one more frame, past that
       // re-attach.
-      console.log('[PILL_SYNC] FOCUS_EFFECT firing, index=', index);
       const raf1 = requestAnimationFrame(() => {
         const raf2 = requestAnimationFrame(() => {
-          console.log('[PILL_SYNC] FOCUS_EFFECT scrollTo i=', i, 'offset=', cardOffset(i));
           carouselRef.current?.scrollTo({ x: cardOffset(i), animated: false });
         });
         rafRef.current = raf2;
       });
       rafRef.current = raf1;
       return () => {
-        console.log('[PILL_SYNC] FOCUS_EFFECT cleanup, index was', index);
         if (rafRef.current != null) cancelAnimationFrame(rafRef.current);
       };
     }, [cards.length, index])
@@ -491,42 +479,55 @@ export default function WalletScreen() {
    * moment later once the card actually settled — a real flash of the wrong
    * number (0, 6, whichever the mid-flight card was) before the right one
    * landed, not just a loading blip. `momentumActive` defers acting on
-   * onScrollEndDrag by one frame so a follow-up onMomentumScrollBegin can
-   * claim the correction instead — the settle event is always the one that
-   * actually wins.
+   * onScrollEndDrag so a follow-up onMomentumScrollBegin can claim the
+   * correction instead — the settle event is always the one that actually
+   * wins.
+   *
+   * That defer used to be a single requestAnimationFrame (~16ms). On-device
+   * logging during a real card-switch session showed this was too tight a
+   * window: onMomentumScrollBegin is a native event that has to cross the
+   * bridge, and a drag released with just enough velocity to coast could
+   * have its onScrollEndDrag rAF fire and commit a STALE mid-drag index
+   * before the native "yes, this is coasting" event arrives — a second,
+   * separate commitIndex call followed moments later once
+   * onMomentumScrollEnd corrected it. Each commit re-runs the full
+   * switchedCard cycle (clear → loading → fetch → show), so two commits for
+   * one real swipe is exactly "the pill disappears and reappears multiple
+   * times." 100ms comfortably covers that bridge round-trip while still
+   * being imperceptible for a drag that genuinely stops dead with no coast.
    */
   const momentumActive = useRef(false);
+  const scrollEndDragTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const commitIndex = (e: NativeSyntheticEvent<NativeScrollEvent>, source: string) => {
+  const commitIndex = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
     const i = nearestIndex(e.nativeEvent.contentOffset.x);
-    console.log('[PILL_SYNC] commitIndex from', source, 'offsetX=', e.nativeEvent.contentOffset.x, 'computed i=', i, 'current index=', index);
     if (i !== index) setIndex(i);
   };
 
   const handleMomentumBegin = () => {
-    console.log('[PILL_SYNC] onMomentumScrollBegin');
     momentumActive.current = true;
+    if (scrollEndDragTimer.current != null) {
+      clearTimeout(scrollEndDragTimer.current);
+      scrollEndDragTimer.current = null;
+    }
   };
 
   const handleMomentumEnd = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
-    console.log('[PILL_SYNC] onMomentumScrollEnd offsetX=', e.nativeEvent.contentOffset.x);
     momentumActive.current = false;
-    commitIndex(e, 'momentumEnd');
+    commitIndex(e);
   };
 
   const handleScrollEndDrag = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
-    console.log('[PILL_SYNC] onScrollEndDrag offsetX=', e.nativeEvent.contentOffset.x);
     momentumActive.current = false;
     const offsetX = e.nativeEvent.contentOffset.x;
-    requestAnimationFrame(() => {
+    if (scrollEndDragTimer.current != null) clearTimeout(scrollEndDragTimer.current);
+    scrollEndDragTimer.current = setTimeout(() => {
+      scrollEndDragTimer.current = null;
       // Momentum claimed this release in the meantime — onMomentumScrollEnd
       // will commit the real settled index; this offset is stale.
-      if (momentumActive.current) {
-        console.log('[PILL_SYNC] onScrollEndDrag rAF: momentum claimed it, skipping');
-        return;
-      }
-      commitIndex({ nativeEvent: { contentOffset: { x: offsetX } } } as NativeSyntheticEvent<NativeScrollEvent>, 'scrollEndDragRAF');
-    });
+      if (momentumActive.current) return;
+      commitIndex({ nativeEvent: { contentOffset: { x: offsetX } } } as NativeSyntheticEvent<NativeScrollEvent>);
+    }, 100);
   };
 
   /**
@@ -616,7 +617,6 @@ export default function WalletScreen() {
                   key={c.id}
                   hitSlop={10}
                   onPress={() => {
-                    console.log('[PILL_SYNC] dot tap, i=', i);
                     setIndex(i);
                     carouselRef.current?.scrollTo({ x: cardOffset(i), animated: true });
                   }}
