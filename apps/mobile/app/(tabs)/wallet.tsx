@@ -620,7 +620,7 @@ export default function WalletScreen() {
                   ['custom', chipLabel],
                   ['thisMonth', 'This month'],
                   ['lastMonth', 'Last month'],
-                  ['ytd', 'Year to date'],
+                  ['ytd', 'YTD'],
                 ] as const
               ).map(([key, label]) => {
                 const on = preset === key;
@@ -628,6 +628,7 @@ export default function WalletScreen() {
                   <PressScale
                     key={key}
                     scaleTo={0.95}
+                    style={{ flex: 1 }}
                     onPress={() => {
                       setPreset(key);
                       if (key === 'custom') setPickOpen(true);
@@ -647,6 +648,9 @@ export default function WalletScreen() {
                           styles.chipText,
                           { color: on ? '#FFFFFF' : colors.ink },
                         ]}
+                        numberOfLines={1}
+                        adjustsFontSizeToFit
+                        minimumFontScale={0.8}
                       >
                         {label}
                       </Text>
@@ -766,19 +770,24 @@ const styles = StyleSheet.create({
   },
   chipRow: {
     flexDirection: 'row',
-    gap: 8,
+    gap: 6,
     marginTop: 20,
-    flexWrap: 'wrap',
+    // Four chips, one row, always — "Year to date" shortened to "YTD" and
+    // the chip's own padding/font tightened below so all four fit on a
+    // standard phone width without wrapping to a second line.
+    flexWrap: 'nowrap',
   },
   chip: {
-    paddingHorizontal: 14,
+    flex: 1,
+    alignItems: 'center',
+    paddingHorizontal: 8,
     paddingVertical: 9,
     borderRadius: radius.pill,
     borderWidth: 1,
   },
   chipText: {
     fontFamily: fontFamily.bold,
-    fontSize: 12,
+    fontSize: 11,
   },
   totalCard: {
     padding: 18,
