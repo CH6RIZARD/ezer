@@ -681,7 +681,11 @@ export default function WalletScreen() {
                   <PressScale
                     key={key}
                     scaleTo={0.95}
-                    style={{ flex: 1 }}
+                    // Content-sized first, then share the leftover equally:
+                    // four EQUAL-width chips gave "This month"/"Last month"
+                    // ~63pt of text room on a 375pt phone and clipped them,
+                    // while "YTD" sat in the same width mostly empty.
+                    style={{ flexGrow: 1, flexShrink: 1, flexBasis: 'auto', minWidth: 0 }}
                     onPress={() => {
                       setPreset(key);
                       if (key === 'custom') setPickOpen(true);
@@ -702,6 +706,12 @@ export default function WalletScreen() {
                           { color: on ? '#FFFFFF' : colors.ink },
                         ]}
                         numberOfLines={1}
+                        // Only the Custom chip's label can grow (a picked
+                        // range renders as "Sep 1 – Sep 30"), so only it
+                        // pays for fit-shrinking's extra Android text
+                        // measurement; the three fixed labels never need it.
+                        adjustsFontSizeToFit={key === 'custom'}
+                        minimumFontScale={0.8}
                       >
                         {label}
                       </Text>
@@ -830,15 +840,18 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 6,
     marginTop: 20,
-    // Four chips, one row, always — "Year to date" shortened to "YTD" and
-    // the chip's own padding/font tightened below so all four fit on a
-    // standard phone width without wrapping to a second line.
+    // Four chips, one row, always — "Year to date" shortened to "YTD" so all
+    // four fit on a standard phone width without wrapping. Each chip's
+    // PressScale wrapper is flexBasis:'auto' + flexGrow:1, i.e. content
+    // width first, leftover shared — NOT equal widths, which clipped the
+    // two long labels on a 375pt phone while "YTD" sat half empty.
     flexWrap: 'nowrap',
   },
   chip: {
+    // Fills its PressScale wrapper; the wrapper owns the row-level sizing.
     flex: 1,
     alignItems: 'center',
-    paddingHorizontal: 8,
+    paddingHorizontal: 10,
     paddingVertical: 9,
     borderRadius: radius.pill,
     borderWidth: 1,
