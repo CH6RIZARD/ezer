@@ -328,7 +328,7 @@ export default function WalletScreen() {
 
   const fetchBreakdown = useCallback(
     async (cardId: string, r: { start: Date; end: Date }): Promise<Breakdown> => {
-      const { merchants: rows, predicted: predictedRows } = await getMerchants(cardId, 'custom', {
+      const { merchants: rows, predicted: predictedRows, ok } = await getMerchants(cardId, 'custom', {
         startDate: r.start.toISOString(),
         endDate: r.end.toISOString(),
       });
@@ -348,7 +348,12 @@ export default function WalletScreen() {
         })),
         predicted: predictedRows,
       };
-      breakdownCache.current.set(keyFor(cardId, r), { b, at: Date.now() });
+      // Only a genuine answer enters the cache. getMerchants swallows network
+      // failures into empty rows; stamping those as fresh would pin "$0 / no
+      // charges" on every tap and swipe for BREAKDOWN_FRESH_MS after the
+      // connection (or a paused API) came back — launched offline, the
+      // prefetch would have warmed every card × preset with nothing.
+      if (ok) breakdownCache.current.set(keyFor(cardId, r), { b, at: Date.now() });
       return b;
     },
     [getMerchants]

@@ -128,7 +128,7 @@ interface DataContextType extends DataState {
     id: string,
     range?: string,
     customDates?: { startDate: string; endDate: string }
-  ) => Promise<{ merchants: MerchantCharge[]; predicted: PredictedCharge[] }>;
+  ) => Promise<{ merchants: MerchantCharge[]; predicted: PredictedCharge[]; ok: boolean }>;
 }
 
 const DataContext = createContext<DataContextType | undefined>(undefined);
@@ -246,7 +246,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       id: string,
       range = 'last30',
       customDates?: { startDate: string; endDate: string }
-    ): Promise<{ merchants: MerchantCharge[]; predicted: PredictedCharge[] }> => {
+    ): Promise<{ merchants: MerchantCharge[]; predicted: PredictedCharge[]; ok: boolean }> => {
       try {
         // The API's `custom` range (apps/api/src/routes/wallet.ts,
         // @ezer/shared's getDateRange) requires startDate/endDate query
@@ -260,9 +260,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
             ? `range=custom&startDate=${encodeURIComponent(customDates.startDate)}&endDate=${encodeURIComponent(customDates.endDate)}`
             : `range=${range}`;
         const res: any = await api.get(`/wallet/instruments/${id}/merchants?${qs}`);
-        return { merchants: res.data || [], predicted: res.predicted?.items || [] };
+        return { merchants: res.data || [], predicted: res.predicted?.items || [], ok: true };
       } catch {
-        return { merchants: [], predicted: [] };
+        // Empty rows, but flagged: a swallowed failure must not be mistaken
+        // for a genuine "$0 / no charges" answer by anything that caches.
+        return { merchants: [], predicted: [], ok: false };
       }
     },
     []
