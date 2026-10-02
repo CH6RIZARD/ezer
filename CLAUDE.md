@@ -162,7 +162,16 @@ style problem.
   point. The inset is symmetric so the core's rotation origin stays the
   same point as the faces'. The two 2px "edge highlight" strips that used
   to sit at the core's top/bottom were removed for the same reason; don't
-  reintroduce them.
+  reintroduce them. That 3·sin(angle) geometry is the WEB export's only:
+  RN 0.81 has no `translateZ` transform natively (Android
+  `TransformHelper.kt` and iOS `RCTConvert+Transform.m` log "Unsupported
+  transform type" and skip it; Fabric's `conversions.h` has no branch for
+  it; only a three-element `translate: [x, y, z]` carries a Z). On a phone
+  the faces and core are coplanar, so the sliver/dashes there were the core
+  showing through the faces' anti-aliased edge pixels, and the inset takes
+  it out from under them. Don't swap in `translate: [0, 0, 3]` to "make the
+  depth real" without a device check — native would honour it and nobody
+  has seen the card that way.
 - **The Pay in 4 card's free-drag spin physics live in
   `components/redesign/SpinCard.tsx`**, not in `VirtualCard.tsx` — extracted
   so `PhysicalCardReview.tsx`'s finished-design preview gets the exact same

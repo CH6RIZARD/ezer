@@ -58,6 +58,18 @@ const PERSPECTIVE = 1100;
  * With an inset the core's own edge sits 4·cos(angle) px inside the face,
  * so it shows only once 3·sin(a) > 4·cos(a), i.e. past ~53° — exactly the
  * approach to edge-on where a visible gold thickness is the intent.
+ *
+ * That geometry is the WEB export's. On native, React Native 0.81 has no
+ * `translateZ` transform at all: Android's TransformHelper.kt logs
+ * "Unsupported transform type" and skips it, iOS's RCTConvert+Transform.m
+ * does the same, and Fabric's conversions.h has no branch for it — only a
+ * three-element `translate: [x, y, z]` carries a Z. So on a phone the two
+ * faces and the core are coplanar, and a full-size core could only ever
+ * show through the faces' anti-aliased edge pixels; the inset takes it out
+ * from under those edges entirely, which is why the fix held on the iOS
+ * screenshots too. Do not swap `translateZ` for `translate: [0, 0, 3]` to
+ * "make the depth real" without looking at a device first — native would
+ * honour it, and the card's edge-on look has never been seen that way.
  */
 const CORE_INSET = 4;
 
