@@ -47,6 +47,19 @@ const CARD_H = 190;
 const CONTAINER_H = 250;
 /** Matches the prototype's perspective: 1100px. */
 const PERSPECTIVE = 1100;
+/**
+ * How far the gold core sits inside the faces, on every side. Each face is
+ * pushed 3 units along its normal (translateZ: 3), which after projection
+ * offsets its silhouette from the core's by 3·sin(angle) px — so a core the
+ * same size as the faces peeks out past the near face at EVERY angle: a
+ * continuous 1.5px gold sliver down one side at 30° of Y-rotation, and at a
+ * few degrees of X-tilt a 0.26px sub-pixel strip along the top/bottom that
+ * rasterizes as a row of gold dashes. That was the "botched edges" report.
+ * With an inset the core's own edge sits 4·cos(angle) px inside the face,
+ * so it shows only once 3·sin(a) > 4·cos(a), i.e. past ~53° — exactly the
+ * approach to edge-on where a visible gold thickness is the intent.
+ */
+const CORE_INSET = 4;
 
 /**
  * Native has no equivalent of CSS's parent `perspective` property — every RN
@@ -315,23 +328,21 @@ export function SpinCard({ front, back, style, onTap, onDragChange, hint = 'Drag
             back showing. Reverted. The hairline highlights below are a
             smaller, purely additive fix for the same edge-on flatness that
             doesn't touch how the faces are composited. */}
-        <Animated.View style={[styles.face, { transform: faceTransform }]}>
+        {/* Inset by CORE_INSET on every side (see that constant for the
+            geometry) and symmetric, so its centre — and therefore its
+            rotation origin — is the same point as both faces'. The two
+            2px "edge highlight" strips that used to sit at the core's
+            top/bottom are gone: with the core hidden until ~53° they
+            could never show except as the sub-pixel peek that produced
+            the dashed artifact in the first place. */}
+        <Animated.View style={[styles.core, { transform: faceTransform }]}>
           <LinearGradient
             colors={gradients.metalEdge as unknown as readonly [string, string, ...string[]]}
             locations={gradients.metalEdgeLocations as unknown as readonly [number, number, ...number[]]}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
-            style={styles.fill}
+            style={[styles.fill, { borderRadius: radius.virtualCard - CORE_INSET }]}
           />
-          {/* A single flat plane read as a card's shape compressed to zero
-              width at exactly 90°/270° — correct for a face, wrong for an
-              edge someone is meant to perceive as having real thickness.
-              These two hairline strips sit just inside the core's own
-              silhouette and catch the light the way a beveled metal edge
-              does, so the "edge-on" moment reads as a thin bar with a
-              visible top/bottom highlight rather than a bare flat color. */}
-          <View style={[styles.edgeHighlight, { top: 0 }]} />
-          <View style={[styles.edgeHighlight, { bottom: 0 }]} />
         </Animated.View>
 
         <Animated.View
@@ -392,12 +403,15 @@ const styles = StyleSheet.create({
     flex: 1,
     borderRadius: radius.virtualCard,
   },
-  edgeHighlight: {
+  core: {
     position: 'absolute',
-    left: 0,
-    right: 0,
-    height: 2,
-    backgroundColor: 'rgba(255,255,255,0.35)',
+    left: CORE_INSET,
+    top: CORE_INSET,
+    width: CARD_W - CORE_INSET * 2,
+    height: CARD_H - CORE_INSET * 2,
+    // Concentric with the faces' corners, not just smaller.
+    borderRadius: radius.virtualCard - CORE_INSET,
+    overflow: 'hidden',
   },
   hint: {
     marginTop: 14,

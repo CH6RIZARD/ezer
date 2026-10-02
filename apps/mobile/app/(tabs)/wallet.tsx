@@ -292,6 +292,56 @@ export default function WalletScreen() {
    *  the SAME card — see the effect's own comment. */
   const merchantsCardId = useRef<string | undefined>(undefined);
 
+  type BreakdownRow = {
+    merchantId: string;
+    merchantName: string;
+    logo?: string;
+    totalCents: number;
+    count: number;
+    subscriptionId: string | null;
+  };
+  type Breakdown = { merchants: BreakdownRow[]; predicted: PredictedCharge[] };
+
+  // Per-(card, range) cache of fetched breakdowns. A preset tap used to be a
+  // round trip to the API every time — the chip highlighted instantly but
+  // the numbers under it didn't change until the response landed, which on
+  // a slow link read as "I tapped and the screen didn't move." Anything
+  // already fetched now applies on the same frame as the tap, and the
+  // prefetch effect below warms every card × preset up front so the first
+  // tap is a hit too. A fresh fetch still runs behind a hit to keep it
+  // current.
+  const breakdownCache = useRef(new Map<string, Breakdown>());
+  const keyFor = (cardId: string, r: { start: Date; end: Date }) =>
+    `${cardId}|${r.start.toISOString()}|${r.end.toISOString()}`;
+
+  const fetchBreakdown = useCallback(
+    async (cardId: string, r: { start: Date; end: Date }): Promise<Breakdown> => {
+      const { merchants: rows, predicted: predictedRows } = await getMerchants(cardId, 'custom', {
+        startDate: r.start.toISOString(),
+        endDate: r.end.toISOString(),
+      });
+      const b: Breakdown = {
+        merchants: rows.map(m => ({
+          merchantId: m.merchantId,
+          merchantName: m.merchantName,
+          logo: m.logo,
+          totalCents: m.totalDrainedCents,
+          count: m.chargeCount,
+          // The real Subscription id now, not merchantId standing in for
+          // it — GET /subscriptions/:id looks up by the Subscription row's
+          // own primary key, which a merchant id can never match. Every
+          // tap 404'd as "Subscription not found" until the API started
+          // actually resolving and returning this.
+          subscriptionId: m.subscriptionId,
+        })),
+        predicted: predictedRows,
+      };
+      breakdownCache.current.set(keyFor(cardId, r), b);
+      return b;
+    },
+    [getMerchants]
+  );
+
   useEffect(() => {
     let cancelled = false;
     const cardId = active?.id;
@@ -360,25 +410,25 @@ export default function WalletScreen() {
     // preset cases (apps/api/.../utils.ts) still exist for any other caller
     // that doesn't have a device clock to compute from, but this screen
     // always has one, so it always uses it.
-    getMerchants(cardId, 'custom', { startDate: range.start.toISOString(), endDate: range.end.toISOString() })
-      .then(({ merchants: rows, predicted: predictedRows }) => {
+    // Cache hit: apply on this same tick, so the tap and the new numbers
+    // land together. The loading flag set above for a card switch is
+    // cleared again here in the same batch — a hit has nothing to load.
+    const cached = breakdownCache.current.get(keyFor(cardId, range));
+    if (cached) {
+      setMerchants(cached.merchants);
+      setPredicted(cached.predicted);
+      setLoadingBreakdown(false);
+    }
+
+    fetchBreakdown(cardId, range)
+      .then(b => {
         if (cancelled) return;
-        setMerchants(
-          rows.map(m => ({
-            merchantId: m.merchantId,
-            merchantName: m.merchantName,
-            logo: m.logo,
-            totalCents: m.totalDrainedCents,
-            count: m.chargeCount,
-            // The real Subscription id now, not merchantId standing in for
-            // it — GET /subscriptions/:id looks up by the Subscription row's
-            // own primary key, which a merchant id can never match. Every
-            // tap 404'd as "Subscription not found" until the API started
-            // actually resolving and returning this.
-            subscriptionId: m.subscriptionId,
-          }))
-        );
-        setPredicted(predictedRows);
+        setMerchants(b.merchants);
+        setPredicted(b.predicted);
+      })
+      .catch(() => {
+        // getMerchants already swallows network errors into empty results;
+        // this only guards the unexpected. A hit stays on screen either way.
       })
       .finally(() => {
         if (!cancelled) setLoadingBreakdown(false);
@@ -387,7 +437,24 @@ export default function WalletScreen() {
     return () => {
       cancelled = true;
     };
-  }, [active?.id, preset, range.start, range.end, getMerchants]);
+  }, [active?.id, preset, range.start, range.end, fetchBreakdown]);
+
+  // Warm the cache for every card × fixed preset as soon as the cards are
+  // known (2 cards × 3 presets = 6 small requests, once). After this, every
+  // preset tap and every card swipe is a cache hit: the numbers change on
+  // the same frame as the gesture instead of after a round trip. 'custom'
+  // is skipped — its range is whatever the picker says, not known up front.
+  useEffect(() => {
+    for (const c of cards) {
+      for (const p of ['thisMonth', 'lastMonth', 'ytd'] as const) {
+        const r = presetRange(p);
+        if (breakdownCache.current.has(keyFor(c.id, r))) continue;
+        void fetchBreakdown(c.id, r).catch(() => {});
+      }
+    }
+    // keyFor is a stable inline helper; cards/fetchBreakdown are the real inputs.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cards, fetchBreakdown]);
 
   const drained = merchants.reduce((s, m) => s + m.totalCents, 0);
 
