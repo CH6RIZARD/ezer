@@ -149,6 +149,20 @@ style problem.
   blurred tab's subtree stops rendering at all — don't remove it to "fix" a
   stale-looking tab; use `useFocusEffect` on that screen instead (Wallet
   already does, for its carousel position).
+- **SpinCard's gold core is inset by `CORE_INSET` (4px) on every side —
+  do not make it the same size as the faces again.** Each face is pushed 3
+  units along its normal (`translateZ: 3`); after projection that offsets
+  the face's silhouette from the core's by 3·sin(angle) px, so a full-size
+  core peeks past the near face at every angle: a continuous gold sliver on
+  one vertical edge at ~30°, and at a few degrees of X-tilt a sub-pixel
+  strip along the top/bottom that rasterizes as a row of gold DASHES (the
+  "edges botched" report, iOS screenshots on the black theme). With the
+  inset the core's edge sits 4·cos(angle) inside the face and shows only
+  past ~53° — the approach to edge-on, where visible thickness is the
+  point. The inset is symmetric so the core's rotation origin stays the
+  same point as the faces'. The two 2px "edge highlight" strips that used
+  to sit at the core's top/bottom were removed for the same reason; don't
+  reintroduce them.
 - **The Pay in 4 card's free-drag spin physics live in
   `components/redesign/SpinCard.tsx`**, not in `VirtualCard.tsx` — extracted
   so `PhysicalCardReview.tsx`'s finished-design preview gets the exact same
