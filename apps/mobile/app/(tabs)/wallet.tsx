@@ -54,7 +54,12 @@ import RangeCalendar from '../../components/redesign/RangeCalendar';
 // Only the date-range helper is still used here — the charge expansion in that
 // module reads bundled demo subscriptions, and every figure on this screen now
 // comes from the API instead.
-import { presetRange, type RangePreset } from '../../utils/chargeOccurrences';
+import { endOfDay, presetRange, type RangePreset } from '../../utils/chargeOccurrences';
+
+/** How long a cached per-range breakdown stands without a re-fetch behind it. */
+const BREAKDOWN_FRESH_MS = 60_000;
+/** Both sides are small arrays of plain rows; a structural compare is cheap. */
+const sameBreakdown = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 
 const SCREEN_W = Dimensions.get('window').width;
 const CARD_W = 300;
@@ -270,7 +275,9 @@ export default function WalletScreen() {
   );
 
   const range = useMemo(() => {
-    if (preset === 'custom' && rStart && rEnd) return { start: rStart, end: rEnd };
+    // The picker hands back the chosen END day at 00:00; the API filters
+    // `date <= end`, so send the end of that day or its charges are lost.
+    if (preset === 'custom' && rStart && rEnd) return { start: rStart, end: endOfDay(rEnd) };
     return presetRange(preset === 'custom' ? 'thisMonth' : preset);
   }, [preset, rStart, rEnd]);
 
@@ -310,9 +317,14 @@ export default function WalletScreen() {
   // prefetch effect below warms every card × preset up front so the first
   // tap is a hit too. A fresh fetch still runs behind a hit to keep it
   // current.
-  const breakdownCache = useRef(new Map<string, Breakdown>());
+  const breakdownCache = useRef(new Map<string, { b: Breakdown; at: number }>());
+  // Keyed on calendar DAYS, not instants: a range's end is a day boundary
+  // from the user's point of view, and keying on toISOString() meant any
+  // sub-day drift in how the end was computed (YTD once ended at "now")
+  // produced a key no earlier fetch could ever match.
+  const dayKey = (d: Date) => `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
   const keyFor = (cardId: string, r: { start: Date; end: Date }) =>
-    `${cardId}|${r.start.toISOString()}|${r.end.toISOString()}`;
+    `${cardId}|${dayKey(r.start)}|${dayKey(r.end)}`;
 
   const fetchBreakdown = useCallback(
     async (cardId: string, r: { start: Date; end: Date }): Promise<Breakdown> => {
@@ -336,7 +348,7 @@ export default function WalletScreen() {
         })),
         predicted: predictedRows,
       };
-      breakdownCache.current.set(keyFor(cardId, r), b);
+      breakdownCache.current.set(keyFor(cardId, r), { b, at: Date.now() });
       return b;
     },
     [getMerchants]
@@ -413,26 +425,36 @@ export default function WalletScreen() {
     // Cache hit: apply on this same tick, so the tap and the new numbers
     // land together. The loading flag set above for a card switch is
     // cleared again here in the same batch — a hit has nothing to load.
-    const cached = breakdownCache.current.get(keyFor(cardId, range));
-    if (cached) {
-      setMerchants(cached.merchants);
-      setPredicted(cached.predicted);
+    const hit = breakdownCache.current.get(keyFor(cardId, range));
+    if (hit) {
+      setMerchants(hit.b.merchants);
+      setPredicted(hit.b.predicted);
       setLoadingBreakdown(false);
     }
 
-    fetchBreakdown(cardId, range)
-      .then(b => {
-        if (cancelled) return;
-        setMerchants(b.merchants);
-        setPredicted(b.predicted);
-      })
-      .catch(() => {
-        // getMerchants already swallows network errors into empty results;
-        // this only guards the unexpected. A hit stays on screen either way.
-      })
-      .finally(() => {
-        if (!cancelled) setLoadingBreakdown(false);
-      });
+    // A hit younger than BREAKDOWN_FRESH_MS is current enough to stand on
+    // its own. Re-fetching behind EVERY hit, as this used to, handed the
+    // list a second, identical set of rows a few hundred ms after the tap —
+    // one more full re-render of every merchant row and logo, which on a
+    // slow phone was exactly the lag the cache was meant to remove.
+    const fresh = !!hit && Date.now() - hit.at < BREAKDOWN_FRESH_MS;
+    if (!fresh) {
+      fetchBreakdown(cardId, range)
+        .then(b => {
+          if (cancelled) return;
+          // Same numbers as what is already on screen: leave the list alone.
+          if (hit && sameBreakdown(hit.b, b)) return;
+          setMerchants(b.merchants);
+          setPredicted(b.predicted);
+        })
+        .catch(() => {
+          // getMerchants already swallows network errors into empty results;
+          // this only guards the unexpected. A hit stays on screen either way.
+        })
+        .finally(() => {
+          if (!cancelled) setLoadingBreakdown(false);
+        });
+    }
 
     return () => {
       cancelled = true;
@@ -667,7 +689,20 @@ export default function WalletScreen() {
 
           <View style={{ paddingHorizontal: layout.screenX }}>
             {/* --- range chips ----------------------------------------------- */}
-            <View style={styles.chipRow}>
+            {/* A horizontal scroller, not a fixed row: the chips take their
+                content width and never shrink, so "This month"/"Last month"
+                cannot be clipped at any screen width or system font scale —
+                on a 360dp phone with a larger font the four did not fit and
+                the two long labels were being squeezed and cut. With room to
+                spare the row still fills the width (content flexGrow + chip
+                flexGrow); without it, it scrolls. */}
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+              style={styles.chipScroll}
+              contentContainerStyle={styles.chipRow}
+            >
               {(
                 [
                   ['custom', chipLabel],
@@ -681,11 +716,10 @@ export default function WalletScreen() {
                   <PressScale
                     key={key}
                     scaleTo={0.95}
-                    // Content-sized first, then share the leftover equally:
-                    // four EQUAL-width chips gave "This month"/"Last month"
-                    // ~63pt of text room on a 375pt phone and clipped them,
-                    // while "YTD" sat in the same width mostly empty.
-                    style={{ flexGrow: 1, flexShrink: 1, flexBasis: 'auto', minWidth: 0 }}
+                    // Content-sized first, then share the leftover equally —
+                    // and NEVER shrink below content width (flexShrink 0):
+                    // when the row is too narrow it scrolls instead.
+                    style={{ flexGrow: 1, flexShrink: 0, flexBasis: 'auto' }}
                     onPress={() => {
                       setPreset(key);
                       if (key === 'custom') setPickOpen(true);
@@ -719,7 +753,7 @@ export default function WalletScreen() {
                   </PressScale>
                 );
               })}
-            </View>
+            </ScrollView>
 
             {pickOpen && (
               <RangeCalendar
@@ -836,16 +870,20 @@ const styles = StyleSheet.create({
     height: 7,
     borderRadius: 4,
   },
+  chipScroll: {
+    marginTop: 20,
+    // Bleed to the screen edges so a scrolled row runs under the page
+    // padding instead of being clipped at it; the content pads itself back.
+    marginHorizontal: -layout.screenX,
+  },
   chipRow: {
     flexDirection: 'row',
     gap: 6,
-    marginTop: 20,
-    // Four chips, one row, always — "Year to date" shortened to "YTD" so all
-    // four fit on a standard phone width without wrapping. Each chip's
-    // PressScale wrapper is flexBasis:'auto' + flexGrow:1, i.e. content
-    // width first, leftover shared — NOT equal widths, which clipped the
-    // two long labels on a 375pt phone while "YTD" sat half empty.
-    flexWrap: 'nowrap',
+    paddingHorizontal: layout.screenX,
+    // At least the viewport width, so when the four chips fit they still
+    // share the leftover (each wrapper is flexGrow:1, flexBasis:'auto');
+    // when they don't, the ScrollView scrolls — nothing ever shrinks.
+    flexGrow: 1,
   },
   chip: {
     // Fills its PressScale wrapper; the wrapper owns the row-level sizing.

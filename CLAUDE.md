@@ -88,6 +88,21 @@ style problem.
   deploy failed at the build step. `apps/mobile`'s EAS builds already pinned
   `pnpm@9.15.0` with no such issue; matching that at the repo root fixed it.
   The lockfile (`lockfileVersion: '6.0'`) is unaffected — pnpm 9 reads it fine.
+- **Wallet range presets end at 23:59:59.999 LOCAL, and the per-range
+  breakdown cache keys on calendar days** (`presetRange` in
+  `utils/chargeOccurrences.ts`, `keyFor` in `app/(tabs)/wallet.tsx`). The
+  API filters `date <= endDate` on a DateTime, so a preset ending at the last
+  day's 00:00 drops that day for anyone east of UTC — and "ytd" once ended at
+  `new Date()`, millisecond precision, which made its cache key different on
+  every computation: the prefetch warmed a key no tap ever asked for, so YTD
+  was a round trip every time while the other presets were instant. A cache
+  hit younger than `BREAKDOWN_FRESH_MS` is also NOT re-fetched behind the
+  tap; the re-fetch handed the list an identical second set of rows a few
+  hundred ms later, one more full re-render, which on a slow phone was the
+  lag the cache was meant to remove. The chip row is a horizontal ScrollView
+  whose chips never shrink (`flexShrink: 0`) — four equal-width chips and
+  then four shrinkable ones both clipped "This month"/"Last month" on a 360dp
+  phone with a larger system font. Don't put them back in a fixed row.
 - **Migrations do not run on deploy.** `railway.json` runs `prisma generate`
   only — `migrate deploy` needs a session-mode connection (port 5432), not the
   transaction pooler. Apply migrations manually.
