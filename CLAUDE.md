@@ -448,10 +448,14 @@ style problem.
   for BOTH dark modes on purpose, so every existing `isDark` consumer (status
   bar, calendar, popovers) needed no change — read `mode` only when the
   distinction matters. The stored preference is the mode string; the old
-  `'dark'`/`'light'` values remain valid. Settings' appearance control is three
-  UNLABELLED swatches, each painted the real `bg` of the theme it selects,
-  requested that way explicitly ("don't label them, just leave the colour") —
-  don't add Light/Dark/Black captions back.
+  `'dark'`/`'light'` values remain valid. Settings' appearance control is ONE
+  three-colour pill (Patch 4, `ThemePill` in `app/settings.tsx`): segments
+  Light (`light.bg`) / Purple (`accent`) / Dark (`dark.bg`), active segment
+  flex 2 with a checkmark, NO labels inside the pill — only the "Theme" row's
+  subtitle names the mode. The mock's names map onto the existing modes:
+  "Purple" = `'dark'` (the purple-tinted dark), "Dark" = `'black'`. There is no
+  separate purple theme; don't invent one from the mock's naming. The mock's
+  haptic is skipped because expo-haptics isn't installed.
 - **`inset: 0` is not implemented in React Native.** It is dropped silently, so
   an absolutely positioned box written that way has no dimensions. Use
   top/left/right/bottom.

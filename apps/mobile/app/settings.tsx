@@ -1,21 +1,21 @@
 // =============================================================================
 // EZER Redesign — Settings (handoff §7)
 //
-// Appearance segmented Light/Dark (active #4C1D95) — must re-theme every
+// Appearance: one three-colour theme pill (Patch 4) — must re-theme every
 // screen, calendar, popover and the tab bar, which it does by driving
-// ThemeContext.setTheme. Then Account, Linked banks, three gold notification
+// ThemeContext.setMode. Then Account, Linked banks, three gold notification
 // toggles, and a red Sign out row.
 // =============================================================================
 
-import React, { useEffect, useState } from 'react';
-import { View, Text, ScrollView, Pressable, Switch, StyleSheet } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import { View, Text, ScrollView, Pressable, Switch, StyleSheet, Animated, Easing } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useTheme } from '../utils/ThemeContext';
+import { useTheme, type ThemeMode } from '../utils/ThemeContext';
 import { useAuth } from '../utils/AuthContext';
 import { fontFamily, typeScale, radius, layout } from '../theme/type';
-import { lightTokens, darkTokens, blackTokens } from '../theme/tokens';
+import { lightTokens, darkTokens } from '../theme/tokens';
 import {
   Body,
   Label,
@@ -31,6 +31,58 @@ const NOTIFS = [
   { key: 'trials', title: 'Trial warnings', sub: 'Before a trial converts' },
   { key: 'digest', title: 'Weekly digest', sub: 'Sunday' },
 ] as const;
+
+// Patch 4 calls the modes Light / Purple / Dark. The app's ThemeMode values are
+// 'light' | 'dark' | 'black' (CLAUDE.md, "three theme modes"); the mock's
+// "Purple" is the purple-tinted 'dark' theme and its "Dark" is true 'black'.
+// Segment colours are the mock's, all from tokens.ts.
+const THEME_SEGMENTS: { mode: ThemeMode; name: string; fill: string; check: string }[] = [
+  { mode: 'light', name: 'Light', fill: lightTokens.bg, check: lightTokens.ink },
+  { mode: 'dark', name: 'Purple', fill: lightTokens.accent, check: darkTokens.ink },
+  { mode: 'black', name: 'Dark', fill: darkTokens.bg, check: darkTokens.ink },
+];
+const PILL_EASE = Easing.bezier(0.22, 1, 0.36, 1);
+
+function ThemePill({ mode, onChange }: { mode: ThemeMode; onChange: (m: ThemeMode) => void }) {
+  const { colors } = useTheme();
+  // Active segment flex 2, others 1. flex is a layout prop, so the width
+  // animation runs on the JS driver (350ms, three views — cheap); the
+  // checkmark fade is a separate native-driven opacity.
+  const flex = useRef(THEME_SEGMENTS.map(s => new Animated.Value(s.mode === mode ? 2 : 1))).current;
+  const check = useRef(THEME_SEGMENTS.map(s => new Animated.Value(s.mode === mode ? 1 : 0))).current;
+
+  useEffect(() => {
+    Animated.parallel(
+      THEME_SEGMENTS.flatMap((s, i) => [
+        Animated.timing(flex[i], { toValue: s.mode === mode ? 2 : 1, duration: 350, easing: PILL_EASE, useNativeDriver: false }),
+        Animated.timing(check[i], { toValue: s.mode === mode ? 1 : 0, duration: 150, useNativeDriver: true }),
+      ])
+    ).start();
+  }, [mode, flex, check]);
+
+  return (
+    // line2 comes from the active theme, so in the dark modes it is dark.line2
+    // and the Dark segment still reads against the dark card.
+    <View style={[styles.pill, { borderColor: colors.line2 }]}>
+      {THEME_SEGMENTS.map((s, i) => (
+        <Animated.View key={s.mode} style={{ flex: flex[i] }}>
+          <Pressable
+            onPress={() => s.mode !== mode && onChange(s.mode)}
+            hitSlop={{ top: 4, bottom: 4 }}
+            accessibilityRole="button"
+            accessibilityLabel={`${s.name} theme`}
+            accessibilityState={{ selected: s.mode === mode }}
+            style={[styles.pillSegment, { backgroundColor: s.fill }]}
+          >
+            <Animated.View style={{ opacity: check[i] }}>
+              <Ionicons name="checkmark" size={16} color={s.check} />
+            </Animated.View>
+          </Pressable>
+        </Animated.View>
+      ))}
+    </View>
+  );
+}
 
 export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
@@ -84,40 +136,13 @@ export default function SettingsScreen() {
 
           {/* --- appearance --------------------------------------------------- */}
           <SectionHeader style={styles.section}>Appearance</SectionHeader>
-          {/* Three unlabelled swatches, each painted the actual screen
-              background of the theme it selects — light (cream), dark (the
-              handoff's purple-tinted dark) and true black. The colour IS the
-              label; a ring marks the active one. */}
-          <View style={[styles.segment, { backgroundColor: colors.card, borderColor: colors.line }]}>
-            {(
-              [
-                ['light', lightTokens.bg],
-                ['dark', darkTokens.bg],
-                ['black', blackTokens.bg],
-              ] as const
-            ).map(([m, swatch]) => {
-              const active = mode === m;
-              return (
-                <Pressable
-                  key={m}
-                  onPress={() => setMode(m)}
-                  accessibilityRole="button"
-                  accessibilityLabel={`${m} theme`}
-                  accessibilityState={{ selected: active }}
-                  style={styles.swatchItem}
-                >
-                  <View
-                    style={[
-                      styles.swatchRing,
-                      { borderColor: active ? colors.accInk : 'transparent' },
-                    ]}
-                  >
-                    <View style={[styles.swatch, { backgroundColor: swatch, borderColor: colors.line2 }]} />
-                  </View>
-                </Pressable>
-              );
-            })}
+          {/* Patch 4 (Appearance Toggle mock 1b): one three-colour pill. */}
+          <View style={styles.themeRow}>
+            <Text style={[styles.kvValue, { color: colors.ink }]}>Theme</Text>
+            <Text style={[styles.themeMode, { color: colors.mut }]}>{THEME_SEGMENTS.find(s => s.mode === mode)?.name}</Text>
           </View>
+          <ThemePill mode={mode} onChange={setMode} />
+
 
           {/* --- account ------------------------------------------------------ */}
           <SectionHeader style={styles.section}>Account</SectionHeader>
@@ -257,32 +282,27 @@ const styles = StyleSheet.create({
     marginTop: 24,
     marginBottom: 10,
   },
-  segment: {
+  themeRow: {
     flexDirection: 'row',
-    borderRadius: radius.buttonSm,
-    borderWidth: 1,
-    padding: 4,
-    gap: 4,
+    alignItems: 'baseline',
+    justifyContent: 'space-between',
+    marginBottom: 10,
   },
-  swatchItem: {
-    flex: 1,
+  themeMode: {
+    fontFamily: fontFamily.regular,
+    fontSize: 12,
+  },
+  pill: {
+    flexDirection: 'row',
+    height: 40,
+    borderRadius: 999,
+    borderWidth: 1,
+    overflow: 'hidden',
+  },
+  pillSegment: {
+    height: '100%',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 8,
-  },
-  swatchRing: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    borderWidth: 2.5,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  swatch: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    borderWidth: 1,
   },
   block: {
     paddingHorizontal: 14,
