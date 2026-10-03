@@ -21,6 +21,7 @@ import { cardRoutes } from './routes/cards';
 import { installmentRoutes } from './routes/installments';
 import { savingsRoutes } from './routes/savings';
 import { processorWebhookRoutes } from './routes/processorWebhook';
+import { inboxRoutes } from './routes/inbox';
 import { ensureUploadsDir } from './utils/storage';
 
 // PORT first: every container platform (Railway, Render, Fly, Heroku) injects
@@ -70,6 +71,7 @@ async function start() {
     await server.register(connectRoutes, { prefix: '/connect' });
     await server.register(walletRoutes, { prefix: '/wallet' });
     await server.register(coreRoutes);
+    await server.register(inboxRoutes);
     await server.register(cancelRoutes);
     await server.register(ingestRoutes, { prefix: '/ingest' });
     await server.register(jobRoutes, { prefix: '/jobs' });

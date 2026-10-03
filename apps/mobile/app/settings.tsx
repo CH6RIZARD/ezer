@@ -7,7 +7,7 @@
 // toggles, and a red Sign out row.
 // =============================================================================
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, Text, ScrollView, Pressable, Switch, StyleSheet } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -24,6 +24,7 @@ import {
   PressScale,
   ScreenBody,
 } from '../components/redesign/Primitives';
+import { isInboxScanEnabled } from '../utils/inboxScan';
 
 const NOTIFS = [
   { key: 'renewals', title: 'Renewal alerts', sub: '3 days before' },
@@ -44,6 +45,11 @@ export default function SettingsScreen() {
     trials: true,
     digest: false,
   });
+  // Server-gated until Google verifies gmail.readonly (routes/inbox.ts).
+  const [inboxEnabled, setInboxEnabled] = useState(false);
+  useEffect(() => {
+    void isInboxScanEnabled().then(setInboxEnabled);
+  }, []);
 
   const signOut = () => {
     // The auth context has gone by both names across revisions; call whichever
@@ -180,6 +186,24 @@ export default function SettingsScreen() {
               <Ionicons name="chevron-forward" size={16} color={colors.mut2} />
             </Surface>
           </PressScale>
+
+          {inboxEnabled && (
+            <>
+              <SectionHeader style={styles.section}>Inbox</SectionHeader>
+              <PressScale onPress={() => router.push('/settings/inbox')}>
+                <Surface style={styles.connectRow}>
+                  <View style={[styles.connectIcon, { backgroundColor: colors.accSoft }]}>
+                    <Ionicons name="mail-outline" size={19} color={colors.accInk} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.kvValue, { color: colors.ink }]}>Connect inbox</Text>
+                    <Body style={{ marginTop: 2 }}>Find subscriptions and trials from your receipts</Body>
+                  </View>
+                  <Ionicons name="chevron-forward" size={16} color={colors.mut2} />
+                </Surface>
+              </PressScale>
+            </>
+          )}
 
           {/* --- notifications -------------------------------------------------- */}
           <SectionHeader style={styles.section}>Notifications</SectionHeader>

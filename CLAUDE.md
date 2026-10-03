@@ -357,6 +357,32 @@ style problem.
     as a landmine for exactly the confusion it was built to avoid. Do not
     recreate a "connected accounts" screen separate from the ones above.
 
+## Inbox scanning (`apps/mobile/utils/inboxScan/`, `SCOPES.md`)
+
+- **Email is read ON THE PHONE, never on the server.** The app fetches
+  Gmail/Outlook directly, `extractSubscription()` reduces each message to
+  merchant/amount/cadence/dates/cancel link, and only those fields go to
+  `POST /subscriptions/detected` (`apps/api/src/routes/inbox.ts`). Tokens stay
+  on the device. This is the whole argument for Google's restricted-scope
+  review skipping the paid CASA audit ("restricted data is not stored or
+  transmitted server-side"), and `docs/privacy.html` §3 promises it. Don't
+  add a server-side Gmail pull, a body/subject field to
+  `detectedSubscriptionSchema`, or token upload without redoing both. The old
+  server-side stubs in `routes/connect.ts`/`routes/ingest.ts` predate this and
+  are not the path.
+- **Detected records merge into the existing Merchant/Subscription/
+  PriceHistory/Trial rows**, matched on `normalizeMerchantName`, the same key
+  Plaid sync uses. No new table, so no migration. Email only FILLS gaps and
+  never overwrites Plaid-derived values. Trials land in `Trial`, so /risks and
+  the Alerts tab show them with no extra wiring.
+- **Gated by the server** (`INBOX_SCAN_ENABLED=1`, or `INBOX_SCAN_ALLOWLIST` of
+  emails) until Google approves `gmail.readonly`. Unverified apps only work
+  for consent-screen test users anyway. The Settings row is hidden when off.
+- Tests: `node --test apps/mobile/utils/inboxScan/extract.test.ts` (Node's
+  native TS, hence the `.ts` import extension). Not yet built: background
+  scans (no `expo-background-fetch`) and local trial push notifications (no
+  `expo-notifications`). Both need a new native dependency and a lockfile change.
+
 ## Wallet card art (`apps/mobile/utils/cardArt/`)
 
 - **No data source returns what a linked card physically looks like.** Plaid,
@@ -444,3 +470,13 @@ development defaults committed to this repo. Do not reintroduce a fallback.
 the three above, an unset value does not stop the server booting (it isn't in
 `REQUIRED_IN_PRODUCTION`), it just makes that one route permanently 503
 (fail-closed, see `routes/installments.ts`) until it's set.
+
+## graphify
+
+This project has a knowledge graph at graphify-out/ with god nodes, community structure, and cross-file relationships.
+
+Rules:
+- For codebase questions, first run `graphify query "<question>"` when graphify-out/graph.json exists. Use `graphify path "<A>" "<B>"` for relationships and `graphify explain "<concept>"` for focused concepts. These return a scoped subgraph, usually much smaller than GRAPH_REPORT.md or raw grep output.
+- If graphify-out/wiki/index.md exists, use it for broad navigation instead of raw source browsing.
+- Read graphify-out/GRAPH_REPORT.md only for broad architecture review or when query/path/explain do not surface enough context.
+- After modifying code, run `graphify update .` to keep the graph current (AST-only, no API cost).

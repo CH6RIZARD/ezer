@@ -127,6 +127,25 @@ export const pullOutlookSchema = z.object({
   afterDate: z.string().optional(),
 });
 
+// On-device inbox scan results. The phone reads the mailbox itself and sends
+// ONLY these derived fields — never a subject, body, sender address or token.
+// Keep this list in sync with SCOPES.md (Google's verification reviewers read it).
+export const detectedSubscriptionSchema = z.object({
+  merchant: z.string().trim().min(1).max(80),
+  amountCents: z.number().int().min(0).max(10_000_00).nullable(),
+  currency: z.string().length(3).nullable(),
+  cadence: z.enum(['monthly', 'yearly', 'weekly', 'unknown']),
+  nextChargeDate: z.string().datetime().nullable(),
+  trialEndsAt: z.string().datetime().nullable(),
+  cancelUrl: z.string().url().max(500).nullable(),
+  source: z.enum(['gmail', 'outlook']),
+  confidence: z.number().min(0).max(1),
+});
+
+export const detectedSubscriptionsSchema = z.object({
+  items: z.array(detectedSubscriptionSchema).max(200),
+});
+
 // ---------------------------------------------------------------------------
 // Provider sign-in payloads (merged from the standalone ezer repo's OAuth work)
 // ---------------------------------------------------------------------------

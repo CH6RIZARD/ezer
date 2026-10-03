@@ -41,7 +41,8 @@
   <tr><td>Plaid access tokens</td><td>Until the connection is removed</td><td>Disconnect or account deletion; revoked upstream first</td></tr>
   <tr><td>Bank transactions and balances</td><td>Life of account</td><td>Account deletion; cascade</td></tr>
   <tr><td>Email-derived subscription data</td><td>Life of account</td><td>Mailbox disconnect or account deletion</td></tr>
-  <tr><td>Raw email message bodies</td><td>Not retained</td><td>Parsed in-process; only extracted fields are stored</td></tr>
+  <tr><td>Raw email message bodies</td><td>Not retained</td><td>Parsed on the user's device and discarded after the scan; never transmitted to or stored on EZER servers. Only extracted subscription fields are stored</td></tr>
+  <tr><td>Mailbox OAuth tokens</td><td>Not retained server-side</td><td>Held only on the user's device; revoked by Settings › Inbox › Disconnect</td></tr>
   <tr><td>Savings goals, transfers, ledger entries</td><td>7 years</td><td>Financial recordkeeping obligation</td></tr>
   <tr><td>Application and error logs</td><td>30 days</td><td>Automatic rotation</td></tr>
   <tr><td>Encrypted database backups</td><td>30 days</td><td>Automatic rotation</td></tr>

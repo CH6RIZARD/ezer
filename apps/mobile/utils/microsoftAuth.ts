@@ -7,7 +7,7 @@ import * as WebBrowser from 'expo-web-browser';
 
 WebBrowser.maybeCompleteAuthSession();
 
-const discovery: AuthSession.DiscoveryDocument = {
+export const discovery: AuthSession.DiscoveryDocument = {
   authorizationEndpoint: 'https://login.microsoftonline.com/common/oauth2/v2.0/authorize',
   tokenEndpoint: 'https://login.microsoftonline.com/common/oauth2/v2.0/token',
 };
