@@ -15,7 +15,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme, type ThemeMode } from '../utils/ThemeContext';
 import { useAuth } from '../utils/AuthContext';
 import { fontFamily, typeScale, radius, layout } from '../theme/type';
-import { lightTokens, darkTokens } from '../theme/tokens';
+import { lightTokens, darkTokens, blackTokens } from '../theme/tokens';
 import {
   Body,
   Label,
@@ -32,14 +32,14 @@ const NOTIFS = [
   { key: 'digest', title: 'Weekly digest', sub: 'Sunday' },
 ] as const;
 
-// Patch 4 calls the modes Light / Purple / Dark. The app's ThemeMode values are
-// 'light' | 'dark' | 'black' (CLAUDE.md, "three theme modes"); the mock's
-// "Purple" is the purple-tinted 'dark' theme and its "Dark" is true 'black'.
-// Segment colours are the mock's, all from tokens.ts.
+// Shown names map onto the app's ThemeMode values ('light' | 'dark' | 'black',
+// CLAUDE.md "three theme modes"): the purple-tinted 'dark' theme is named
+// "EZER" (owner's call — not "Purple" as in the Patch 4 mock), and true
+// 'black' is "Dark". Colours all come from tokens.ts.
 const THEME_SEGMENTS: { mode: ThemeMode; name: string; fill: string; check: string }[] = [
   { mode: 'light', name: 'Light', fill: lightTokens.bg, check: lightTokens.ink },
-  { mode: 'dark', name: 'Purple', fill: lightTokens.accent, check: darkTokens.ink },
-  { mode: 'black', name: 'Dark', fill: darkTokens.bg, check: darkTokens.ink },
+  { mode: 'dark', name: 'EZER', fill: lightTokens.accent, check: darkTokens.ink },
+  { mode: 'black', name: 'Dark', fill: blackTokens.bg, check: darkTokens.ink },
 ];
 const PILL_EASE = Easing.bezier(0.22, 1, 0.36, 1);
 
