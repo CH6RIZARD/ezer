@@ -73,6 +73,11 @@ const PERSPECTIVE = 1100;
  */
 const CORE_INSET = 4;
 
+/** How far each face sits off the core along its normal (web: translateZ). */
+const FACE_DEPTH = 3;
+/** Sample points for the native sin/cos lookup (15° steps; ≤0.03px error at FACE_DEPTH). */
+const TRIG_DEG = Array.from({ length: 25 }, (_, i) => i * 15);
+
 /**
  * Native has no equivalent of CSS's parent `perspective` property — every RN
  * transform, on every platform, only ever composes perspective as a function
@@ -321,6 +326,35 @@ export function SpinCard({ front, back, style, onTap, onDragChange, hint = 'Drag
     ? [{ rotateX: deg(rx) }, { rotateY: deg(ry) }]
     : [{ perspective: PERSPECTIVE }, { rotateX: deg(rx) }, { rotateY: deg(ry) }];
 
+  // Face depth. Web: a real translateZ(FACE_DEPTH) along each face's normal.
+  // Native has no Z (see CORE_INSET), so the faces sat coplanar with the core
+  // and the card read paper-thin on the phone while web showed its gold edge.
+  // What translateZ AFTER rotateX·rotateY actually does on screen is shift the
+  // face by (d·sin ry, −d·sin rx·cos ry); native reproduces exactly that as a
+  // screen-space translate placed BEFORE the rotations. Built from modulo/
+  // interpolate/multiply only — all native-driver nodes, so still no JS work
+  // per frame (and no listeners; see the rule in CLAUDE.md). The array form
+  // `translate: [0, 0, d]` is not an option: the native driver only accepts
+  // numeric transform values.
+  const depth = useMemo(() => {
+    if (IS_WEB) return null;
+    const sin = (v: Animated.Value) =>
+      Animated.modulo(v, 360).interpolate({ inputRange: TRIG_DEG, outputRange: TRIG_DEG.map(d => Math.sin((d * Math.PI) / 180)) });
+    const cos = (v: Animated.Value) =>
+      Animated.modulo(v, 360).interpolate({ inputRange: TRIG_DEG, outputRange: TRIG_DEG.map(d => Math.cos((d * Math.PI) / 180)) });
+    const dx = Animated.multiply(sin(ry), FACE_DEPTH);
+    const dy = Animated.multiply(Animated.multiply(sin(rx), cos(ry)), -FACE_DEPTH);
+    // Back face is rotateY(180) first, so its normal points the other way.
+    return {
+      front: [{ translateX: dx }, { translateY: dy }],
+      back: [{ translateX: Animated.multiply(dx, -1) }, { translateY: Animated.multiply(dy, -1) }],
+    };
+  }, [rx, ry]);
+  const withDepth = (side: 'front' | 'back', rest: object[]) =>
+    IS_WEB
+      ? [...faceTransform, ...rest, { translateZ: FACE_DEPTH }]
+      : [faceTransform[0], ...depth![side], ...faceTransform.slice(1), ...rest];
+
   return (
     <View style={[styles.container, style]}>
       <Animated.View
@@ -361,7 +395,7 @@ export function SpinCard({ front, back, style, onTap, onDragChange, hint = 'Drag
           style={[
             styles.face,
             styles.hidden,
-            { transform: [...faceTransform, { translateZ: 3 }] as never },
+            { transform: withDepth('front', []) as never },
           ]}
         >
           {front}
@@ -372,11 +406,7 @@ export function SpinCard({ front, back, style, onTap, onDragChange, hint = 'Drag
             styles.face,
             styles.hidden,
             {
-              transform: [
-                ...faceTransform,
-                { rotateY: '180deg' },
-                { translateZ: 3 },
-              ] as never,
+              transform: withDepth('back', [{ rotateY: '180deg' }]) as never,
             },
           ]}
         >

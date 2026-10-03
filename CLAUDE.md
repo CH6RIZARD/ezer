@@ -184,9 +184,13 @@ style problem.
   it; only a three-element `translate: [x, y, z]` carries a Z). On a phone
   the faces and core are coplanar, so the sliver/dashes there were the core
   showing through the faces' anti-aliased edge pixels, and the inset takes
-  it out from under them. Don't swap in `translate: [0, 0, 3]` to "make the
-  depth real" without a device check — native would honour it and nobody
-  has seen the card that way.
+  it out from under them. **Native now fakes that depth** (the card read
+  paper-thin on the APK while web showed its gold edge): `withDepth` in
+  SpinCard shifts each face by (3·sin ry, −3·sin rx·cos ry) in screen space,
+  which is exactly what translateZ-after-rotation projects to, built from
+  `Animated.modulo`/`interpolate`/`multiply` so it stays on the native
+  driver. `translate: [0, 0, 3]` is NOT usable — the native driver only
+  takes numeric transform values.
 - **The Pay in 4 card's free-drag spin physics live in
   `components/redesign/SpinCard.tsx`**, not in `VirtualCard.tsx` — extracted
   so `PhysicalCardReview.tsx`'s finished-design preview gets the exact same
