@@ -2,7 +2,8 @@
 // EZER — bottom-left dashboard tile: two features on one rotation
 //
 // Holds two CTAs that cycle so both get eye time:
-//   1. "Get your physical card" — card-taps-NFC-terminal animation as the icon
+//   1. "Get your physical card" — plain card icon (the NFC-tap animation was
+//      removed on request; no contactless/NFC marks anywhere in the app)
 //   2. "Top ticket" — the three costliest subscriptions, real logos
 //
 // Behaviour:

@@ -10,7 +10,6 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, type StyleProp, type ViewStyle } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Ionicons } from '@expo/vector-icons';
 import { gradients, cardFinishes, type CardFinish } from '../../theme/tokens';
 import { fontFamily, radius } from '../../theme/type';
 import SpinCard from './SpinCard';
@@ -54,7 +53,6 @@ export function VirtualCard({ finish = 'amethyst', style, onDragChange }: Virtua
               end={{ x: 1, y: 1 }}
               style={styles.chip}
             />
-            <Ionicons name="wifi" size={20} color="rgba(255,255,255,.85)" />
           </View>
 
           <Text selectable={false} style={styles.number}>{revealed ? NUMBER_REAL : NUMBER_MASKED}</Text>

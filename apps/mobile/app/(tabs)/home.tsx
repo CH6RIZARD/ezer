@@ -35,7 +35,6 @@ import {
 import MerchantMark from '../../components/redesign/MerchantMark';
 import DayPopover, { type DayEvent } from '../../components/redesign/DayPopover';
 import RotatingTile from '../../components/redesign/RotatingTile';
-import NfcTapIcon from '../../components/redesign/NfcTapIcon';
 import { useSavingsGoals } from '../../utils/SavingsGoalsContext';
 import { projectMonthEvents, groupEventsByDay } from '../../utils/calendarEvents';
 import { useConnectBank } from '../../utils/useConnectBank';
@@ -436,7 +435,7 @@ export default function HomeScreen() {
                     router.push(hasCardDesign ? '/screens/PhysicalCardReview' : '/screens/PhysicalCard'),
                   render: () => (
                     <View style={styles.slide}>
-                      <NfcTapIcon size={28} />
+                      <Ionicons name="card-outline" size={28} color={colors.accInk} />
                       <Label numberOfLines={2} adjustsFontSizeToFit style={styles.slideLabel}>
                         {hasCardDesign ? 'Your physical card' : 'Get your physical card'}
                       </Label>

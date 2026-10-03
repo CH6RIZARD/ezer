@@ -147,7 +147,7 @@ export function CreditCard({ card, isActive = true, size = 'normal' }: CreditCar
           <View style={[styles.patternCircle, { bottom: -80, left: -60, opacity: 0.03 }]} />
         </View>
 
-        {/* Top Row: Chip + Contactless */}
+        {/* Top Row: Chip (no contactless mark — removed from every card on request) */}
         <View style={styles.topRow}>
           {/* EMV Chip */}
           <View style={[styles.chipContainer, size === 'small' && styles.chipContainerSmall]}>
@@ -165,26 +165,6 @@ export function CreditCard({ card, isActive = true, size = 'normal' }: CreditCar
                 <View style={styles.chipSquare} />
               </View>
             </LinearGradient>
-          </View>
-
-          {/* Contactless Icon */}
-          <View style={styles.contactlessContainer}>
-            <View style={styles.contactlessIcon}>
-              {[1, 2, 3].map((i) => (
-                <View
-                  key={i}
-                  style={[
-                    styles.contactlessWave,
-                    {
-                      width: 8 + i * 6,
-                      height: 8 + i * 6,
-                      borderRadius: (8 + i * 6) / 2,
-                      opacity: 0.9 - i * 0.2,
-                    },
-                  ]}
-                />
-              ))}
-            </View>
           </View>
 
           {/* Network Logo */}
@@ -408,24 +388,6 @@ const styles = StyleSheet.create({
     height: '25%',
     backgroundColor: 'rgba(0,0,0,0.15)',
     borderRadius: 2,
-  },
-  contactlessContainer: {
-    marginLeft: 16,
-    marginTop: 6,
-  },
-  contactlessIcon: {
-    width: 28,
-    height: 28,
-    justifyContent: 'center',
-    alignItems: 'center',
-    transform: [{ rotate: '90deg' }],
-  },
-  contactlessWave: {
-    position: 'absolute',
-    borderWidth: 2,
-    borderColor: 'rgba(255,255,255,0.6)',
-    borderBottomColor: 'transparent',
-    borderLeftColor: 'transparent',
   },
   networkLogoContainer: {
     flex: 1,

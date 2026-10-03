@@ -122,7 +122,10 @@ style problem.
 - **`CardFrontFace`/`CardBackFace`, exported from `components/redesign/CardCanvas.tsx`,
   are the ONLY place the physical card's locked layout is drawn** — front is
   the chip only, no wording (the contactless mark that used to sit next to it
-  was removed on request); identifying details (name, masked number, CVV,
+  was removed on request — and NO card anywhere in the app shows a
+  contactless/NFC mark: VirtualCard, the Saved tab card, CreditCard and the
+  Home tile's NfcTapIcon animation were all stripped of it on request too.
+  Don't add one back); identifying details (name, masked number, CVV,
   expiry) are on the back. `PhysicalCardReview.tsx` renders a finished design
   with these same two components rather than reimplementing
   the layout, specifically so the two screens that show a design cannot drift

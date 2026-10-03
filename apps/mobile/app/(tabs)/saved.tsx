@@ -91,8 +91,7 @@ function VirtualCard({ isLinked }: { isLinked: boolean }) {
               <View style={{ paddingHorizontal: 9, paddingVertical: 5, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.17)' }}><Text style={{ color: '#FFFFFF', fontSize: 10, fontWeight: '700' }}>PAY IN 4</Text></View>
             </View>
             <View style={{ flex: 1, justifyContent: 'center' }}>
-              <Ionicons name="wifi" size={26} color="#F7D48A" style={{ transform: [{ rotate: '90deg' }] }} />
-              <Text style={{ color: '#FFFFFF', fontSize: 21, letterSpacing: 3, fontWeight: '600', marginTop: 13 }}>••••  ••••  ••••  ••••</Text>
+              <Text style={{ color: '#FFFFFF', fontSize: 21, letterSpacing: 3, fontWeight: '600' }}>••••  ••••  ••••  ••••</Text>
             </View>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end' }}>
               <View><Text style={{ color: 'rgba(255,255,255,0.62)', fontSize: 9, letterSpacing: 1 }}>CARDHOLDER</Text><Text style={{ color: '#FFFFFF', fontSize: 12, fontWeight: '700', marginTop: 3 }}>{isLinked ? 'EZER MEMBER' : 'YOUR NAME'}</Text></View>
