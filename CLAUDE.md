@@ -178,11 +178,14 @@ style problem.
   the faces, so in the last few degrees before edge-on every sheet is a
   hairline, and Android (no anti-aliasing on 3D-transformed views) drew
   seven separate stripes with see-through gaps and prongs at the ends.
-  So the stack is DENSE: 19 sheets 0.3px apart (`SIDE_STEP`), under a
+  So the stack is DENSE: 23 sheets 0.25px apart (`SIDE_STEP`), under a
   device pixel, so the hairlines overlap into one band. Each sheet is FILLED
   (plain colour, no gradient): rings with an empty middle, to save overdraw,
   showed the page through the band just short of edge-on, where the line of
-  sight runs through the card's interior (k62). Perpendicular side walls
+  sight runs through the card's interior (k62). Only every third sheet (the
+  old 7) draws at ordinary tilts; the other 16 fade in past ~65°, where a
+  sheet's cost (its projected area) is small: all 23 at every angle made the
+  spin janky (S22 gfxinfo: 83% of frames over budget). Perpendicular side walls
   placed by projection maths were tried and missed on Android (its camera
   projection does not match a computed placement) — don't retry them.
   With 25 layers a card, headless Edge drops whole faces once a harness page

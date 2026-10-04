@@ -54,11 +54,11 @@ const FACE_DEPTH = 3;
  * the two faces read as two separate sheets with see-through between them.
  * Stacked, the gap fills solid.
  *
- * DENSE: 0.3px apart. Every sheet is a plane parallel to the faces, so
+ * DENSE: 0.25px apart. Every sheet is a plane parallel to the faces, so
  * edge-on each one is a hairline; Android does not anti-alias 3D-transformed
  * views, and at the old 0.75px spacing (7 sheets) it drew seven separate
  * stripes with see-through gaps and prongs at the ends (device capture, Oct
- * 2026). At 0.3px — under a device pixel — neighbouring hairlines overlap
+ * 2026). At 0.25px — under a device pixel — neighbouring hairlines overlap
  * into one band. Placing perpendicular "walls" instead was tried and missed
  * on Android: its camera projection does not match a computed placement.
  *
@@ -73,11 +73,20 @@ const FACE_DEPTH = 3;
  * degrees the side is sub-pixel, and a sub-pixel gold strip rasterizes as a
  * row of dashes / a gold rim on the faces' anti-aliased edge.
  */
-const SIDE_STEP = 0.3;
+const SIDE_STEP = 0.25;
 const SIDE_DEPTHS = Array.from(
   { length: Math.round((FACE_DEPTH * 2) / SIDE_STEP) - 1 },
   (_, i) => -FACE_DEPTH + SIDE_STEP * (i + 1)
 );
+/**
+ * Every third sheet (0.75px apart — the old 7) draws whenever the card is
+ * tilted; that spacing is already solid until ~70°. The other 16 only fade in
+ * approaching edge-on, where they are needed and nearly free: a sheet costs
+ * its projected area, which edge-on is a sliver. Drawing all 23 full layers
+ * at every angle made the spin janky on a low-end phone (S22: 83% of frames
+ * over budget).
+ */
+const isCoarse = (i: number) => (i + 1) % 3 === 0;
 const mixHex = (a: string, b: string, t: number) => {
   const p = (h: string) => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
   const [x, y] = [p(a), p(b)];
@@ -184,6 +193,13 @@ export function SpinCard({ front, back, style, onTap, onDragChange, hint = 'Drag
 
   const scheduleMove = useCallback(
     (m: { dx: number; dy: number }) => {
+      // Native: apply now. Touch moves already arrive at most once a display
+      // frame there, and holding each for the next frame only added a frame
+      // of lag between finger and card. The throttle is for web's mouse.
+      if (!IS_WEB) {
+        applyMove(m);
+        return;
+      }
       pendingMove.current = m;
       if (rafId.current != null) return; // a frame is already pending
       rafId.current = requestAnimationFrame(() => {
@@ -372,7 +388,15 @@ export function SpinCard({ front, back, style, onTap, onDragChange, hint = 'Drag
       outputRange: [0, 1],
       extrapolate: 'clamp',
     });
-    return { dx, dy, edge };
+    // Fill-in sheets: |cos rx·cos ry| is how squarely the face still points
+    // at the viewer; they fade in from ~65° of tilt and are full by ~75°.
+    const absCos = table(r => Math.abs(Math.cos(r)));
+    const fine = Animated.multiply(absCos(rx), absCos(ry)).interpolate({
+      inputRange: [0.26, 0.42],
+      outputRange: [1, 0],
+      extrapolate: 'clamp',
+    });
+    return { dx, dy, edge, fine };
   }, [rx, ry]);
   const at = (k: number, rest: object[] = []) =>
     IS_WEB
@@ -400,13 +424,17 @@ export function SpinCard({ front, back, style, onTap, onDragChange, hint = 'Drag
             Do not add renderToHardwareTextureAndroid to fight grazing-angle
             tearing: flattening into a bitmap layer broke Android's
             backfaceVisibility culling, so the mirrored FRONT showed at rest. */}
-        {SIDE_DEPTHS.map(k => (
+        {SIDE_DEPTHS.map((k, i) => (
           <Animated.View
             key={k}
             pointerEvents="none"
             style={[
               styles.sheet,
-              { backgroundColor: sideColor(k), opacity: depth.edge, transform: at(k) as never },
+              {
+                backgroundColor: sideColor(k),
+                opacity: isCoarse(i) ? depth.edge : depth.fine,
+                transform: at(k) as never,
+              },
             ]}
           />
         ))}
