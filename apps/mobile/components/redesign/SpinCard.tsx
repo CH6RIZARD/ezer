@@ -60,8 +60,22 @@ const FACE_DEPTH = 3;
  * "botched edges" report the inset single core used to dodge.
  */
 const SIDE_DEPTHS = Array.from({ length: 7 }, (_, i) => ((i - 3) * FACE_DEPTH) / 4);
-/** Sample points for the native sin/cos lookup (15° steps; ≤0.03px error at FACE_DEPTH). */
-const TRIG_DEG = Array.from({ length: 25 }, (_, i) => i * 15);
+/**
+ * Solid side WALLS, perpendicular to the faces, for the last few degrees
+ * before edge-on. The sheet stack above is planes parallel to the faces, and
+ * edge-on every plane is a hairline: on Android (no anti-aliasing on 3D-
+ * transformed views) the side broke up into seven separate gold stripes with
+ * see-through gaps between them, and prongs at the ends (device capture, Oct
+ * 2026). A wall turned to face the viewer is one solid band there. Each fades
+ * in by how squarely its side faces the viewer (|sin ry·cos rx| for the
+ * left/right walls, |sin rx| for top/bottom), between these values.
+ */
+const WALL_LIT = [0.96, 0.99];
+type Side = 'right' | 'left' | 'top' | 'bottom';
+const SIDES: Side[] = ['right', 'left', 'top', 'bottom'];
+/** Sample points for the native sin/cos lookups (5° steps: walls sit 154px
+ *  out, so the table's error is multiplied by that; ≤0.3px near edge-on). */
+const TRIG_DEG = Array.from({ length: 73 }, (_, i) => i * 5);
 
 /**
  * Native has no equivalent of CSS's parent `perspective` property — every RN
@@ -324,17 +338,77 @@ export function SpinCard({ front, back, style, onTap, onDragChange, hint = 'Drag
     const table = (f: (rad: number) => number) => (v: Animated.Value) =>
       Animated.modulo(v, 360).interpolate({ inputRange: TRIG_DEG, outputRange: TRIG_DEG.map(d => f((d * Math.PI) / 180)) });
     const sin = table(Math.sin);
+    const cos = table(Math.cos);
     const absSin = table(r => Math.abs(Math.sin(r)));
-    const dx = sin(ry);
-    const dy = Animated.multiply(Animated.multiply(sin(rx), table(Math.cos)(ry)), -1);
+    const absCos = table(r => Math.abs(Math.cos(r)));
+    const sinRx = sin(rx), cosRx = cos(rx), sinRy = sin(ry), cosRy = cos(ry);
+    const dx = sinRy;
+    const dy = Animated.multiply(Animated.multiply(sinRx, cosRy), -1);
     // Side opacity: 0 below ~6° of tilt, full by ~17° (side ≈ 1.8px wide).
     const edge = Animated.add(absSin(rx), absSin(ry)).interpolate({
       inputRange: [0.1, 0.3],
       outputRange: [0, 1],
       extrapolate: 'clamp',
     });
-    return { dx, dy, edge };
+    const lit = (n: Animated.AnimatedInterpolation<number> | Animated.AnimatedMultiplication<number>) =>
+      n.interpolate({ inputRange: WALL_LIT, outputRange: [0, 1], extrapolate: 'clamp' });
+    const sideLit = lit(Animated.multiply(absSin(ry), absCos(rx)));
+    const capLit = lit(absSin(rx));
+
+    // Native has no translateZ, so a wall cannot simply be pushed out to its
+    // edge in 3D. It is placed at that edge's PROJECTED centre instead: the
+    // centre point (±W/2, 0, 0) or (0, ±H/2, 0) rotated by rotateX·rotateY,
+    // then divided by perspective (scale p/(p − z)), applied as a screen-space
+    // shift + scale before the rotations. Web uses the real 3D transform.
+    const wall = (side: Side) => {
+      let x: Animated.AnimatedNode | number, y: Animated.AnimatedNode, negZ: Animated.AnimatedNode;
+      if (side === 'right' || side === 'left') {
+        const h = ((side === 'right' ? 1 : -1) * CARD_W) / 2;
+        x = Animated.multiply(cosRy, h);
+        y = Animated.multiply(Animated.multiply(sinRy, sinRx), h);
+        negZ = Animated.multiply(Animated.multiply(sinRy, cosRx), h);
+      } else {
+        const h = ((side === 'bottom' ? 1 : -1) * CARD_H) / 2;
+        x = 0;
+        y = Animated.multiply(cosRx, h);
+        negZ = Animated.multiply(sinRx, -h);
+      }
+      const f = Animated.divide(PERSPECTIVE, Animated.add(PERSPECTIVE, negZ as Animated.Value));
+      return {
+        tx: typeof x === 'number' ? 0 : Animated.multiply(x as Animated.Value, f),
+        ty: Animated.multiply(y as Animated.Value, f),
+        f,
+        opacity: side === 'right' || side === 'left' ? sideLit : capLit,
+      };
+    };
+    const walls = Object.fromEntries(SIDES.map(s => [s, wall(s)])) as Record<Side, ReturnType<typeof wall>>;
+    return { dx, dy, edge, walls };
   }, [rx, ry]);
+
+  const TURN: Record<Side, object> = {
+    right: { rotateY: '90deg' },
+    left: { rotateY: '-90deg' },
+    top: { rotateX: '90deg' },
+    bottom: { rotateX: '-90deg' },
+  };
+  const ALONG: Record<Side, object> = {
+    right: { translateX: CARD_W / 2 },
+    left: { translateX: -CARD_W / 2 },
+    top: { translateY: -CARD_H / 2 },
+    bottom: { translateY: CARD_H / 2 },
+  };
+  const wallTransform = (side: Side) => {
+    if (IS_WEB) return [...faceTransform, ALONG[side], TURN[side]];
+    const w = depth.walls[side];
+    return [
+      faceTransform[0],
+      { translateX: w.tx },
+      { translateY: w.ty },
+      { scale: w.f },
+      ...faceTransform.slice(1),
+      TURN[side],
+    ];
+  };
   const at = (k: number, rest: object[] = []) =>
     IS_WEB
       ? [...faceTransform, { translateZ: k }, ...rest]
@@ -376,6 +450,31 @@ export function SpinCard({ front, back, style, onTap, onDragChange, hint = 'Drag
             />
           </Animated.View>
         ))}
+
+        {/* Side walls — see WALL_LIT. backfaceVisibility hidden, so only the
+            wall on the side turned toward the viewer ever draws. */}
+        {SIDES.map(side => {
+          const vertical = side === 'right' || side === 'left';
+          return (
+            <Animated.View
+              key={side}
+              pointerEvents="none"
+              style={[
+                vertical ? styles.wallSide : styles.wallCap,
+                styles.hidden,
+                { opacity: depth.walls[side].opacity, transform: wallTransform(side) as never },
+              ]}
+            >
+              <LinearGradient
+                colors={gradients.metalEdge as unknown as readonly [string, string, ...string[]]}
+                locations={gradients.metalEdgeLocations as unknown as readonly [number, number, ...number[]]}
+                start={{ x: 0, y: 0 }}
+                end={vertical ? { x: 0, y: 1 } : { x: 1, y: 0 }}
+                style={StyleSheet.absoluteFill}
+              />
+            </Animated.View>
+          );
+        })}
 
         <Animated.View
           style={[styles.face, styles.hidden, { transform: at(FACE_DEPTH) as never }]}
@@ -425,6 +524,26 @@ const styles = StyleSheet.create({
   fill: {
     flex: 1,
     borderRadius: radius.virtualCard,
+  },
+  // Centred on the card, so every wall turns about the card's own centre;
+  // the transform carries it out to its edge. Rounded ends meet the corners.
+  wallSide: {
+    position: 'absolute',
+    left: CARD_W / 2 - FACE_DEPTH,
+    top: 0,
+    width: FACE_DEPTH * 2,
+    height: CARD_H,
+    borderRadius: FACE_DEPTH,
+    overflow: 'hidden',
+  },
+  wallCap: {
+    position: 'absolute',
+    left: 0,
+    top: CARD_H / 2 - FACE_DEPTH,
+    width: CARD_W,
+    height: FACE_DEPTH * 2,
+    borderRadius: FACE_DEPTH,
+    overflow: 'hidden',
   },
   hint: {
     marginTop: 14,
