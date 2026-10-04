@@ -50,16 +50,25 @@ const PERSPECTIVE = 1100;
 /** How far each face sits off the card's centre plane along its normal (web: translateZ). */
 const FACE_DEPTH = 3;
 /**
- * The card's gold side: full-size gold sheets stacked between the faces,
- * FACE_DEPTH/4 apart. A single flat core (what this used to be) is a
- * zero-width line edge-on, so at 90° the two faces read as two separate
- * sheets with see-through between them. Stacked, the gap fills solid.
- * The stack fades in with tilt (see `edge` below): at rest and at a few
- * degrees the side is sub-pixel, and a sub-pixel gold strip rasterizes as a
- * row of dashes / a gold rim on the faces' anti-aliased edge — the old
- * "botched edges" report the inset single core used to dodge.
+ * The card's gold side: gold sheets stacked between the faces, FACE_DEPTH/4
+ * apart. A single flat core (what this used to be) is a zero-width line
+ * edge-on, so near 90° the card read as two separate sheets you could see
+ * between. Stacked, the gap fills solid.
  */
 const SIDE_DEPTHS = Array.from({ length: 7 }, (_, i) => ((i - 3) * FACE_DEPTH) / 4);
+/**
+ * How far the gold sits inside the faces, on every side. KEEP THE INSET.
+ * A sheet at depth k is offset from the visible face by (FACE_DEPTH − k)·sin(a)
+ * px, so full-size gold peeks past the face at EVERY angle: a gold rim at
+ * ~10–30° and, at a few degrees, a sub-pixel strip that rasterizes as a row
+ * of gold dashes (the "botched edges" report — and again in Oct 2026 when the
+ * stack shipped full-size with an opacity fade instead; a fade can't fix it,
+ * the two axes need different thresholds). Inset, each sheet's edge sits
+ * 4·cos(a) inside the face, so nothing shows below ~37° and the side grows
+ * in on the approach to edge-on, where visible thickness is the point.
+ * Checked by rendering the layer stack in a headless browser at 16 angles.
+ */
+const CORE_INSET = 4;
 /** Sample points for the native sin/cos lookup (15° steps; ≤0.03px error at FACE_DEPTH). */
 const TRIG_DEG = Array.from({ length: 25 }, (_, i) => i * 15);
 
@@ -324,16 +333,9 @@ export function SpinCard({ front, back, style, onTap, onDragChange, hint = 'Drag
     const table = (f: (rad: number) => number) => (v: Animated.Value) =>
       Animated.modulo(v, 360).interpolate({ inputRange: TRIG_DEG, outputRange: TRIG_DEG.map(d => f((d * Math.PI) / 180)) });
     const sin = table(Math.sin);
-    const absSin = table(r => Math.abs(Math.sin(r)));
     const dx = sin(ry);
     const dy = Animated.multiply(Animated.multiply(sin(rx), table(Math.cos)(ry)), -1);
-    // Side opacity: 0 below ~6° of tilt, full by ~17° (side ≈ 1.8px wide).
-    const edge = Animated.add(absSin(rx), absSin(ry)).interpolate({
-      inputRange: [0.1, 0.3],
-      outputRange: [0, 1],
-      extrapolate: 'clamp',
-    });
-    return { dx, dy, edge };
+    return { dx, dy };
   }, [rx, ry]);
   const at = (k: number, rest: object[] = []) =>
     IS_WEB
@@ -356,8 +358,9 @@ export function SpinCard({ front, back, style, onTap, onDragChange, hint = 'Drag
           { transform: [{ translateY: floatY }] },
         ]}
       >
-        {/* Gold side — see SIDE_DEPTHS. Painted before the faces, so with
-            no real Z on native the faces still cover it face-on.
+        {/* Gold side — see SIDE_DEPTHS / CORE_INSET. Painted before the
+            faces, so the faces always cover it where they overlap. The inset
+            is symmetric, so each sheet rotates about the same centre.
             Do not add renderToHardwareTextureAndroid to fight grazing-angle
             tearing: flattening into a bitmap layer broke Android's
             backfaceVisibility culling, so the mirrored FRONT showed at rest. */}
@@ -365,14 +368,14 @@ export function SpinCard({ front, back, style, onTap, onDragChange, hint = 'Drag
           <Animated.View
             key={k}
             pointerEvents="none"
-            style={[styles.face, { opacity: depth.edge, transform: at(k) as never }]}
+            style={[styles.core, { transform: at(k) as never }]}
           >
             <LinearGradient
               colors={gradients.metalEdge as unknown as readonly [string, string, ...string[]]}
               locations={gradients.metalEdgeLocations as unknown as readonly [number, number, ...number[]]}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
-              style={styles.fill}
+              style={[styles.fill, { borderRadius: radius.virtualCard - CORE_INSET }]}
             />
           </Animated.View>
         ))}
@@ -425,6 +428,16 @@ const styles = StyleSheet.create({
   fill: {
     flex: 1,
     borderRadius: radius.virtualCard,
+  },
+  core: {
+    position: 'absolute',
+    left: CORE_INSET,
+    top: CORE_INSET,
+    width: CARD_W - CORE_INSET * 2,
+    height: CARD_H - CORE_INSET * 2,
+    // Concentric with the faces' corners, not just smaller.
+    borderRadius: radius.virtualCard - CORE_INSET,
+    overflow: 'hidden',
   },
   hint: {
     marginTop: 14,

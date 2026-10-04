@@ -169,16 +169,21 @@ style problem.
   blurred tab's subtree stops rendering at all — don't remove it to "fix" a
   stale-looking tab; use `useFocusEffect` on that screen instead (Wallet
   already does, for its carousel position).
-- **SpinCard's gold side is a STACK of full-size gold sheets
-  (`SIDE_DEPTHS`) between the faces, faded in with tilt — not one flat
-  core.** The faces sit ±3 along the normal; a single flat core between
-  them is a zero-width line edge-on, so at ~90° the card read as two
-  separate sheets you could see through (reported twice, Oct 2026 — tuning
-  `FACE_DEPTH` only changes the gap's width, it never closes it). The
-  stack's opacity is 0 below ~6° of tilt and full by ~17°: at smaller
-  angles the side is sub-pixel and a sub-pixel gold strip rasterizes as a
-  row of gold DASHES / a gold rim on the faces' anti-aliased edge (the old
-  "edges botched" report, which an inset single core used to dodge). RN
+- **SpinCard's gold side is a STACK of gold sheets (`SIDE_DEPTHS`) between
+  the faces, each inset by `CORE_INSET` (4px) — not one flat core, and
+  never full-size.** The faces sit ±3 along the normal; a single flat core
+  between them is a zero-width line edge-on, so at ~90° the card read as two
+  separate sheets you could see between (tuning `FACE_DEPTH` only changes
+  the gap's width, it never closes it). The inset is what keeps the gold
+  out from under the faces' edges at low angles: full-size gold peeks past
+  the face at every angle — a gold rim at ~10–30° and a sub-pixel strip
+  that rasterizes as a row of gold DASHES at a few degrees (the "edges
+  botched" report; re-broken in Oct 2026 by shipping the stack full-size
+  with an opacity fade, which cannot work because the two axes need
+  different thresholds). Inset, nothing shows below ~37°. Don't re-add the
+  2px "edge highlight" strips either. **Check any change to this by
+  rendering it** — a static HTML copy of the layer stack in headless Edge
+  at a grid of angles shows both failures in seconds. RN
   0.81 has no `translateZ` natively (Android `TransformHelper.kt` and iOS
   `RCTConvert+Transform.m` skip it), so `at(k)` in SpinCard fakes depth k
   as a screen-space shift of (k·sin ry, −k·sin rx·cos ry) placed before the
