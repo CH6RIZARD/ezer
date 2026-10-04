@@ -36,7 +36,6 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, Animated, PanResponder, Platform, StyleSheet, Easing, type StyleProp, type ViewStyle } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
 import { useTheme } from '../../utils/ThemeContext';
 import { gradients } from '../../theme/tokens';
 import { fontFamily, motion, radius } from '../../theme/type';
@@ -50,32 +49,46 @@ const PERSPECTIVE = 1100;
 /** How far each face sits off the card's centre plane along its normal (web: translateZ). */
 const FACE_DEPTH = 3;
 /**
- * The card's gold side: full-size gold sheets stacked between the faces,
- * FACE_DEPTH/4 apart. A single flat core (what this used to be) is a
- * zero-width line edge-on, so at 90° the two faces read as two separate
- * sheets with see-through between them. Stacked, the gap fills solid.
+ * The card's gold side: gold sheets stacked between the faces. A single
+ * flat core (what this used to be) is a zero-width line edge-on, so at 90°
+ * the two faces read as two separate sheets with see-through between them.
+ * Stacked, the gap fills solid.
+ *
+ * DENSE: 0.25px apart. Every sheet is a plane parallel to the faces, so
+ * edge-on each one is a hairline; Android does not anti-alias 3D-transformed
+ * views, and at the old 0.75px spacing (7 sheets) it drew seven separate
+ * stripes with see-through gaps and prongs at the ends (device capture, Oct
+ * 2026). At 0.25px — under a device pixel — neighbouring hairlines overlap
+ * into one band. Placing perpendicular "walls" instead was tried and missed
+ * on Android: its camera projection does not match a computed placement.
+ *
+ * Each sheet is a RING (a gold border, transparent inside), not a filled
+ * card: the faces cover the middle anyway, and 23 filled card-sized layers
+ * would be 23× the overdraw on a low-end phone. The ring only has to be
+ * wider than the most a sheet can shift past the face (2·FACE_DEPTH).
+ * Shaded darker toward the faces, brighter mid-thickness, like a milled
+ * metal edge.
+ *
  * The stack fades in with tilt (see `edge` below): at rest and at a few
  * degrees the side is sub-pixel, and a sub-pixel gold strip rasterizes as a
- * row of dashes / a gold rim on the faces' anti-aliased edge — the old
- * "botched edges" report the inset single core used to dodge.
+ * row of dashes / a gold rim on the faces' anti-aliased edge.
  */
-const SIDE_DEPTHS = Array.from({ length: 7 }, (_, i) => ((i - 3) * FACE_DEPTH) / 4);
-/**
- * Solid side WALLS, perpendicular to the faces, for the last few degrees
- * before edge-on. The sheet stack above is planes parallel to the faces, and
- * edge-on every plane is a hairline: on Android (no anti-aliasing on 3D-
- * transformed views) the side broke up into seven separate gold stripes with
- * see-through gaps between them, and prongs at the ends (device capture, Oct
- * 2026). A wall turned to face the viewer is one solid band there. Each fades
- * in by how squarely its side faces the viewer (|sin ry·cos rx| for the
- * left/right walls, |sin rx| for top/bottom), between these values.
- */
-const WALL_LIT = [0.96, 0.99];
-type Side = 'right' | 'left' | 'top' | 'bottom';
-const SIDES: Side[] = ['right', 'left', 'top', 'bottom'];
-/** Sample points for the native sin/cos lookups (5° steps: walls sit 154px
- *  out, so the table's error is multiplied by that; ≤0.3px near edge-on). */
-const TRIG_DEG = Array.from({ length: 73 }, (_, i) => i * 5);
+const SIDE_STEP = 0.25;
+const SIDE_DEPTHS = Array.from(
+  { length: Math.round((FACE_DEPTH * 2) / SIDE_STEP) - 1 },
+  (_, i) => -FACE_DEPTH + SIDE_STEP * (i + 1)
+);
+const SIDE_RING = FACE_DEPTH * 2 + 2;
+const mixHex = (a: string, b: string, t: number) => {
+  const p = (h: string) => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
+  const [x, y] = [p(a), p(b)];
+  return `rgb(${x.map((v, i) => Math.round(v + (y[i] - v) * t)).join(',')})`;
+};
+/** Ring colour per sheet: the metal-edge gradient's ends, deep at the faces, bright mid-way. */
+const sideColor = (k: number) =>
+  mixHex(gradients.metalEdge[1], gradients.metalEdge[0], 1 - Math.abs(k) / FACE_DEPTH);
+/** Sample points for the native sin/cos lookup (15° steps; ≤0.03px error at FACE_DEPTH). */
+const TRIG_DEG = Array.from({ length: 25 }, (_, i) => i * 15);
 
 /**
  * Native has no equivalent of CSS's parent `perspective` property — every RN
@@ -338,77 +351,17 @@ export function SpinCard({ front, back, style, onTap, onDragChange, hint = 'Drag
     const table = (f: (rad: number) => number) => (v: Animated.Value) =>
       Animated.modulo(v, 360).interpolate({ inputRange: TRIG_DEG, outputRange: TRIG_DEG.map(d => f((d * Math.PI) / 180)) });
     const sin = table(Math.sin);
-    const cos = table(Math.cos);
     const absSin = table(r => Math.abs(Math.sin(r)));
-    const absCos = table(r => Math.abs(Math.cos(r)));
-    const sinRx = sin(rx), cosRx = cos(rx), sinRy = sin(ry), cosRy = cos(ry);
-    const dx = sinRy;
-    const dy = Animated.multiply(Animated.multiply(sinRx, cosRy), -1);
+    const dx = sin(ry);
+    const dy = Animated.multiply(Animated.multiply(sin(rx), table(Math.cos)(ry)), -1);
     // Side opacity: 0 below ~6° of tilt, full by ~17° (side ≈ 1.8px wide).
     const edge = Animated.add(absSin(rx), absSin(ry)).interpolate({
       inputRange: [0.1, 0.3],
       outputRange: [0, 1],
       extrapolate: 'clamp',
     });
-    const lit = (n: Animated.AnimatedInterpolation<number> | Animated.AnimatedMultiplication<number>) =>
-      n.interpolate({ inputRange: WALL_LIT, outputRange: [0, 1], extrapolate: 'clamp' });
-    const sideLit = lit(Animated.multiply(absSin(ry), absCos(rx)));
-    const capLit = lit(absSin(rx));
-
-    // Native has no translateZ, so a wall cannot simply be pushed out to its
-    // edge in 3D. It is placed at that edge's PROJECTED centre instead: the
-    // centre point (±W/2, 0, 0) or (0, ±H/2, 0) rotated by rotateX·rotateY,
-    // then divided by perspective (scale p/(p − z)), applied as a screen-space
-    // shift + scale before the rotations. Web uses the real 3D transform.
-    const wall = (side: Side) => {
-      let x: Animated.AnimatedNode | number, y: Animated.AnimatedNode, negZ: Animated.AnimatedNode;
-      if (side === 'right' || side === 'left') {
-        const h = ((side === 'right' ? 1 : -1) * CARD_W) / 2;
-        x = Animated.multiply(cosRy, h);
-        y = Animated.multiply(Animated.multiply(sinRy, sinRx), h);
-        negZ = Animated.multiply(Animated.multiply(sinRy, cosRx), h);
-      } else {
-        const h = ((side === 'bottom' ? 1 : -1) * CARD_H) / 2;
-        x = 0;
-        y = Animated.multiply(cosRx, h);
-        negZ = Animated.multiply(sinRx, -h);
-      }
-      const f = Animated.divide(PERSPECTIVE, Animated.add(PERSPECTIVE, negZ as Animated.Value));
-      return {
-        tx: typeof x === 'number' ? 0 : Animated.multiply(x as Animated.Value, f),
-        ty: Animated.multiply(y as Animated.Value, f),
-        f,
-        opacity: side === 'right' || side === 'left' ? sideLit : capLit,
-      };
-    };
-    const walls = Object.fromEntries(SIDES.map(s => [s, wall(s)])) as Record<Side, ReturnType<typeof wall>>;
-    return { dx, dy, edge, walls };
+    return { dx, dy, edge };
   }, [rx, ry]);
-
-  const TURN: Record<Side, object> = {
-    right: { rotateY: '90deg' },
-    left: { rotateY: '-90deg' },
-    top: { rotateX: '90deg' },
-    bottom: { rotateX: '-90deg' },
-  };
-  const ALONG: Record<Side, object> = {
-    right: { translateX: CARD_W / 2 },
-    left: { translateX: -CARD_W / 2 },
-    top: { translateY: -CARD_H / 2 },
-    bottom: { translateY: CARD_H / 2 },
-  };
-  const wallTransform = (side: Side) => {
-    if (IS_WEB) return [...faceTransform, ALONG[side], TURN[side]];
-    const w = depth.walls[side];
-    return [
-      faceTransform[0],
-      { translateX: w.tx },
-      { translateY: w.ty },
-      { scale: w.f },
-      ...faceTransform.slice(1),
-      TURN[side],
-    ];
-  };
   const at = (k: number, rest: object[] = []) =>
     IS_WEB
       ? [...faceTransform, { translateZ: k }, ...rest]
@@ -439,42 +392,12 @@ export function SpinCard({ front, back, style, onTap, onDragChange, hint = 'Drag
           <Animated.View
             key={k}
             pointerEvents="none"
-            style={[styles.face, { opacity: depth.edge, transform: at(k) as never }]}
-          >
-            <LinearGradient
-              colors={gradients.metalEdge as unknown as readonly [string, string, ...string[]]}
-              locations={gradients.metalEdgeLocations as unknown as readonly [number, number, ...number[]]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={styles.fill}
-            />
-          </Animated.View>
+            style={[
+              styles.ring,
+              { borderColor: sideColor(k), opacity: depth.edge, transform: at(k) as never },
+            ]}
+          />
         ))}
-
-        {/* Side walls — see WALL_LIT. backfaceVisibility hidden, so only the
-            wall on the side turned toward the viewer ever draws. */}
-        {SIDES.map(side => {
-          const vertical = side === 'right' || side === 'left';
-          return (
-            <Animated.View
-              key={side}
-              pointerEvents="none"
-              style={[
-                vertical ? styles.wallSide : styles.wallCap,
-                styles.hidden,
-                { opacity: depth.walls[side].opacity, transform: wallTransform(side) as never },
-              ]}
-            >
-              <LinearGradient
-                colors={gradients.metalEdge as unknown as readonly [string, string, ...string[]]}
-                locations={gradients.metalEdgeLocations as unknown as readonly [number, number, ...number[]]}
-                start={{ x: 0, y: 0 }}
-                end={vertical ? { x: 0, y: 1 } : { x: 1, y: 0 }}
-                style={StyleSheet.absoluteFill}
-              />
-            </Animated.View>
-          );
-        })}
 
         <Animated.View
           style={[styles.face, styles.hidden, { transform: at(FACE_DEPTH) as never }]}
@@ -521,29 +444,12 @@ const styles = StyleSheet.create({
   hidden: {
     backfaceVisibility: 'hidden',
   },
-  fill: {
-    flex: 1,
-    borderRadius: radius.virtualCard,
-  },
-  // Centred on the card, so every wall turns about the card's own centre;
-  // the transform carries it out to its edge. Rounded ends meet the corners.
-  wallSide: {
+  ring: {
     position: 'absolute',
-    left: CARD_W / 2 - FACE_DEPTH,
-    top: 0,
-    width: FACE_DEPTH * 2,
-    height: CARD_H,
-    borderRadius: FACE_DEPTH,
-    overflow: 'hidden',
-  },
-  wallCap: {
-    position: 'absolute',
-    left: 0,
-    top: CARD_H / 2 - FACE_DEPTH,
     width: CARD_W,
-    height: FACE_DEPTH * 2,
-    borderRadius: FACE_DEPTH,
-    overflow: 'hidden',
+    height: CARD_H,
+    borderRadius: radius.virtualCard,
+    borderWidth: SIDE_RING,
   },
   hint: {
     marginTop: 14,

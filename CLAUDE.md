@@ -174,7 +174,17 @@ style problem.
   (`SIDE_DEPTHS`) between faces at ±3 (`FACE_DEPTH`), all faded in together
   by |sin rx|+|sin ry| (0 below ~6°, full by ~17°). Do not redesign it.**
   A flat single core between the faces reads as two unconnected sheets
-  edge-on, which is why the stack exists. Two later redesigns (per-axis
+  edge-on, which is why the stack exists. The stack is planes parallel to
+  the faces, so in the last few degrees before edge-on every sheet is a
+  hairline, and Android (no anti-aliasing on 3D-transformed views) drew
+  seven separate stripes with see-through gaps and prongs at the ends.
+  So the stack is DENSE: 23 sheets 0.25px apart (`SIDE_STEP`), under a
+  device pixel, so the hairlines overlap into one band. Each sheet is a
+  gold RING (border only) to keep overdraw low. Perpendicular side walls
+  placed by projection maths were tried and missed on Android (its camera
+  projection does not match a computed placement) — don't retry them.
+  Seven "dev" variant (`v=dev`) cards per harness page is the most headless
+  Edge renders before it drops layers; use 4-angle pages. Two later redesigns (per-axis
   stacks with insets, 3px thickness) were judged against a STALE dev page
   and rejected once the APK showed them: the APK must match this design.
   **The dev server must not be started with `CI=1`**: CI mode turns off

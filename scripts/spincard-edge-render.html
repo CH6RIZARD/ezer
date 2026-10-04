@@ -39,7 +39,10 @@ const VARIANTS = {
   // full-size gold sheets between faces at +-3, faded in by |sin rx|+|sin ry|.
   dev: (rx, ry) => {
     const o = Math.max(0, Math.min(1, (Math.abs(sin(rx)) + Math.abs(sin(ry)) - 0.1) / 0.2));
-    return { d: 3, walls: q.get('walls') !== '0', gold: [-3, -2, -1, 0, 1, 2, 3].map(i => ({ k: (i * 3) / 4, x: 0, y: 0, w: W, h: H, r: R, o })) };
+    // SpinCard: 23 gold rings 0.25px apart (dense, so Android's un-anti-aliased
+    // hairlines overlap edge-on), shaded deep at the faces, bright mid-way.
+    const ks = Array.from({ length: 23 }, (_, i) => -3 + 0.25 * (i + 1));
+    return { d: 3, walls: q.get('walls') === '1', gold: ks.map(k => ({ k, x: 0, y: 0, w: W, h: H, r: R, o, ring: 8, t: 1 - Math.abs(k) / 3 })) };
   },  // two per-axis stacks, each lit by how far its own side faces the viewer
   r: (rx, ry) => {
     const ks = Array.from({ length: N }, (_, i) => N === 1 ? 0 : -D + (2 * D) * (i + 0.5) / N);
@@ -88,7 +91,8 @@ for (const [rx, ry] of ANGLES) {
   const v = VARIANTS[variant](rx, ry);
   for (const g of v.gold) {
     const e = document.createElement('div'); e.className = 'l gold';
-    e.style.cssText = `left:${g.x}px;top:${g.y}px;width:${g.w}px;height:${g.h}px;border-radius:${g.r}px;opacity:${g.o};transform:${tf(rx, ry, g.k)}`;
+    const ringCss = g.ring ? `background:none;border:${g.ring}px solid rgb(${[168 + 63 * g.t, 125 + 74 * g.t, 47 + 79 * g.t].map(Math.round).join(',')});box-sizing:border-box;` : '';
+    e.style.cssText = `left:${g.x}px;top:${g.y}px;width:${g.w}px;height:${g.h}px;border-radius:${g.r}px;opacity:${g.o};${ringCss}transform:${tf(rx, ry, g.k)}`;
     card.appendChild(e);
   }
   if (v.walls) {
