@@ -141,6 +141,21 @@ export const blackTokens: ThemeTokens = {
   scrim: 'rgba(0,0,0,.55)',
 };
 
+/**
+ * Settings › Theme "raised key" pill (Patch 4, Appearance Toggle mock 2b).
+ * Each key is its theme token at roughly ±8% lightness, top → bottom, so it
+ * reads as a rounded key face. `trough` is the recess the keys sit in.
+ */
+export const themeKeys = {
+  light: ['#FFFDF8', '#F0EADD'] as const, // lightTokens.bg ±8% L
+  ezer: ['#6230B8', '#3E1680'] as const, // accent ±8% L
+  dark: ['#262038', '#0E0A18'] as const, // darkTokens.bg ±8% L
+  trough: { light: '#ECE6D8', dark: darkTokens.bg2, black: blackTokens.bg2 },
+  troughInset: { light: 'inset 0 2px 4px rgba(36,26,56,.22)', dark: 'inset 0 2px 4px rgba(0,0,0,.5)' },
+  /** Active-key glow, in the key's own colour at ~.5 alpha. */
+  glow: { light: 'rgba(176,166,143,.5)', ezer: 'rgba(76,29,149,.5)', dark: 'rgba(14,10,24,.6)' },
+} as const;
+
 // =============================================================================
 // Theme-independent gradients and finishes.
 // These do NOT flip with light/dark — the virtual card and chart card keep the

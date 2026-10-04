@@ -449,13 +449,15 @@ style problem.
   bar, calendar, popovers) needed no change — read `mode` only when the
   distinction matters. The stored preference is the mode string; the old
   `'dark'`/`'light'` values remain valid. Settings' appearance control is ONE
-  three-colour pill (Patch 4, `ThemePill` in `app/settings.tsx`): segments
-  Light (`light.bg`) / EZER (`accent`) / Dark (`black.bg`), active segment
-  flex 2 with a checkmark, NO labels inside the pill — only the "Theme" row's
-  subtitle names the mode. Names map onto the existing modes: "EZER" =
-  `'dark'` (the purple-tinted dark; the owner renamed the mock's "Purple" to
-  "EZER"), "Dark" = `'black'` (true dark mode). There is no separate purple
-  theme; don't invent one. The mock's
+  three-colour pill in the "raised key" style (Patch 4, mock 2b, `ThemePill`
+  in `app/settings.tsx`): a sunk trough with three gradient keys Light /
+  Ezer / Dark (colours in `themeKeys`, `theme/tokens.ts`). The active key is
+  flex 2, lifted 2px, glows, and shows a checkmark. NO labels inside the
+  pill; only the "Theme" row's subtitle names the mode. Names map onto the
+  existing modes: "Ezer" = `'dark'` (the purple-tinted dark; the owner
+  renamed the mock's "Purple"), "Dark" = `'black'` (true dark mode). There is
+  no separate purple theme; don't invent one. Shadows use `boxShadow` (New
+  Architecture) and swap instantly, while flex and lift animate over 350ms. The mock's
   haptic is skipped because expo-haptics isn't installed.
 - **`inset: 0` is not implemented in React Native.** It is dropped silently, so
   an absolutely positioned box written that way has no dimensions. Use

@@ -15,7 +15,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme, type ThemeMode } from '../utils/ThemeContext';
 import { useAuth } from '../utils/AuthContext';
 import { fontFamily, typeScale, radius, layout } from '../theme/type';
-import { lightTokens, darkTokens, blackTokens } from '../theme/tokens';
+import { lightTokens, themeKeys } from '../theme/tokens';
+import { LinearGradient } from 'expo-linear-gradient';
 import {
   Body,
   Label,
@@ -32,54 +33,88 @@ const NOTIFS = [
   { key: 'digest', title: 'Weekly digest', sub: 'Sunday' },
 ] as const;
 
-// Shown names map onto the app's ThemeMode values ('light' | 'dark' | 'black',
-// CLAUDE.md "three theme modes"): the purple-tinted 'dark' theme is named
-// "EZER" (owner's call — not "Purple" as in the Patch 4 mock), and true
-// 'black' is "Dark". Colours all come from tokens.ts.
-const THEME_SEGMENTS: { mode: ThemeMode; name: string; fill: string; check: string }[] = [
-  { mode: 'light', name: 'Light', fill: lightTokens.bg, check: lightTokens.ink },
-  { mode: 'dark', name: 'EZER', fill: lightTokens.accent, check: darkTokens.ink },
-  { mode: 'black', name: 'Dark', fill: blackTokens.bg, check: darkTokens.ink },
+// Patch 4 (Appearance Toggle mock 2b, "raised key"). Shown names map onto the
+// app's ThemeMode values ('light' | 'dark' | 'black', CLAUDE.md "three theme
+// modes"): the purple-tinted 'dark' theme is "Ezer", true 'black' is "Dark".
+// Colours come from tokens.ts (themeKeys).
+type KeyId = 'light' | 'ezer' | 'dark';
+const THEME_KEYS: { mode: ThemeMode; key: KeyId; name: string; check: string }[] = [
+  { mode: 'light', key: 'light', name: 'Light', check: lightTokens.ink },
+  { mode: 'dark', key: 'ezer', name: 'Ezer', check: '#FFFFFF' },
+  { mode: 'black', key: 'dark', name: 'Dark', check: '#FFFFFF' },
 ];
-const PILL_EASE = Easing.bezier(0.22, 1, 0.36, 1);
+const KEY_EASE = Easing.bezier(0.22, 1, 0.36, 1);
 
 function ThemePill({ mode, onChange }: { mode: ThemeMode; onChange: (m: ThemeMode) => void }) {
-  const { colors } = useTheme();
-  // Active segment flex 2, others 1. flex is a layout prop, so the width
-  // animation runs on the JS driver (350ms, three views — cheap); the
-  // checkmark fade is a separate native-driven opacity.
-  const flex = useRef(THEME_SEGMENTS.map(s => new Animated.Value(s.mode === mode ? 2 : 1))).current;
-  const check = useRef(THEME_SEGMENTS.map(s => new Animated.Value(s.mode === mode ? 1 : 0))).current;
+  const isLight = mode === 'light';
+  // Per key: flex (layout, so JS driver) on the outer view; lift + check
+  // opacity (native driver) on inner views — one driver per view, as RN requires.
+  const flex = useRef(THEME_KEYS.map(k => new Animated.Value(k.mode === mode ? 2 : 1))).current;
+  const lift = useRef(THEME_KEYS.map(k => new Animated.Value(k.mode === mode ? -2 : 0))).current;
+  const check = useRef(THEME_KEYS.map(k => new Animated.Value(k.mode === mode ? 1 : 0))).current;
 
   useEffect(() => {
     Animated.parallel(
-      THEME_SEGMENTS.flatMap((s, i) => [
-        Animated.timing(flex[i], { toValue: s.mode === mode ? 2 : 1, duration: 350, easing: PILL_EASE, useNativeDriver: false }),
-        Animated.timing(check[i], { toValue: s.mode === mode ? 1 : 0, duration: 150, useNativeDriver: true }),
-      ])
+      THEME_KEYS.flatMap((k, i) => {
+        const on = k.mode === mode;
+        return [
+          Animated.timing(flex[i], { toValue: on ? 2 : 1, duration: 350, easing: KEY_EASE, useNativeDriver: false }),
+          Animated.timing(lift[i], { toValue: on ? -2 : 0, duration: 350, easing: KEY_EASE, useNativeDriver: true }),
+          Animated.timing(check[i], { toValue: on ? 1 : 0, duration: 150, useNativeDriver: true }),
+        ];
+      })
     ).start();
-  }, [mode, flex, check]);
+  }, [mode, flex, lift, check]);
 
   return (
-    // line2 comes from the active theme, so in the dark modes it is dark.line2
-    // and the Dark segment still reads against the dark card.
-    <View style={[styles.pill, { borderColor: colors.line2 }]}>
-      {THEME_SEGMENTS.map((s, i) => (
-        <Animated.View key={s.mode} style={{ flex: flex[i] }}>
-          <Pressable
-            onPress={() => s.mode !== mode && onChange(s.mode)}
-            hitSlop={{ top: 4, bottom: 4 }}
-            accessibilityRole="button"
-            accessibilityLabel={`${s.name} theme`}
-            accessibilityState={{ selected: s.mode === mode }}
-            style={[styles.pillSegment, { backgroundColor: s.fill }]}
-          >
-            <Animated.View style={{ opacity: check[i] }}>
-              <Ionicons name="checkmark" size={16} color={s.check} />
-            </Animated.View>
-          </Pressable>
-        </Animated.View>
-      ))}
+    <View
+      style={[
+        styles.trough,
+        {
+          backgroundColor: themeKeys.trough[mode],
+          boxShadow: isLight ? themeKeys.troughInset.light : themeKeys.troughInset.dark,
+        },
+      ]}
+    >
+      {THEME_KEYS.map((k, i) => {
+        const on = k.mode === mode;
+        return (
+          <Animated.View key={k.mode} style={{ flex: flex[i] }}>
+            <Pressable
+              onPress={() => !on && onChange(k.mode)}
+              hitSlop={{ top: 4, bottom: 4 }}
+              accessibilityRole="button"
+              accessibilityLabel={`${k.name} theme`}
+              accessibilityState={{ selected: on }}
+              style={{ flex: 1 }}
+            >
+              {/* Shadow swaps at once (boxShadow can't be interpolated); the
+                  flex/lift motion carries the 350ms transition. Active: a glow
+                  in the key's own colour plus a 1px top highlight. Inactive:
+                  sitting down in the trough. */}
+              <Animated.View
+                style={[
+                  styles.key,
+                  {
+                    transform: [{ translateY: lift[i] }],
+                    boxShadow: on
+                      ? `0 4px 9px -2px ${themeKeys.glow[k.key]}, inset 0 1px 0 rgba(255,255,255,.35)`
+                      : 'inset 0 1px 2px rgba(0,0,0,.25)',
+                  },
+                ]}
+              >
+                <LinearGradient
+                  colors={themeKeys[k.key] as unknown as readonly [string, string]}
+                  style={styles.keyFace}
+                />
+                <Animated.View style={{ opacity: check[i] }}>
+                  <Ionicons name="checkmark" size={16} color={k.check} />
+                </Animated.View>
+              </Animated.View>
+            </Pressable>
+          </Animated.View>
+        );
+      })}
     </View>
   );
 }
@@ -139,7 +174,7 @@ export default function SettingsScreen() {
           {/* Patch 4 (Appearance Toggle mock 1b): one three-colour pill. */}
           <View style={styles.themeRow}>
             <Text style={[styles.kvValue, { color: colors.ink }]}>Theme</Text>
-            <Text style={[styles.themeMode, { color: colors.mut }]}>{THEME_SEGMENTS.find(s => s.mode === mode)?.name}</Text>
+            <Text style={[styles.themeMode, { color: colors.mut }]}>{THEME_KEYS.find(k => k.mode === mode)?.name}</Text>
           </View>
           <ThemePill mode={mode} onChange={setMode} />
 
@@ -292,17 +327,26 @@ const styles = StyleSheet.create({
     fontFamily: fontFamily.regular,
     fontSize: 12,
   },
-  pill: {
+  trough: {
     flexDirection: 'row',
-    height: 40,
+    height: 44,
     borderRadius: 999,
-    borderWidth: 1,
-    overflow: 'hidden',
+    padding: 4,
+    gap: 3,
   },
-  pillSegment: {
-    height: '100%',
+  key: {
+    flex: 1,
+    borderRadius: 999,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  keyFace: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    borderRadius: 999,
   },
   block: {
     paddingHorizontal: 14,
