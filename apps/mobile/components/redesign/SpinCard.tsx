@@ -138,6 +138,19 @@ export function SpinCard({ front, back, style, onTap, onDragChange, hint = 'Drag
   const startRx = useRef(0);
   const startRy = useRef(0);
 
+  // Hand rx/ry to the native driver at mount. A value only becomes native
+  // once a useNativeDriver animation runs on it — here, the first release
+  // settle — so until then every drag move updated the ~20 layers from JS one
+  // by one, and on a slow phone the gold side visibly lagged the face: on the
+  // FIRST drag after opening the screen the card came apart into two sheets
+  // (S22 frame captures; the second drag was clean). A zero-length native
+  // timing makes them native before the first touch, so every layer moves in
+  // the same native frame.
+  useEffect(() => {
+    Animated.timing(rx, { toValue: 0, duration: 0, useNativeDriver: true }).start();
+    Animated.timing(ry, { toValue: 0, duration: 0, useNativeDriver: true }).start();
+  }, [rx, ry]);
+
   // rxVal/ryVal are kept by hand at the two places THIS code writes the
   // values (applyMove below, and the release settle's known snap target) —
   // NOT via rx.addListener/ry.addListener. A JS listener on a
