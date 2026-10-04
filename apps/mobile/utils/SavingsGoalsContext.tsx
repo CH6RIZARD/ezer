@@ -352,7 +352,14 @@ export function SavingsGoalsProvider({ children }: { children: ReactNode }) {
 
   // --- load ------------------------------------------------------------------
 
+  // Stamped on every refresh entry; any setState belonging to an older stamp
+  // is dropped. Kills two races with one ref: a logout mid-refresh (stale
+  // authed snapshot landing on a signed-out screen) and two interleaved
+  // refreshes committing a mixed snapshot.
+  const refreshSeq = useRef(0);
+
   const refresh = useCallback(async () => {
+    const seq = ++refreshSeq.current;
     if (!isAuthenticated) {
       setWireGoals([]);
       setTransfers([]);
@@ -378,6 +385,9 @@ export function SavingsGoalsProvider({ children }: { children: ReactNode }) {
         '/plaid/balance'
       ),
     ]);
+
+    // A newer refresh (or a logout) owns the state now — drop this snapshot.
+    if (seq !== refreshSeq.current) return;
 
     if (goalsRes.status === 'fulfilled') setWireGoals(goalsRes.value.data ?? []);
     if (settingsRes.status === 'fulfilled') setSettings(settingsRes.value.data ?? null);
@@ -703,32 +713,62 @@ export function SavingsGoalsProvider({ children }: { children: ReactNode }) {
     [refresh]
   );
 
-  const value: SavingsContextValue = {
-    goals,
-    transactions,
-    autoSave: autoSaveSettings,
-    preview,
-    checkingBalance: checkingCents === null ? null : toDollars(checkingCents),
-    checkingLabel,
-    hydrated,
-    isLoading,
-    error,
-    isSignedOut: !isAuthenticated,
-    refresh,
-    addGoal,
-    updateGoal,
-    closeGoal,
-    setGoalAutoSave,
-    depositToGoal,
-    withdrawFromGoal,
-    moveBetweenGoals,
-    setBuffer,
-    setAutoSaveEnabled,
-    transactionsForGoal,
-    totalSaved,
-    savedThisMonth,
-    averageSave,
-  };
+  // 24 fields rebuilt per render meant every provider render re-rendered
+  // every consumer; the pieces are already memoized, so memoize the bag too.
+  const value: SavingsContextValue = useMemo(
+    () => ({
+      goals,
+      transactions,
+      autoSave: autoSaveSettings,
+      preview,
+      checkingBalance: checkingCents === null ? null : toDollars(checkingCents),
+      checkingLabel,
+      hydrated,
+      isLoading,
+      error,
+      isSignedOut: !isAuthenticated,
+      refresh,
+      addGoal,
+      updateGoal,
+      closeGoal,
+      setGoalAutoSave,
+      depositToGoal,
+      withdrawFromGoal,
+      moveBetweenGoals,
+      setBuffer,
+      setAutoSaveEnabled,
+      transactionsForGoal,
+      totalSaved,
+      savedThisMonth,
+      averageSave,
+    }),
+    [
+      goals,
+      transactions,
+      autoSaveSettings,
+      preview,
+      checkingCents,
+      checkingLabel,
+      hydrated,
+      isLoading,
+      error,
+      isAuthenticated,
+      refresh,
+      addGoal,
+      updateGoal,
+      closeGoal,
+      setGoalAutoSave,
+      depositToGoal,
+      withdrawFromGoal,
+      moveBetweenGoals,
+      setBuffer,
+      setAutoSaveEnabled,
+      transactionsForGoal,
+      totalSaved,
+      savedThisMonth,
+      averageSave,
+    ]
+  );
 
   return <SavingsContext.Provider value={value}>{children}</SavingsContext.Provider>;
 }

@@ -1,10 +1,13 @@
 import crypto from 'crypto';
 
 const ALGORITHM = 'aes-256-gcm';
-const KEY = Buffer.from(
-  process.env.ENCRYPTION_KEY || '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
-  'hex'
-).slice(0, 32);
+const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY ?? '';
+if (!ENCRYPTION_KEY) {
+  throw new Error(
+    'ENCRYPTION_KEY is not set. Refusing to encrypt with a key committed to git history — see DEPLOY-API.md §1.'
+  );
+}
+const KEY = Buffer.from(ENCRYPTION_KEY, 'hex').slice(0, 32);
 
 export function encrypt(text: string): string {
   const iv = crypto.randomBytes(16);

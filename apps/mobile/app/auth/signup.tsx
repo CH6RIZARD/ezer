@@ -47,8 +47,8 @@ export default function SignupScreen() {
       return;
     }
 
-    if (password.length < 6) {
-      Alert.alert('Error', 'Password must be at least 6 characters');
+    if (password.length < 8) {
+      Alert.alert('Error', 'Password must be at least 8 characters');
       return;
     }
 
@@ -178,12 +178,12 @@ export default function SignupScreen() {
           <View style={{ marginBottom: 20 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
               <Ionicons
-                name={password.length >= 6 ? 'checkmark-circle' : 'ellipse-outline'}
+                name={password.length >= 8 ? 'checkmark-circle' : 'ellipse-outline'}
                 size={16}
-                color={password.length >= 6 ? colors.success : colors.textSecondary}
+                color={password.length >= 8 ? colors.success : colors.textSecondary}
               />
-              <Text style={{ fontSize: 13, color: password.length >= 6 ? colors.success : colors.textSecondary, marginLeft: 8 }}>
-                At least 6 characters
+              <Text style={{ fontSize: 13, color: password.length >= 8 ? colors.success : colors.textSecondary, marginLeft: 8 }}>
+                At least 8 characters
               </Text>
             </View>
             <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>

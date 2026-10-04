@@ -14,11 +14,9 @@ dist
 # Misc
 .DS_Store
 *.pem
-.env
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
+# Every env file except the committed template
+.env*
+!.env.example
 
 # Debug
 npm-debug.log*
@@ -36,9 +34,6 @@ pnpm-debug.log*
 .expo
 .expo-shared
 apps/mobile/local-packages
-
-# Prisma
-prisma/migrations
 
 # Uploads
 uploads/**
@@ -60,3 +55,6 @@ dist-live/
 .tunnel/
 # Throwaway export dirs from verification runs
 .tmp-*/
+
+# graphify knowledge graph (generated locally)
+graphify-out/

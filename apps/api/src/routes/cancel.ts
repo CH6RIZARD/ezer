@@ -96,11 +96,14 @@ export async function cancelRoutes(server: FastifyInstance) {
     }
 
     const buffer = await data.toBuffer();
-    const ext = path.extname(data.filename);
+    // The extension comes from a client-supplied filename — allowlist it so
+    // nothing executable/arbitrary (.html, .svg, .sh, ...) lands in uploads.
+    const extRaw = path.extname(data.filename).toLowerCase();
+    const ext = ['.png', '.jpg', '.jpeg', '.eml'].includes(extRaw) ? extRaw : '.bin';
     const filename = await saveFile(buffer, ext);
 
     // Determine file type
-    const fileType = ['.png', '.jpg', '.jpeg'].includes(ext.toLowerCase()) ? 'image' : 'email';
+    const fileType = ['.png', '.jpg', '.jpeg'].includes(ext) ? 'image' : 'email';
 
     // Create proof artifact
     const proofArtifact = await prisma.proofArtifact.create({

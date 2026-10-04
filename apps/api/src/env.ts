@@ -40,11 +40,11 @@ loadEnv({ path: path.resolve(__dirname, '../../../.env') });
 /**
  * Secrets that must never fall back to a default.
  *
- * `utils/jwt.ts` and `utils/encryption.ts` both default when unset. In
- * development that is a convenience; in production it means tokens anyone can
- * forge and bank credentials encrypted with a key that is in the git history.
- * Fail at boot instead — a container that will not start is a far better
- * outcome than one that starts insecure.
+ * `utils/jwt.ts` and `utils/encryption.ts` used to default when unset — tokens
+ * anyone can forge, bank credentials encrypted with a key in git history. They
+ * now throw at module load themselves, so this check no longer gates safety;
+ * it stays because it reports every missing variable at once with a pointer
+ * to the deploy doc, instead of one import-time crash at a time.
  */
 const REQUIRED_IN_PRODUCTION = ['JWT_SECRET', 'ENCRYPTION_KEY', 'DATABASE_URL'] as const;
 

@@ -62,8 +62,6 @@ export const BILLING_PERIOD_LABEL = 'month';
 export const PRODUCT_ID = 'ezer_premium_monthly';
 
 export const TRIAL_DURATION_DAYS = 7;
-export const TRIAL_CASH_ADVANCE_LIMIT = 15;
-export const PREMIUM_CASH_ADVANCE_LIMIT = 1500;
 
 export const ASYNC_STORAGE_KEYS = {
   TRIAL_START_DATE: '@ezer_trial_start_date',

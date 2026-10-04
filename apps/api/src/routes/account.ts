@@ -7,6 +7,7 @@
 // =============================================================================
 
 import { FastifyInstance } from 'fastify';
+import { timingSafeEqual } from 'crypto';
 import { prisma } from '@ezer/db';
 import { authMiddleware } from '../middleware/auth';
 import { decrypt } from '../utils/encryption';
@@ -42,8 +43,13 @@ export async function accountRoutes(server: FastifyInstance) {
           await plaid.itemRemove({ access_token: decrypt(item.accessTokenEnc) });
         } catch (err) {
           // An item Plaid has already forgotten is not a reason to strand a
-          // deletion request — record it and keep going.
-          request.log.error({ err, plaidItemId: item.plaidItemId }, 'itemRemove failed during account deletion');
+          // deletion request — record it and keep going. Never log the full
+          // Axios error: its config carries the Plaid credential headers.
+          const e = err as { response?: { data?: unknown }; message?: string };
+          request.log.error(
+            { err: e?.response?.data || e?.message, plaidItemId: item.plaidItemId },
+            'itemRemove failed during account deletion'
+          );
           failed.push(item.plaidItemId);
         }
       }
@@ -80,14 +86,21 @@ export async function accountRoutes(server: FastifyInstance) {
   // who decompiled the APK would find nothing to extract.
   const DEV_UNLOCK_EXPIRES_AT = new Date('2026-10-06T23:59:59Z');
 
-  server.post<{ Body: { code?: string } }>('/dev-unlock', async (request, reply) => {
+  server.post<{ Body: { code?: string } }>(
+    '/dev-unlock',
+    { config: { rateLimit: { max: 3, timeWindow: '1 minute' } } },
+    async (request, reply) => {
     const userId = (request as any).userId;
     const code = request.body?.code;
 
     if (!process.env.DEV_UNLOCK_CODE) {
       return reply.status(503).send({ success: false, error: 'Not configured on this server' });
     }
-    if (!code || code !== process.env.DEV_UNLOCK_CODE) {
+    // Constant-time compare — `!==` leaks matching-prefix length via timing.
+    // Same pattern as processorWebhook.ts: length is not secret, check it first.
+    const expected = Buffer.from(process.env.DEV_UNLOCK_CODE);
+    const provided = Buffer.from(code ?? '');
+    if (expected.length !== provided.length || !timingSafeEqual(expected, provided)) {
       return reply.status(401).send({ success: false, error: 'Invalid code' });
     }
     if (new Date() > DEV_UNLOCK_EXPIRES_AT) {

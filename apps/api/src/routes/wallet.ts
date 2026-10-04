@@ -237,8 +237,14 @@ export async function walletRoutes(server: FastifyInstance) {
     // landed on the 1st; the UI uses this to show "predicted" instead of a
     // bare $0 that reads as "no subscriptions."
     const merchantIdsWithRealCharge = new Set(merchantMap.keys());
+    // Bounded lookback instead of every historical charge: a projection is
+    // charge + one interval, and the longest interval is yearly, so only
+    // charges from the ~366 days before `start` can ever land in the range.
+    // ponytail: linear window scan; groupBy(_max per merchant) if per-card
+    // charge volume ever makes even one year of rows heavy.
+    const lookbackStart = new Date(start.getTime() - 366 * 24 * 60 * 60 * 1000);
     const priorCharges = await prisma.subscriptionCharge.findMany({
-      where: { userId, fundingInstrumentId: id, chargeTimestamp: { lt: start } },
+      where: { userId, fundingInstrumentId: id, chargeTimestamp: { lt: start, gte: lookbackStart } },
       include: { merchant: true },
       orderBy: { chargeTimestamp: 'desc' },
     });

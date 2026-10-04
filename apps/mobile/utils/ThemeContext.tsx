@@ -3,7 +3,7 @@
 // Provides dark/light mode throughout the app
 // =============================================================================
 
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, ReactNode } from 'react';
 import { Platform, useColorScheme } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { lightTokens, darkTokens, blackTokens, type ThemeTokens } from '../theme/tokens';
@@ -136,14 +136,14 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const setMode = (next: ThemeMode) => {
+  const setMode = useCallback((next: ThemeMode) => {
     setModeState(next);
     saveThemePreference(next);
-  };
+  }, []);
 
-  const toggleTheme = () => setMode(mode === 'light' ? 'dark' : 'light');
+  const toggleTheme = useCallback(() => setMode(mode === 'light' ? 'dark' : 'light'), [mode, setMode]);
 
-  const setTheme = (dark: boolean) => setMode(dark ? 'dark' : 'light');
+  const setTheme = useCallback((dark: boolean) => setMode(dark ? 'dark' : 'light'), [setMode]);
 
   const isDark = mode !== 'light';
   const colors = colorsFor(mode);
@@ -191,13 +191,14 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     document.head.appendChild(meta);
   }, [resolvedDark, resolvedColors]);
 
-  return (
-    <ThemeContext.Provider
-      value={{ isDark: resolvedDark, mode: resolvedMode, colors: resolvedColors, toggleTheme, setTheme, setMode }}
-    >
-      {children}
-    </ThemeContext.Provider>
+  // A fresh value object every render forces every useTheme consumer to
+  // re-render on any ThemeProvider render, theme change or not.
+  const value = useMemo(
+    () => ({ isDark: resolvedDark, mode: resolvedMode, colors: resolvedColors, toggleTheme, setTheme, setMode }),
+    [resolvedDark, resolvedMode, resolvedColors, toggleTheme, setTheme, setMode]
   );
+
+  return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
 }
 
 export function useTheme() {

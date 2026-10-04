@@ -24,7 +24,10 @@ const plugins = [
       minSdkVersion: 24,
       compileSdkVersion: 36,
       targetSdkVersion: 36,
-      usesCleartextTraffic: true,
+      // No cleartext: the app talks HTTPS everywhere a release build matters.
+      // And no auto-backup — the session token must not ride along into
+      // Google's device backups.
+      allowBackup: false,
     },
   }],
 ];

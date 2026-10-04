@@ -113,7 +113,6 @@ export async function plaidRoutes(server: FastifyInstance) {
       publicToken: string;
       institutionId: string;
       institutionName: string;
-      accounts: any[];
       /** UI grouping label only — see the schema comment on
        *  FundingInstrument.purpose. Optional; general-purpose links omit it. */
       purpose?: string;
@@ -122,7 +121,7 @@ export async function plaidRoutes(server: FastifyInstance) {
     '/exchange-public-token',
     async (request, reply) => {
       const userId = (request as any).userId;
-      const { publicToken, institutionId, institutionName, accounts, purpose } = request.body;
+      const { publicToken, institutionId, institutionName, purpose } = request.body;
 
       if (!publicToken) return reply.status(400).send({ success: false, error: 'publicToken required' });
 
@@ -141,17 +140,13 @@ export async function plaidRoutes(server: FastifyInstance) {
 
       // Accounts come from PLAID, not from the client.
       //
-      // This used to persist whatever `accounts` the app sent in the body. Link
-      // metadata is a client-controlled convenience field: it is empty whenever
-      // the caller omits it, and it is trivially forgeable. Storing it meant a
-      // successful bank link could produce an item with zero accounts, which is
-      // exactly what happened — Wallet stayed empty, no FundingInstrument rows
-      // were written, and the savings engine had no balance to read.
-      //
-      // accountsGet is authoritative and costs one call we are already
-      // authenticated for. The client's list is kept only as a fallback for the
-      // case where that call fails, so linking still records something.
-      let resolvedAccounts: any[] = Array.isArray(accounts) ? accounts : [];
+      // This used to persist whatever `accounts` the app sent in the body —
+      // a client-controlled, trivially forgeable list that would mint
+      // FundingInstrument rows feeding Pay-in-4 eligibility. accountsGet is
+      // authoritative and costs one call we are already authenticated for;
+      // if it fails, the link fails loudly instead of persisting a forgeable
+      // fallback. The client can simply retry the link.
+      let resolvedAccounts: any[];
       try {
         const acctRes = await plaid.accountsGet({ access_token });
         resolvedAccounts = acctRes.data.accounts.map(a => ({
@@ -163,8 +158,10 @@ export async function plaidRoutes(server: FastifyInstance) {
           institutionId,
           institutionName,
         }));
-      } catch (err) {
-        request.log.warn({ err }, 'accountsGet failed; falling back to client-supplied accounts');
+      } catch (err: any) {
+        const { status, error } = plaidErrorReply(err);
+        request.log.error({ err: err?.response?.data || err?.message }, 'accountsGet failed during link');
+        return reply.status(status).send({ success: false, error });
       }
 
       // Real institution branding, not an invented skin.
@@ -192,11 +189,11 @@ export async function plaidRoutes(server: FastifyInstance) {
           const inst = instRes.data.institution;
           if (inst.primary_color) issuerColorHint = inst.primary_color;
           if (inst.logo) networkArt = `data:image/png;base64,${inst.logo}`;
-        } catch (err) {
+        } catch (err: any) {
           // Plaid does not have branding for every institution — a smaller
           // credit union may simply have none. Falling back to the generic
           // skin is correct there, not a failure worth surfacing.
-          request.log.warn({ err, institutionId }, 'institutionsGetById failed; using generic card skin');
+          request.log.warn({ err: err?.response?.data || err?.message, institutionId }, 'institutionsGetById failed; using generic card skin');
         }
       }
       // Plaid has no logo for this institution specifically (confirmed for
@@ -334,7 +331,7 @@ export async function plaidRoutes(server: FastifyInstance) {
         await prisma.plaidItem.update({ where: { id: item.id }, data: { lastSyncAt: new Date() } });
       } catch (err: any) {
         const reason = err?.response?.data?.error_code || err?.message || 'unknown';
-        request.log.warn({ err, plaidItemId: item.plaidItemId }, 'sync failed for one item; continuing with the rest');
+        request.log.warn({ err: err?.response?.data || err?.message, plaidItemId: item.plaidItemId }, 'sync failed for one item; continuing with the rest');
         failed.push({ plaidItemId: item.plaidItemId, institutionName: item.institutionName, reason });
       }
     }
@@ -389,9 +386,9 @@ export async function plaidRoutes(server: FastifyInstance) {
             isoCurrencyCode: a.balances.iso_currency_code ?? 'USD',
           });
         }
-      } catch (err) {
+      } catch (err: any) {
         // One dead item must not blank out every other linked account.
-        request.log.warn({ err, itemId: item.plaidItemId }, 'balance fetch failed for item');
+        request.log.warn({ err: err?.response?.data || err?.message, itemId: item.plaidItemId }, 'balance fetch failed for item');
       }
     }
 
@@ -545,11 +542,11 @@ export async function plaidRoutes(server: FastifyInstance) {
           const count = await syncTransactionsForItem(userId, item.plaidItemId, decrypt(item.accessTokenEnc));
           await prisma.plaidItem.update({ where: { id: item.id }, data: { lastSyncAt: new Date() } });
           return { success: true, data: { readForSubscriptions: true, newSubscriptionsDetected: count } };
-        } catch (err) {
+        } catch (err: any) {
           // The flag is already flipped and saved — a sync failure here just
           // means the next regular /plaid/sync call picks it up, the same as
           // any other item whose sync happens to fail once.
-          request.log.warn({ err, itemId: item.id }, 'sync failed right after enabling subscription reading');
+          request.log.warn({ err: err?.response?.data || err?.message, itemId: item.id }, 'sync failed right after enabling subscription reading');
           return { success: true, data: { readForSubscriptions: true, newSubscriptionsDetected: 0 } };
         }
       }
@@ -575,11 +572,11 @@ export async function plaidRoutes(server: FastifyInstance) {
       try {
         const plaid = getPlaidClient();
         await plaid.itemRemove({ access_token: decrypt(item.accessTokenEnc) });
-      } catch (err) {
+      } catch (err: any) {
         // An item Plaid has already forgotten (expired, user revoked it from
         // their bank's own side) must not strand the user's own disconnect
         // request — log it and still remove our copy.
-        request.log.warn({ err, itemId: item.id }, 'itemRemove failed during single-bank disconnect');
+        request.log.warn({ err: err?.response?.data || err?.message, itemId: item.id }, 'itemRemove failed during single-bank disconnect');
       }
     }
 

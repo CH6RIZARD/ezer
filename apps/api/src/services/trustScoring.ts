@@ -48,11 +48,10 @@ export type TrustSignals = {
    */
   activeMissedInstallments: number;
   /**
-   * Installments that went MISSED (whether or not later cured) in the last
-   * 12 months. Scored as a heavy, lingering penalty — being cured stops the
-   * suspension, it does not erase that the miss happened, the same way a real
-   * BNPL provider's internal risk model keeps scoring a cured late payment
-   * for a period after it's resolved.
+   * Installments still MISSED (uncured) whose miss happened in the last
+   * 12 months. Scored as a heavy penalty. A CURED installment does NOT
+   * count — a cured installment is a paid one, and the suspension it caused
+   * while uncured was already the price of the miss.
    */
   missedInstallmentsLast12mo: number;
 };
@@ -126,9 +125,9 @@ export function scoreTrust(signals: TrustSignals): number {
  * after a late/missed repayment, independent of income or balance, and this
  * is EZER's version of that hard stop. It clears automatically the moment the
  * installment is cured (installmentEngine.ts's onInstallmentTransferEvent),
- * at which point the score-only bands below apply again — already dragged
- * down by `missedInstallmentsLast12mo` in `scoreTrust`, which is the part of
- * the penalty that outlives the cure.
+ * at which point the score-only bands below apply again — the cure also
+ * clears `missedInstallmentsLast12mo`, since a cured installment is a paid
+ * one.
  *
  * Banded rather than continuous on purpose: a band is explainable to the user
  * ("you're in our $1,000 tier") and to a regulator, and it stops a $5 change in
@@ -206,7 +205,10 @@ async function derivePlaidSignals(
   const since = new Date();
   since.setMonth(since.getMonth() - 6);
   const txns = await prisma.transaction.findMany({
-    where: { userId, date: { gte: since } },
+    // source: 'plaid' — ONLY bank-read rows. Transaction also holds CSV
+    // imports (source: 'csv_import'), which the user authors; letting those
+    // in would let anyone type their own income and tenure into the score.
+    where: { userId, date: { gte: since }, source: 'plaid' },
     select: { amountCents: true, date: true, merchantNameRaw: true },
   });
 
@@ -253,8 +255,11 @@ async function deriveInstallmentSignals(
 
   const [active, last12mo] = await Promise.all([
     prisma.installment.count({ where: { userId, status: 'MISSED' } }),
+    // MISSED only — a CURED installment is a paid one. The miss already did
+    // its damage while uncured (suspension + this count); keeping the -35
+    // penalty for a year after the user made it right punishes repayment.
     prisma.installment.count({
-      where: { userId, status: { in: ['MISSED', 'CURED'] }, missedAt: { gte: lookback } },
+      where: { userId, status: 'MISSED', missedAt: { gte: lookback } },
     }),
   ]);
 

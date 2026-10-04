@@ -786,8 +786,10 @@ model SweepRun {
 /// settlement is the failure that actually costs you — a missed webhook is
 /// recoverable by reconciliation, a double-credit is not.
 ///
-/// The unique index on eventId is the lock: insert first, and if it collides,
-/// return 2xx immediately without re-running the handler.
+/// The unique index on eventId is the lock: insert first. A collision whose
+/// existing receipt has processedAt set returns 2xx without re-running the
+/// handler; processedAt null means a delivery died mid-handler, and that
+/// retry re-runs the (idempotent) handlers instead of being deduped.
 model ProcessorWebhookEvent {
   id          String   @id @default(cuid())
   /// The PROVIDER's event id, not ours.
@@ -846,6 +848,7 @@ model CardAccessList {
   design CardDesign? @relation(fields: [designId], references: [id], onDelete: SetNull)
 
   @@index([userId])
+  @@index([userId, createdAt])
 }
 
 // ============================================================================
@@ -892,9 +895,9 @@ enum InstallmentStatus {
   /// the exact signal `scoreTrust` has nowhere to read from yet — see
   /// cards.ts's limitForScore comment.
   MISSED
-  /// Was MISSED, then paid late. Still counted as a miss for scoring (the
-  /// event happened), but no longer blocks issuance the way an uncured MISSED
-  /// installment does.
+  /// Was MISSED, then paid late. A cured installment is a paid one for
+  /// scoring (trustScoring.deriveInstallmentSignals counts only MISSED), and
+  /// it no longer blocks issuance; the plan it defaulted stays DEFAULTED.
   CURED
 }
 

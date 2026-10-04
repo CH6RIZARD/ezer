@@ -16,7 +16,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme, type ThemeMode } from '../utils/ThemeContext';
 import { useAuth } from '../utils/AuthContext';
 import { fontFamily, typeScale, radius, layout } from '../theme/type';
-import { lightTokens, themeKeys } from '../theme/tokens';
+import { themeKeys } from '../theme/tokens';
 import { LinearGradient } from 'expo-linear-gradient';
 import {
   Body,
@@ -39,10 +39,10 @@ const NOTIFS = [
 // modes"): the purple-tinted 'dark' theme is "EZER" (owner wants it in caps),
 // true 'black' is "Dark". Colours come from tokens.ts (themeKeys).
 type KeyId = 'light' | 'ezer' | 'dark';
-const THEME_KEYS: { mode: ThemeMode; key: KeyId; name: string; check: string }[] = [
-  { mode: 'light', key: 'light', name: 'Light', check: lightTokens.ink },
-  { mode: 'dark', key: 'ezer', name: 'EZER', check: '#FFFFFF' },
-  { mode: 'black', key: 'dark', name: 'Dark', check: '#FFFFFF' },
+const THEME_KEYS: { mode: ThemeMode; key: KeyId; name: string }[] = [
+  { mode: 'light', key: 'light', name: 'Light' },
+  { mode: 'dark', key: 'ezer', name: 'EZER' },
+  { mode: 'black', key: 'dark', name: 'Dark' },
 ];
 const KEY_EASE = Easing.bezier(0.22, 1, 0.36, 1);
 
@@ -53,7 +53,6 @@ function ThemePill({ mode, onChange }: { mode: ThemeMode; onChange: (m: ThemeMod
   // views — one driver per view, as RN requires.
   const flex = useRef(THEME_KEYS.map(k => new Animated.Value(k.mode === mode ? 2 : 1))).current;
   const raised = useRef(THEME_KEYS.map(k => new Animated.Value(k.mode === mode ? 1 : 0))).current;
-  const check = useRef(THEME_KEYS.map(k => new Animated.Value(k.mode === mode ? 1 : 0))).current;
 
   useEffect(() => {
     Animated.parallel(
@@ -62,11 +61,10 @@ function ThemePill({ mode, onChange }: { mode: ThemeMode; onChange: (m: ThemeMod
         return [
           Animated.timing(flex[i], { toValue: on ? 2 : 1, duration: 350, easing: KEY_EASE, useNativeDriver: false }),
           Animated.timing(raised[i], { toValue: on ? 1 : 0, duration: 350, easing: KEY_EASE, useNativeDriver: true }),
-          Animated.timing(check[i], { toValue: on ? 1 : 0, duration: 150, useNativeDriver: true }),
         ];
       })
     ).start();
-  }, [mode, flex, raised, check]);
+  }, [mode, flex, raised]);
 
   const press = (m: ThemeMode) => {
     if (m === mode) return;
@@ -132,9 +130,6 @@ function ThemePill({ mode, onChange }: { mode: ThemeMode; onChange: (m: ThemeMod
                     },
                   ]}
                 />
-                <Animated.View style={{ opacity: check[i] }}>
-                  <Ionicons name="checkmark" size={16} color={k.check} />
-                </Animated.View>
               </Animated.View>
             </Pressable>
           </Animated.View>
@@ -198,7 +193,6 @@ export default function SettingsScreen() {
           <SectionHeader style={styles.section}>Appearance</SectionHeader>
           {/* Patch 4 (Appearance Toggle mock 1b): one three-colour pill. */}
           <View style={styles.themeRow}>
-            <Text style={[styles.kvValue, { color: colors.ink }]}>Theme</Text>
             <Text style={[styles.themeMode, { color: colors.mut }]}>{THEME_KEYS.find(k => k.mode === mode)?.name}</Text>
           </View>
           <ThemePill mode={mode} onChange={setMode} />
@@ -345,7 +339,7 @@ const styles = StyleSheet.create({
   themeRow: {
     flexDirection: 'row',
     alignItems: 'baseline',
-    justifyContent: 'space-between',
+    justifyContent: 'flex-end',
     marginBottom: 10,
   },
   themeMode: {

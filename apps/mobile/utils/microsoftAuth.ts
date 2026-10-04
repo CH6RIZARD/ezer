@@ -32,7 +32,9 @@ export async function signInWithMicrosoft(): Promise<MicrosoftSignInResult> {
   const request = new AuthSession.AuthRequest({
     clientId,
     redirectUri,
-    scopes: ['openid', 'profile', 'email', 'offline_access'],
+    // No offline_access: sign-in needs one ID token, not a refresh token the
+    // app never stores or uses.
+    scopes: ['openid', 'profile', 'email'],
     usePKCE: true,
     responseType: AuthSession.ResponseType.Code,
   });

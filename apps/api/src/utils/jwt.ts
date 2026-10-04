@@ -1,7 +1,12 @@
 import jwt from 'jsonwebtoken';
 import { JwtPayload } from '@ezer/shared';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'ezer-dev-jwt-secret-not-for-production';
+const JWT_SECRET = process.env.JWT_SECRET ?? '';
+if (!JWT_SECRET) {
+  throw new Error('JWT_SECRET is not set. Refusing to sign tokens with a known default key — see DEPLOY-API.md §1.');
+}
+
+// ponytail: 7-day tokens with no revocation; add a tokenVersion claim checked in middleware/auth.ts when logout/revocation matters.
 const JWT_EXPIRES_IN = '7d';
 
 export function signJwt(payload: Omit<JwtPayload, 'iat' | 'exp'>): string {
@@ -10,7 +15,7 @@ export function signJwt(payload: Omit<JwtPayload, 'iat' | 'exp'>): string {
 
 export function verifyJwt(token: string): JwtPayload | null {
   try {
-    return jwt.verify(token, JWT_SECRET) as JwtPayload;
+    return jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'] }) as JwtPayload;
   } catch (error) {
     return null;
   }

@@ -1,61 +1,13 @@
 import { FastifyInstance } from 'fastify';
 import { prisma } from '@ezer/db';
 import { authMiddleware } from '../middleware/auth';
-import { saveFile } from '../utils/storage';
-import path from 'path';
 
 export async function ingestRoutes(server: FastifyInstance) {
   server.addHook('preHandler', authMiddleware);
 
-  // POST /ingest/eml
-  server.post('/eml', async (request, reply) => {
-    const userId = (request as any).userId;
-
-    // Handle file upload
-    const data = await request.file();
-
-    if (!data) {
-      return reply.status(400).send({ success: false, error: 'Missing file' });
-    }
-
-    const buffer = await data.toBuffer();
-    const ext = path.extname(data.filename);
-
-    if (ext.toLowerCase() !== '.eml') {
-      return reply.status(400).send({ success: false, error: 'Only .eml files are supported' });
-    }
-
-    const filename = await saveFile(buffer, ext);
-
-    // In production, this would queue a job to parse the .eml file
-    // For now, just acknowledge receipt
-
-    return {
-      success: true,
-      message: 'Email file uploaded. Parsing will begin shortly.',
-      filename,
-    };
-  });
-
-  // POST /ingest/sms
-  server.post<{
-    Body: { from: string; body: string; timestamp: string };
-  }>('/sms', async (request, reply) => {
-    const userId = (request as any).userId;
-    const { from, body, timestamp } = request.body;
-
-    if (!from || !body || !timestamp) {
-      return reply.status(400).send({ success: false, error: 'Missing required fields' });
-    }
-
-    // In production, this would queue a job to parse the SMS
-    // For now, just acknowledge receipt
-
-    return {
-      success: true,
-      message: 'SMS received. Parsing will begin shortly.',
-    };
-  });
+  // /ingest/eml and /ingest/sms were removed: both were dead ends — /eml
+  // wrote raw email files to ./uploads with no retention and no consumer,
+  // /sms acknowledged and discarded. Nothing parsed either.
 
   // POST /ingest/csv
   server.post<{

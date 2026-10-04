@@ -7,7 +7,7 @@
 // (INBOX_SCAN_ENABLED / INBOX_SCAN_ALLOWLIST in routes/inbox.ts).
 // =============================================================================
 
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { View, Text, ScrollView, StyleSheet, Linking } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -38,11 +38,17 @@ export default function InboxScreen() {
   }, []);
   useFocusEffect(useCallback(() => void load(), [load]));
 
+  // One controller per scan; leaving the screen or disconnecting aborts the
+  // in-flight message fetches instead of letting them run to completion.
+  const scanAbort = useRef<AbortController | null>(null);
+  useEffect(() => () => scanAbort.current?.abort(), []);
+
   const scan = async (p: InboxProvider) => {
     setBusy(p);
     setMessage(null);
     try {
-      const r = await scanInbox(p);
+      scanAbort.current = new AbortController();
+      const r = await scanInbox(p, scanAbort.current.signal);
       if (r.cancelled) setMessage('No access granted, so nothing was read.');
       else {
         setMessage(r.found ? `Found ${r.found} subscription${r.found === 1 ? '' : 's'} (${r.created} new).` : 'No new subscriptions found.');
@@ -57,6 +63,7 @@ export default function InboxScreen() {
   };
 
   const disconnect = async (p: InboxProvider) => {
+    scanAbort.current?.abort();
     setBusy(p);
     await disconnectInbox(p);
     setBusy(null);

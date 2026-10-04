@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, ReactNode } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { api } from './api';
 import { clearAllCardArtPrefs } from './cardArt/prefs';
@@ -64,6 +64,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
         if (!savedUser) return;
 
+        // Parse ONCE, before the server check. JSON.parse inside the branches
+        // below threw outside their try/catch — one corrupt stored value was
+        // an unhandled rejection on every launch. A value that does not parse
+        // is simply not a stored user.
+        let storedUser: User | null = null;
+        try {
+          storedUser = JSON.parse(savedUser);
+        } catch {}
+        if (!storedUser) {
+          await AsyncStorage.removeItem(USER_KEY);
+          return;
+        }
+
         // A stored user is a CLAIM, not a session.
         //
         // This used to restore whatever was in AsyncStorage and call it
@@ -81,7 +94,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
         try {
           await api.post('/auth/session');
-          setUser(JSON.parse(savedUser));
+          setUser(storedUser);
         } catch (err: any) {
           const status: number | undefined = err?.status;
           if (status === 401 || status === 403 || status === 404) {
@@ -89,7 +102,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             await Promise.all([AsyncStorage.removeItem(USER_KEY), api.clearToken()]);
           } else {
             // Unreachable or 5xx — keep the session and let the app retry.
-            setUser(JSON.parse(savedUser));
+            setUser(storedUser);
           }
         }
       } finally {
@@ -98,12 +111,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     })();
   }, []);
 
-  const persistUser = async (u: User) => {
+  const persistUser = useCallback(async (u: User) => {
     await AsyncStorage.setItem(USER_KEY, JSON.stringify(u));
     setUser(u);
-  };
+  }, []);
 
-  const login = async (email: string, password: string): Promise<AuthResult> => {
+  const login = useCallback(async (email: string, password: string): Promise<AuthResult> => {
     try {
       const res: any = await api.post('/auth/login', { email, password });
       await api.setToken(res.data.token);
@@ -122,9 +135,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       console.log('[Auth] login error:', err.message);
       return { ok: false, error: err?.message || 'Could not sign in.' };
     }
-  };
+  }, [persistUser]);
 
-  const signup = async (email: string, password: string, name: string): Promise<AuthResult> => {
+  const signup = useCallback(async (email: string, password: string, name: string): Promise<AuthResult> => {
     try {
       const res: any = await api.post('/auth/signup', { email, password, name });
       await api.setToken(res.data.token);
@@ -144,7 +157,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       console.log('[Auth] signup error:', err.message);
       return { ok: false, error: err?.message || 'Could not create your account.' };
     }
-  };
+  }, [persistUser]);
 
   /**
    * Real provider sign-in.
@@ -160,7 +173,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
    * unsupported environment degrades to a clear message instead of a white
    * screen.
    */
-  const loginWithProvider = async (
+  const loginWithProvider = useCallback(async (
     provider: 'google' | 'apple' | 'microsoft'
   ): Promise<ProviderLoginResult> => {
     try {
@@ -222,9 +235,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         error: message || undefined,
       };
     }
-  };
+  }, [persistUser]);
 
-  const logout = async () => {
+  const logout = useCallback(async () => {
     await Promise.all([
       AsyncStorage.removeItem(USER_KEY),
       api.clearToken(),
@@ -234,27 +247,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       clearAllCardArtPrefs(),
     ]);
     setUser(null);
-  };
+  }, []);
 
-  const updateUser = async (updates: Partial<User>) => {
+  const updateUser = useCallback(async (updates: Partial<User>) => {
     if (!user) return;
     const updated = { ...user, ...updates };
     await persistUser(updated);
-  };
+  }, [user, persistUser]);
 
-  const completeOnboarding = async () => {
+  const completeOnboarding = useCallback(async () => {
     await AsyncStorage.setItem(ONBOARDING_KEY, 'true');
     setHasCompletedOnboarding(true);
-  };
+  }, []);
 
-  return (
-    <AuthContext.Provider value={{
+  // Stable identity: without this every AuthProvider render re-rendered every
+  // useAuth consumer in the app.
+  const value = useMemo(
+    () => ({
       user, isLoading, isAuthenticated: !!user, hasCompletedOnboarding,
       login, signup, loginWithProvider, logout, updateUser, completeOnboarding,
-    }}>
-      {children}
-    </AuthContext.Provider>
+    }),
+    [user, isLoading, hasCompletedOnboarding, login, signup, loginWithProvider, logout, updateUser, completeOnboarding]
   );
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
 export function useAuth() {

@@ -52,6 +52,13 @@ function userIdOf(request: unknown): string {
   return (request as { userId: string }).userId;
 }
 
+/**
+ * Engine errors a client caused and may see. Anything else (Prisma errors,
+ * processor failures…) rethrows to a generic 500 — raw internals must not
+ * echo to clients.
+ */
+const CLIENT_ERRORS = new Set(['INVALID_AMOUNT', 'SAME_GOAL']);
+
 export async function savingsRoutes(server: FastifyInstance) {
   server.addHook('preHandler', authMiddleware);
 
@@ -159,6 +166,11 @@ export async function savingsRoutes(server: FastifyInstance) {
     const goal = await prisma.savingsGoal.findFirst({ where: { id, userId } });
     if (!goal) return reply.status(404).send({ error: 'Goal not found' });
 
+    // Validate before it reaches Prisma — an unknown enum value 500s there.
+    if (body.status !== undefined && !['ACTIVE', 'PAUSED', 'CLOSED'].includes(body.status)) {
+      return reply.status(400).send({ error: 'status must be ACTIVE, PAUSED or CLOSED' });
+    }
+
     const updated = await prisma.savingsGoal.update({
       where: { id },
       data: {
@@ -252,8 +264,10 @@ export async function savingsRoutes(server: FastifyInstance) {
    */
   server.post('/sweep/run', async request => {
     const userId = userIdOf(request);
-    const body = (request.body ?? {}) as { periodKey?: string };
-    const outcome = await runSweep(userId, stubProcessor, body.periodKey ?? weekKey());
+    // periodKey is ALWAYS derived server-side. Accepting the client's value
+    // would let one user mint arbitrary keys and run the sweep (and its
+    // debits) as many times per week as they liked.
+    const outcome = await runSweep(userId, stubProcessor, weekKey());
     return { success: true, data: outcome };
   });
 
@@ -289,6 +303,9 @@ export async function savingsRoutes(server: FastifyInstance) {
     if (!Number.isInteger(body?.amountCents) || (body.amountCents ?? 0) <= 0) {
       return reply.status(400).send({ error: 'amountCents must be a positive integer' });
     }
+    if (body.speed !== undefined && !['STANDARD', 'INSTANT'].includes(body.speed)) {
+      return reply.status(400).send({ error: 'speed must be STANDARD or INSTANT' });
+    }
 
     try {
       const res = await withdraw(
@@ -309,7 +326,8 @@ export async function savingsRoutes(server: FastifyInstance) {
           withdrawableCents: await withdrawableCents(userId, id),
         });
       }
-      return reply.status(400).send({ error: msg });
+      if (CLIENT_ERRORS.has(msg)) return reply.status(400).send({ error: msg });
+      throw err;
     }
   });
 
@@ -343,7 +361,9 @@ export async function savingsRoutes(server: FastifyInstance) {
       const res = await deposit(userId, id, body.amountCents!, stubProcessor);
       return { success: true, data: res };
     } catch (err) {
-      return reply.status(400).send({ error: (err as Error).message });
+      const msg = (err as Error).message;
+      if (CLIENT_ERRORS.has(msg)) return reply.status(400).send({ error: msg });
+      throw err;
     }
   });
 
@@ -386,7 +406,8 @@ export async function savingsRoutes(server: FastifyInstance) {
           withdrawableCents: await withdrawableCents(userId, body.fromGoalId),
         });
       }
-      return reply.status(400).send({ error: msg });
+      if (CLIENT_ERRORS.has(msg)) return reply.status(400).send({ error: msg });
+      throw err;
     }
   });
 

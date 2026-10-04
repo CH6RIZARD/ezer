@@ -5,7 +5,12 @@ export type VerifiedMicrosoftIdentity = {
   providerUserId: string;
   email: string;
   name?: string | null;
+  emailVerified: boolean;
 };
+
+// Microsoft's consumer (MSA) tenant. Personal-account emails are verified by
+// Microsoft itself; work-tenant emails are whatever that tenant's admin typed.
+const MSA_TENANT_ID = '9188040d-6c67-4c5b-b112-36a304b66dad';
 
 const microsoftJwks = jwksClient({
   jwksUri: 'https://login.microsoftonline.com/common/discovery/v2.0/keys',
@@ -52,9 +57,28 @@ export async function verifyMicrosoftIdToken(idToken: string): Promise<VerifiedM
     );
   });
 
+  // nOAuth: the /common JWKS signs tokens for EVERY Azure tenant, and anyone
+  // can create a tenant. The issuer must be the token's own tenant, exactly —
+  // a substring check accepts e.g. "https://evil.example/login.microsoftonline.com".
+  const tid = typeof (payload as { tid?: unknown }).tid === 'string' ? (payload.tid as string) : '';
+  if (!tid) {
+    throw new Error('Microsoft ID token is missing tenant (tid) claim');
+  }
+
   const issuer = typeof payload.iss === 'string' ? payload.iss : '';
-  if (!issuer.includes('login.microsoftonline.com') && !issuer.includes('sts.windows.net')) {
+  if (
+    issuer !== `https://login.microsoftonline.com/${tid}/v2.0` &&
+    issuer !== `https://sts.windows.net/${tid}/`
+  ) {
     throw new Error('Invalid Microsoft token issuer');
+  }
+
+  const allowedTenants = (process.env.MICROSOFT_ALLOWED_TENANTS || '')
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean);
+  if (allowedTenants.length > 0 && !allowedTenants.includes(tid)) {
+    throw new Error('Microsoft tenant is not allowed');
   }
 
   const email =
@@ -67,9 +91,16 @@ export async function verifyMicrosoftIdToken(idToken: string): Promise<VerifiedM
     throw new Error('Microsoft ID token is missing required claims');
   }
 
+  // Trust the email for account linking only when Microsoft attests domain
+  // ownership (xms_edov) or the account is a consumer (MSA) account. Work
+  // tenants can put any string in email/preferred_username/upn.
+  const edov = (payload as { xms_edov?: unknown }).xms_edov;
+  const emailVerified = edov === true || edov === 'true' || tid === MSA_TENANT_ID;
+
   return {
     providerUserId: payload.sub,
     email,
     name: typeof payload.name === 'string' ? payload.name : null,
+    emailVerified,
   };
 }

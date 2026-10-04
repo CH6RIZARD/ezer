@@ -65,7 +65,10 @@ async function gmailAccessToken(): Promise<string | null> {
 }
 
 function b64urlToUtf8(data: string): string {
-  const bin = atob(data.replace(/-/g, '+').replace(/_/g, '/'));
+  // Gmail omits base64 padding; some atob implementations throw on an
+  // unpadded string, so pad back to a multiple of 4 first.
+  const b64 = data.replace(/-/g, '+').replace(/_/g, '/');
+  const bin = atob(b64.padEnd(b64.length + ((4 - (b64.length % 4)) % 4), '='));
   try {
     return decodeURIComponent(Array.from(bin, c => '%' + c.charCodeAt(0).toString(16).padStart(2, '0')).join(''));
   } catch {
@@ -87,10 +90,11 @@ function gmailBody(part: GmailPart): { plain: string; html: string } {
   return { plain, html };
 }
 
-async function scanGmail(token: string, since: Date | null): Promise<Found[]> {
+async function scanGmail(token: string, since: Date | null, signal?: AbortSignal): Promise<Found[]> {
   const g = async (path: string) => {
     const r = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/${path}`, {
       headers: { Authorization: `Bearer ${token}` },
+      signal,
     });
     if (!r.ok) throw new Error(`Gmail ${r.status}`);
     return r.json();
@@ -107,20 +111,26 @@ async function scanGmail(token: string, since: Date | null): Promise<Found[]> {
   } while (pageToken && ids.length < MAX_MESSAGES);
 
   const found: Found[] = [];
-  for (const id of ids.slice(0, MAX_MESSAGES)) {
-    const msg = await g(`messages/${id}?format=full`);
-    const header = (n: string) => msg.payload?.headers?.find((h: { name: string }) => h.name.toLowerCase() === n)?.value ?? '';
-    const { plain, html } = gmailBody(msg.payload ?? {});
-    const fromHtml = html ? htmlToText(html) : { text: '', links: [] };
-    const receivedAt = new Date(Number(msg.internalDate) || Date.now());
-    const hit = extractSubscription({
-      from: header('from'),
-      subject: header('subject'),
-      text: plain || fromHtml.text,
-      links: fromHtml.links,
-      receivedAt,
-    });
-    if (hit) found.push({ ...hit, receivedAt: receivedAt.getTime() });
+  const queue = ids.slice(0, MAX_MESSAGES);
+  // Batched, not 300 strictly-sequential round trips.
+  // ponytail: fixed batches of 5; a sliding worker pool if Gmail throttling
+  // ever shows up in practice.
+  for (let i = 0; i < queue.length; i += 5) {
+    const msgs = await Promise.all(queue.slice(i, i + 5).map(id => g(`messages/${id}?format=full`)));
+    for (const msg of msgs) {
+      const header = (n: string) => msg.payload?.headers?.find((h: { name: string }) => h.name.toLowerCase() === n)?.value ?? '';
+      const { plain, html } = gmailBody(msg.payload ?? {});
+      const fromHtml = html ? htmlToText(html) : { text: '', links: [] };
+      const receivedAt = new Date(Number(msg.internalDate) || Date.now());
+      const hit = extractSubscription({
+        from: header('from'),
+        subject: header('subject'),
+        text: plain || fromHtml.text,
+        links: fromHtml.links,
+        receivedAt,
+      });
+      if (hit) found.push({ ...hit, receivedAt: receivedAt.getTime() });
+    }
   }
   return found;
 }
@@ -154,7 +164,7 @@ async function outlookAccessToken(): Promise<string | null> {
   return tokens.accessToken;
 }
 
-async function scanOutlook(token: string, since: Date | null): Promise<Found[]> {
+async function scanOutlook(token: string, since: Date | null, signal?: AbortSignal): Promise<Found[]> {
   const cutoff = since ?? new Date(Date.now() - 400 * 86_400_000);
   // Graph's $search value is itself one quoted KQL string, so no nested
   // phrases — single words only ("trial" covers "free trial"/"trial ends").
@@ -167,7 +177,7 @@ async function scanOutlook(token: string, since: Date | null): Promise<Found[]> 
   const found: Found[] = [];
   let seen = 0;
   while (url && seen < MAX_MESSAGES) {
-    const r = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+    const r = await fetch(url, { headers: { Authorization: `Bearer ${token}` }, signal });
     if (!r.ok) throw new Error(`Outlook ${r.status}`);
     const page: any = await r.json();
     for (const m of page.value ?? []) {
@@ -195,14 +205,16 @@ async function scanOutlook(token: string, since: Date | null): Promise<Found[]> 
 
 export type ScanResult = { cancelled: true } | { cancelled: false; found: number; created: number; updated: number };
 
-/** Connect (if needed) and scan one inbox. Safe to call repeatedly; it is incremental. */
-export async function scanInbox(provider: InboxProvider): Promise<ScanResult> {
+/** Connect (if needed) and scan one inbox. Safe to call repeatedly; it is
+ *  incremental. `signal` aborts the in-flight fetches — the caller passes one
+ *  so disconnect/unmount doesn't leave up to 300 requests running. */
+export async function scanInbox(provider: InboxProvider, signal?: AbortSignal): Promise<ScanResult> {
   const startedAt = new Date();
   const token = provider === 'gmail' ? await gmailAccessToken() : await outlookAccessToken();
   if (!token) return { cancelled: true };
 
   const since = await lastScanAt(provider);
-  const raw = provider === 'gmail' ? await scanGmail(token, since) : await scanOutlook(token, since);
+  const raw = provider === 'gmail' ? await scanGmail(token, since, signal) : await scanOutlook(token, since, signal);
   const items = mergeByMerchant(raw).map(d => ({ ...d, source: provider }));
 
   let created = 0;
@@ -222,9 +234,12 @@ export async function disconnectInbox(provider: InboxProvider): Promise<void> {
     try {
       configureGoogleSignIn();
       const { accessToken } = await GoogleSignin.getTokens();
-      await fetch(`https://oauth2.googleapis.com/revoke?token=${encodeURIComponent(accessToken)}`, {
+      // Token in the POST body, never the query string — URLs end up in
+      // proxy and server logs.
+      await fetch('https://oauth2.googleapis.com/revoke', {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: `token=${encodeURIComponent(accessToken)}`,
       });
       await GoogleSignin.revokeAccess();
       await GoogleSignin.signOut();
@@ -234,5 +249,10 @@ export async function disconnectInbox(provider: InboxProvider): Promise<void> {
   }
   // Outlook: the token was never stored, so there is nothing to revoke here;
   // the user can also remove EZER at https://account.live.com/consent/Manage.
-  await AsyncStorage.removeItem(lastScanKey(provider));
+  try {
+    await AsyncStorage.removeItem(lastScanKey(provider));
+  } catch {
+    // A cursor that outlives the disconnect only means the next scan window
+    // is wrong — not worth failing the disconnect over.
+  }
 }

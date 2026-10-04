@@ -19,20 +19,34 @@ function formatZodError(error: { issues: { message: string }[] }): string {
   return error.issues.map(issue => issue.message).join('; ');
 }
 
+// A real bcrypt hash (of an unused throwaway string) so login burns a compare
+// even when the user does not exist — otherwise unknown emails answer ~100ms
+// faster than wrong passwords, a clean enumeration oracle.
+const DUMMY_BCRYPT_HASH = '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy';
+
+// 5/min per IP+email on the credential routes; the global 100/min stays for
+// everything else. Keying needs the parsed body, hence hook: 'preHandler' on
+// the plugin registration in index.ts.
+const credentialRateLimit = {
+  rateLimit: {
+    max: 5,
+    timeWindow: '1 minute',
+    keyGenerator: (request: { ip: string; body?: unknown }) =>
+      `${request.ip}:${String((request.body as { email?: unknown })?.email ?? '')}`,
+  },
+};
 
 export async function authRoutes(server: FastifyInstance) {
   // POST /auth/signup
   server.post<{ Body: { email: string; password: string; name: string } }>(
     '/signup',
+    { config: credentialRateLimit },
     async (request, reply) => {
-      const { email, password, name } = request.body;
-
-      if (!email || !password || !name) {
-        return reply.status(400).send({ success: false, error: 'email, password and name are required' });
+      const parsed = emailSignupSchema.safeParse(request.body);
+      if (!parsed.success) {
+        return reply.status(400).send({ success: false, error: formatZodError(parsed.error) });
       }
-      if (password.length < 6) {
-        return reply.status(400).send({ success: false, error: 'Password must be at least 6 characters' });
-      }
+      const { email, password, name } = parsed.data;
 
       // Normalised, because the unique index is case-SENSITIVE: signing up as
       // "Daniel@x.com" then logging in as "daniel@x.com" created one account
@@ -41,6 +55,8 @@ export async function authRoutes(server: FastifyInstance) {
 
       const existing = await prisma.user.findUnique({ where: { email: normalisedEmail } });
       if (existing) {
+        // ponytail: this reveals which emails have accounts; acceptable until
+        // verification emails exist, then switch to a neutral "check your inbox".
         return reply.status(400).send({ success: false, error: 'Email already registered' });
       }
 
@@ -66,6 +82,7 @@ export async function authRoutes(server: FastifyInstance) {
   // POST /auth/login
   server.post<{ Body: { email: string; password: string } }>(
     '/login',
+    { config: credentialRateLimit },
     async (request, reply) => {
       const { email, password } = request.body;
 
@@ -74,13 +91,11 @@ export async function authRoutes(server: FastifyInstance) {
       }
 
       const user = await prisma.user.findUnique({ where: { email: email.toLowerCase().trim() } });
-      if (!user || !user.passwordHash) {
-        return reply.status(401).send({ success: false, error: 'Invalid credentials' });
-      }
-
-      const valid = await bcrypt.compare(password, user.passwordHash);
-      if (!valid) {
-        return reply.status(401).send({ success: false, error: 'Invalid credentials' });
+      // Always run the compare, and answer unknown-user and wrong-password
+      // identically — no timing or wording oracle for email enumeration.
+      const valid = await bcrypt.compare(password, user?.passwordHash || DUMMY_BCRYPT_HASH);
+      if (!user || !user.passwordHash || !valid) {
+        return reply.status(401).send({ success: false, error: 'Invalid email or password' });
       }
 
       const token = signJwt({ userId: user.id, email: user.email });
@@ -220,6 +235,7 @@ export async function authRoutes(server: FastifyInstance) {
         providerUserId: identity.providerUserId,
         email: identity.email,
         name: identity.name,
+        emailVerified: identity.emailVerified,
       });
       return { success: true, data: session };
     } catch (error) {
@@ -259,6 +275,9 @@ export async function authRoutes(server: FastifyInstance) {
         providerUserId: identity.providerUserId,
         email,
         name: fullName || null,
+        // A body-supplied email is attacker-controlled: it may create a new
+        // account but must never link into an existing one.
+        emailVerified: identity.email ? identity.emailVerified : false,
       });
       return { success: true, data: session };
     } catch (error) {
@@ -284,6 +303,7 @@ export async function authRoutes(server: FastifyInstance) {
         providerUserId: identity.providerUserId,
         email: identity.email,
         name: identity.name,
+        emailVerified: identity.emailVerified,
       });
       return { success: true, data: session };
     } catch (error) {

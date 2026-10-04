@@ -36,6 +36,17 @@ const clampDayToMonth = (year: number, month: number, day: number) =>
 const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
 
 /**
+ * A date-only value ('YYYY-MM-DD', or an ISO datetime whose date part is the
+ * meaning — e.g. a renewal date stored at UTC midnight) → local midnight.
+ * `new Date(iso)` would place it at UTC midnight, which is the PREVIOUS day
+ * for anyone west of UTC.
+ */
+export function parseLocalDay(iso: string): Date {
+  const [y, m, d] = iso.slice(0, 10).split('-').map(Number);
+  return new Date(y, m - 1, d);
+}
+
+/**
  * Every occurrence of one subscription that falls inside the given month.
  *
  * Works in both directions from the anchor — scrolling back to a past month
@@ -53,15 +64,16 @@ function occurrencesInMonth(
 
   switch (cadence) {
     case 'weekly': {
-      // Walk back to the first occurrence on or after the 1st.
-      const step = 7 * 24 * 60 * 60 * 1000;
-      const diff = monthStart.getTime() - anchor.getTime();
-      const periods = Math.ceil(diff / step);
-      let d = new Date(anchor.getTime() + periods * step);
-      while (d <= monthEnd) {
-        if (d >= monthStart) out.push(new Date(d));
-        d = new Date(d.getTime() + step);
-      }
+      // Calendar-day stepping, NOT anchor + k*7*24h ms: a DST week is 167 or
+      // 169 hours, so ms-stepping drifted the charge off its day over enough
+      // weeks. The ms division is only an estimate of k, corrected by walking
+      // to the first occurrence on or after the 1st in calendar days.
+      const occ = (n: number) =>
+        new Date(anchor.getFullYear(), anchor.getMonth(), anchor.getDate() + n * 7);
+      let k = Math.round((monthStart.getTime() - anchor.getTime()) / (7 * 24 * 60 * 60 * 1000));
+      while (occ(k) < monthStart) k++;
+      while (occ(k - 1) >= monthStart) k--;
+      for (let d = occ(k); d <= monthEnd; d = occ(++k)) out.push(d);
       break;
     }
 
@@ -113,7 +125,8 @@ export function projectMonthEvents(
   // --- trial conversions: one-off, never projected ---------------------------
   for (const r of risks) {
     if (r.type !== 'trial') continue;
-    const d = new Date(r.dueDate);
+    // dueDate is a calendar day stored at UTC midnight — see parseLocalDay.
+    const d = parseLocalDay(r.dueDate);
     if (d.getFullYear() !== year || d.getMonth() !== month) continue;
 
     events.push({
@@ -134,7 +147,7 @@ export function projectMonthEvents(
     if (sub.status === 'canceled' || sub.status === 'paused') continue;
     if (!sub.renewalDate) continue;
 
-    const anchor = startOfDay(new Date(sub.renewalDate));
+    const anchor = parseLocalDay(sub.renewalDate);
     if (Number.isNaN(anchor.getTime())) continue;
 
     const amount = sub.amountCents ?? priceBySubId.get(sub.id) ?? 0;

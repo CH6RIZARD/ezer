@@ -22,8 +22,22 @@
 import { FastifyInstance } from 'fastify';
 import { createHmac, timingSafeEqual } from 'crypto';
 import { prisma } from '@ezer/db';
-import { onTransferEvent } from '../services/savingsEngine';
+import { onTransferEvent, type ProcessorClient } from '../services/savingsEngine';
 import { onInstallmentTransferEvent } from '../services/installmentEngine';
+
+/**
+ * Same stub as routes/savings.ts / routes/installments.ts — no ACH provider
+ * is contracted yet. Needed here because the installment handler may
+ * re-originate a bounced debit (its single in-grace retry).
+ */
+const stubProcessor: ProcessorClient = {
+  async originateDebit({ idempotencyKey }) {
+    return { externalId: `stub_debit_${idempotencyKey.slice(0, 24)}` };
+  },
+  async originateCredit({ idempotencyKey }) {
+    return { externalId: `stub_credit_${idempotencyKey.slice(0, 24)}` };
+  },
+};
 
 /** Reject anything signed outside this window — bounds replay attacks. */
 const MAX_SKEW_MS = 5 * 60 * 1000;
@@ -101,10 +115,13 @@ export async function processorWebhookRoutes(server: FastifyInstance) {
       return reject(400, 'MISSING_FIELDS');
     }
 
-    // Idempotency: insert first. A unique violation means we have already seen
-    // this event, so return 2xx immediately and do NOT re-run the handler.
-    // Processors retry on any non-2xx and on timeouts; double-processing a
-    // settlement would double-credit a goal, which is unrecoverable.
+    // Idempotency: insert first. A unique violation means we have seen this
+    // eventId before — but "seen" is only "applied" once processedAt is set.
+    // A receipt with processedAt null is a delivery that died mid-handler, so
+    // that one re-runs the handlers (they are idempotent: every status flip
+    // is a CAS). Only a PROCESSED duplicate gets the early 2xx; returning 2xx
+    // on the unprocessed one would dedupe the retry that was going to finish
+    // the job.
     try {
       await prisma.processorWebhookEvent.create({
         data: {
@@ -115,8 +132,15 @@ export async function processorWebhookRoutes(server: FastifyInstance) {
         },
       });
     } catch {
-      request.log.info({ ip, eventId: payload.eventId }, 'duplicate webhook ignored');
-      return reply.status(200).send({ success: true, duplicate: true });
+      const existing = await prisma.processorWebhookEvent.findUnique({
+        where: { eventId: payload.eventId },
+      });
+      if (!existing) return reject(500, 'RECEIPT_WRITE_FAILED'); // insert failed for a non-duplicate reason
+      if (existing.processedAt) {
+        request.log.info({ ip, eventId: payload.eventId }, 'duplicate webhook ignored');
+        return reply.status(200).send({ success: true, duplicate: true });
+      }
+      request.log.info({ ip, eventId: payload.eventId }, 'unprocessed duplicate — re-running handlers');
     }
 
     if (payload.type !== 'settled' && payload.type !== 'returned') {
@@ -127,16 +151,31 @@ export async function processorWebhookRoutes(server: FastifyInstance) {
 
     // Both are safe to call for every event: each looks the transfer up and
     // no-ops unless it owns that transfer's domain (installmentId vs goalId).
-    await onTransferEvent({
+    const savingsResult = await onTransferEvent({
       externalId: payload.externalId,
       type: payload.type,
       returnCode: payload.returnCode,
     });
-    await onInstallmentTransferEvent({
-      externalId: payload.externalId,
-      type: payload.type,
-      returnCode: payload.returnCode,
-    });
+    const installmentResult = await onInstallmentTransferEvent(
+      {
+        externalId: payload.externalId,
+        type: payload.type,
+        returnCode: payload.returnCode,
+      },
+      stubProcessor
+    );
+
+    if (savingsResult === 'NOT_FOUND' && installmentResult === 'NOT_FOUND') {
+      // NEITHER engine knows this transfer — most likely the webhook raced
+      // origination's own externalId write. A 2xx here would be fatal: the
+      // receipt row would dedupe the processor's retry and the settlement
+      // would be lost forever. Delete the receipt so the retry is fresh, and
+      // 5xx so there IS a retry.
+      await prisma.processorWebhookEvent
+        .delete({ where: { eventId: payload.eventId } })
+        .catch(() => {});
+      return reject(500, 'TRANSFER_NOT_FOUND');
+    }
 
     await prisma.processorWebhookEvent.update({
       where: { eventId: payload.eventId },

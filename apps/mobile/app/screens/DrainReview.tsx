@@ -42,6 +42,7 @@ import { fontFamily, typeScale, radius, layout } from '../../theme/type';
 import { Body, Label, Surface, PressScale, ScreenBody } from '../../components/redesign/Primitives';
 import MerchantMark from '../../components/redesign/MerchantMark';
 import { useData } from '../../contexts/DataContext';
+import { parseLocalDay } from '../../utils/calendarEvents';
 import {
   resolveCancellationUrl,
   resolveCancellationUrlSync,
@@ -228,7 +229,9 @@ export default function DrainReviewScreen() {
       }
 
       if (snap.renewalDate) {
-        const daysPast = (now - new Date(snap.renewalDate).getTime()) / 86_400_000;
+        // renewalDate is a calendar day at UTC midnight; parse it as a local
+        // day so "2+ days past due" doesn't shift by a timezone offset.
+        const daysPast = (now - parseLocalDay(snap.renewalDate).getTime()) / 86_400_000;
         if (daysPast >= AUTO_CLEAR_DAYS) {
           // Due date passed with no new cycle — confirmed cancelled.
           delete nextSnap[id];

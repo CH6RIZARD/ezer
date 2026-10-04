@@ -50,9 +50,59 @@ function resolveApiBaseUrl(): string {
 
 const BASE_URL = resolveApiBaseUrl();
 export const TOKEN_KEY = '@ezer_jwt';
+// SecureStore keys may only contain [A-Za-z0-9._-], so the native key drops the '@'.
+const SECURE_TOKEN_KEY = 'ezer_jwt';
+/** No response at all within this window reads the same as "network down". */
+const REQUEST_TIMEOUT_MS = 15_000;
+
+// A 7-day session JWT belongs in the keychain/keystore, not AsyncStorage's
+// plain file. SecureStore has no web implementation, so web keeps AsyncStorage
+// (the browser has no better primitive for an SPA anyway). Guarded require,
+// same idiom as PremiumContext.native.tsx, so a bundle built before the module
+// is installed degrades instead of crashing at import time.
+// ponytail: silently falls back to AsyncStorage when the native module is
+// missing (old dev client); drop the fallback once every binary ships
+// expo-secure-store.
+let SecureStore: { getItemAsync: (k: string) => Promise<string | null>; setItemAsync: (k: string, v: string) => Promise<void>; deleteItemAsync: (k: string) => Promise<void> } | null = null;
+if (Platform.OS !== 'web') {
+  try {
+    SecureStore = require('expo-secure-store');
+  } catch {}
+}
+
+/** One-shot migration guard: only the first read checks the legacy key. */
+let migrated = false;
+
+async function getToken(): Promise<string | null> {
+  if (!SecureStore) return AsyncStorage.getItem(TOKEN_KEY);
+  let token = await SecureStore.getItemAsync(SECURE_TOKEN_KEY);
+  if (!token && !migrated) {
+    // Sessions minted before SecureStore existed live under the old
+    // AsyncStorage key — move them across once and delete the plain copy.
+    const legacy = await AsyncStorage.getItem(TOKEN_KEY);
+    if (legacy) {
+      await SecureStore.setItemAsync(SECURE_TOKEN_KEY, legacy);
+      await AsyncStorage.removeItem(TOKEN_KEY);
+      token = legacy;
+    }
+  }
+  migrated = true;
+  return token;
+}
+
+async function setToken(token: string): Promise<void> {
+  if (!SecureStore) return AsyncStorage.setItem(TOKEN_KEY, token);
+  await SecureStore.setItemAsync(SECURE_TOKEN_KEY, token);
+}
+
+async function clearToken(): Promise<void> {
+  if (!SecureStore) return AsyncStorage.removeItem(TOKEN_KEY);
+  // Both, so a half-migrated device can't resurrect a logged-out session.
+  await Promise.all([SecureStore.deleteItemAsync(SECURE_TOKEN_KEY), AsyncStorage.removeItem(TOKEN_KEY)]);
+}
 
 async function request<T>(method: string, path: string, body?: any): Promise<T> {
-  const token = await AsyncStorage.getItem(TOKEN_KEY);
+  const token = await getToken();
   const headers: Record<string, string> = {};
   // Fastify's body parser rejects a request outright — 400, before the route
   // handler runs — when Content-Type: application/json arrives with no body.
@@ -64,17 +114,26 @@ async function request<T>(method: string, path: string, body?: any): Promise<T> 
   if (token) headers['Authorization'] = `Bearer ${token}`;
 
   let res: Response;
+  // Same timeout idiom as utils/cancellation.ts probe(): without it a dead
+  // link hangs every caller forever instead of surfacing the error below.
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   try {
     res = await fetch(`${BASE_URL}${path}`, {
       method,
       headers,
       body: body !== undefined ? JSON.stringify(body) : undefined,
+      signal: controller.signal,
     });
   } catch {
-    // fetch only rejects when the request never reached a server. Reporting
-    // that as "invalid password" — which is what callers used to do with any
-    // thrown error — sends people to reset a password that was always correct.
+    // fetch only rejects when the request never reached a server (an abort on
+    // timeout lands here too, which is the same situation from the caller's
+    // seat). Reporting that as "invalid password" — which is what callers used
+    // to do with any thrown error — sends people to reset a password that was
+    // always correct.
     throw new Error(`Cannot reach the server at ${BASE_URL}. Check your connection.`);
+  } finally {
+    clearTimeout(timer);
   }
 
   let json: any;
@@ -114,7 +173,7 @@ export const api = {
   // while the privacy policy promised users could delete from inside the app.
   del: <T>(path: string) => request<T>('DELETE', path),
 
-  setToken: (token: string) => AsyncStorage.setItem(TOKEN_KEY, token),
-  clearToken: () => AsyncStorage.removeItem(TOKEN_KEY),
-  getToken: () => AsyncStorage.getItem(TOKEN_KEY),
+  setToken,
+  clearToken,
+  getToken,
 };

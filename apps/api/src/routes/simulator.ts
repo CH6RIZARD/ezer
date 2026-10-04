@@ -1,7 +1,15 @@
-import { FastifyInstance } from 'fastify';
+import { FastifyInstance, FastifyRequest } from 'fastify';
 import { prisma } from '@ezer/db';
-import { signJwt } from '../utils/jwt';
+import { signJwt, verifyJwt, extractTokenFromHeader } from '../utils/jwt';
 import { encrypt } from '../utils/encryption';
+
+// Defense in depth for the mutation routes below: same bypass gate as
+// /dev-login (they are already unregistered in production), and when the
+// caller does carry a JWT, the mutation is scoped to that user's own rows.
+function authedUserId(request: FastifyRequest): string | null {
+  const token = extractTokenFromHeader(request.headers.authorization);
+  return (token && verifyJwt(token)?.userId) || null;
+}
 
 export async function simulatorRoutes(server: FastifyInstance) {
   // POST /simulator/seed
@@ -205,10 +213,21 @@ export async function simulatorRoutes(server: FastifyInstance) {
 
   // POST /simulator/auto-cancel/:trialId
   server.post<{ Params: { trialId: string } }>('/auto-cancel/:trialId', async (request, reply) => {
-    const { trialId } = request.params;
+    if (process.env.DEV_OAUTH_BYPASS !== 'true') {
+      return reply.status(403).send({
+        success: false,
+        error: 'DEV_OAUTH_BYPASS must be enabled',
+      });
+    }
 
-    const trial = await prisma.trial.findUnique({
-      where: { id: trialId },
+    const { trialId } = request.params;
+    const userId = authedUserId(request);
+
+    const trial = await prisma.trial.findFirst({
+      where: {
+        id: trialId,
+        ...(userId ? { subscription: { userId } } : {}),
+      },
       include: {
         subscription: true,
         decisionRule: true,
@@ -247,10 +266,21 @@ export async function simulatorRoutes(server: FastifyInstance) {
   server.post<{ Params: { subscriptionId: string } }>(
     '/mark-canceled/:subscriptionId',
     async (request, reply) => {
-      const { subscriptionId } = request.params;
+      if (process.env.DEV_OAUTH_BYPASS !== 'true') {
+        return reply.status(403).send({
+          success: false,
+          error: 'DEV_OAUTH_BYPASS must be enabled',
+        });
+      }
 
-      const subscription = await prisma.subscription.findUnique({
-        where: { id: subscriptionId },
+      const { subscriptionId } = request.params;
+      const userId = authedUserId(request);
+
+      const subscription = await prisma.subscription.findFirst({
+        where: {
+          id: subscriptionId,
+          ...(userId ? { userId } : {}),
+        },
       });
 
       if (!subscription) {

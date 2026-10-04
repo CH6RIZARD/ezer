@@ -49,7 +49,12 @@ export default function ReallocateScreen() {
   };
 
   const handleCreateGoal = () => {
-    router.replace({ pathname: '/(tabs)/saved', params: { openCreate: '1' } });
+    // Nonce param pattern from payin4.tsx: the savings tab stays mounted, so
+    // a bare flag would only open the sheet the first time ever.
+    router.replace({
+      pathname: '/(tabs)/savings',
+      params: { create: '1', t: String(Date.now()) },
+    });
   };
 
   const handleAssign = async () => {

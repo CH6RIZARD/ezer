@@ -36,7 +36,7 @@ import MerchantMark from '../../components/redesign/MerchantMark';
 import DayPopover, { type DayEvent } from '../../components/redesign/DayPopover';
 import RotatingTile from '../../components/redesign/RotatingTile';
 import { useSavingsGoals } from '../../utils/SavingsGoalsContext';
-import { projectMonthEvents, groupEventsByDay } from '../../utils/calendarEvents';
+import { projectMonthEvents, groupEventsByDay, parseLocalDay } from '../../utils/calendarEvents';
 import { useConnectBank } from '../../utils/useConnectBank';
 import { useCardFlowStatus } from '../../utils/useCardFlowStatus';
 
@@ -675,7 +675,9 @@ export default function HomeScreen() {
                       </Text>
                       <Text style={[styles.rowMeta, { color: colors.mut }]} numberOfLines={1}>
                         {r.type === 'trial' ? 'Trial' : 'Renewal'} ·{' '}
-                        {new Date(r.dueDate).toLocaleDateString('en-US', {
+                        {/* dueDate is a calendar day at UTC midnight; new Date()
+                            would show the previous day west of UTC. */}
+                        {parseLocalDay(r.dueDate).toLocaleDateString('en-US', {
                           month: 'short',
                           day: 'numeric',
                         })}

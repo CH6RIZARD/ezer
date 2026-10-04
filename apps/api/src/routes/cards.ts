@@ -192,6 +192,14 @@ export async function cardRoutes(server: FastifyInstance) {
   server.get('/access-list', async (request, reply) => {
     const userId = resolveUserId(request);
 
+    // 'anonymous' is one SHARED bucket, not a person — reading its latest row
+    // would hand one signed-out visitor another visitor's assessment. No
+    // token, no stored decision to reconcile; the client's local mirror is
+    // all a pre-signup user has.
+    if (userId === 'anonymous') {
+      return { success: true, data: null };
+    }
+
     const latest = await prisma.cardAccessList.findFirst({
       where: { userId },
       orderBy: { createdAt: 'desc' },

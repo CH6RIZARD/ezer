@@ -1,4 +1,5 @@
 import { FastifyRequest, FastifyReply } from 'fastify';
+import { prisma } from '@ezer/db';
 import { verifyJwt, extractTokenFromHeader } from '../utils/jwt';
 
 export async function authMiddleware(request: FastifyRequest, reply: FastifyReply) {
@@ -11,6 +12,12 @@ export async function authMiddleware(request: FastifyRequest, reply: FastifyRepl
   const payload = verifyJwt(token);
 
   if (!payload) {
+    return reply.status(401).send({ error: 'Invalid or expired token' });
+  }
+
+  // A token can outlive its user (account deletion); don't act for a ghost.
+  const user = await prisma.user.findUnique({ where: { id: payload.userId }, select: { id: true } });
+  if (!user) {
     return reply.status(401).send({ error: 'Invalid or expired token' });
   }
 

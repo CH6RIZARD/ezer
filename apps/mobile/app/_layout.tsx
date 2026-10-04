@@ -17,9 +17,6 @@ import { InstrumentSerif_400Regular_Italic } from '@expo-google-fonts/instrument
 import { AuthProvider } from '../utils/AuthContext';
 import { PremiumProvider } from '../utils/PremiumContext';
 import { ThemeProvider, useTheme } from '../utils/ThemeContext';
-import { DateRangeProvider } from '../utils/DateRangeContext';
-import { CashAdvanceProvider } from '../contexts/CashAdvanceContext';
-import { SubscriptionsProvider } from '../contexts/SubscriptionsContext';
 import { DataProvider } from '../contexts/DataContext';
 import { SavingsGoalsProvider } from '../utils/SavingsGoalsContext';
 
@@ -96,7 +93,6 @@ function RootLayoutNav() {
           <Stack.Screen name="screens/Reallocate" />
           <Stack.Screen name="screens/GoalDetail" />
           <Stack.Screen name="screens/TrialDecision" />
-          <Stack.Screen name="screens/CashAdvanceFlow" />
           <Stack.Screen name="screens/MonthlyBurn" />
           <Stack.Screen name="screens/RiskDetail" />
           <Stack.Screen name="screens/SilentSubscriptions" />
@@ -138,19 +134,13 @@ export default function RootLayout() {
       <SafeAreaProvider>
         <AuthProvider>
           <PremiumProvider>
-            <DateRangeProvider>
-              <DataProvider>
-              <CashAdvanceProvider>
-                <SubscriptionsProvider>
-                  <SavingsGoalsProvider>
-                    <AppErrorBoundary>
-                      <RootLayoutNav />
-                    </AppErrorBoundary>
-                  </SavingsGoalsProvider>
-                </SubscriptionsProvider>
-              </CashAdvanceProvider>
-              </DataProvider>
-            </DateRangeProvider>
+            <DataProvider>
+              <SavingsGoalsProvider>
+                <AppErrorBoundary>
+                  <RootLayoutNav />
+                </AppErrorBoundary>
+              </SavingsGoalsProvider>
+            </DataProvider>
           </PremiumProvider>
         </AuthProvider>
       </SafeAreaProvider>

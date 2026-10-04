@@ -64,6 +64,13 @@ export async function inboxRoutes(server: FastifyInstance) {
       const canonicalName = normalizeMerchantName(stripReferenceNumbers(item.merchant));
       if (!canonicalName) continue;
 
+      // item.cancelUrl is deliberately NOT written anywhere: Merchant rows are
+      // GLOBAL (unique by canonicalName, served to every user), so a
+      // client-supplied URL landing in cancellationPlaybook is a stored
+      // phishing link the mobile app would open first. Curated playbooks stay
+      // read-only from this route.
+      // ponytail: per-user cancelUrl on the Subscription row is the upgrade
+      // path if the product wants user-sourced links back.
       let merchant = await prisma.merchant.findUnique({ where: { canonicalName } });
       if (!merchant) {
         merchant = await prisma.merchant.create({
@@ -71,13 +78,7 @@ export async function inboxRoutes(server: FastifyInstance) {
             canonicalName,
             fingerprintKeys: { patterns: [canonicalName] },
             cancellationDifficulty: 3,
-            cancellationPlaybook: item.cancelUrl ? { url: item.cancelUrl } : undefined,
           },
-        });
-      } else if (item.cancelUrl && !(merchant.cancellationPlaybook as { url?: string } | null)?.url) {
-        merchant = await prisma.merchant.update({
-          where: { id: merchant.id },
-          data: { cancellationPlaybook: { ...((merchant.cancellationPlaybook as object) || {}), url: item.cancelUrl } },
         });
       }
 

@@ -43,10 +43,15 @@ async function start() {
     // Ensure uploads directory exists
     await ensureUploadsDir();
 
-    // Register plugins
+    // Register plugins.
+    // CORS only matters for browser callers — the native app sends no Origin.
+    // Unset CORS_ORIGINS means no cross-origin browser access at all.
+    const corsOrigins = (process.env.CORS_ORIGINS || '')
+      .split(',')
+      .map((value) => value.trim())
+      .filter(Boolean);
     await server.register(cors, {
-      origin: true,
-      credentials: true,
+      origin: corsOrigins.length > 0 ? corsOrigins : false,
     });
 
     await server.register(multipart, {
@@ -58,6 +63,12 @@ async function start() {
     await server.register(rateLimit, {
       max: 100,
       timeWindow: '1 minute',
+      // preHandler (not the default onRequest) so per-route keyGenerators on
+      // /auth can key by request.body.email, which only exists after parsing.
+      hook: 'preHandler',
+      // The processor webhook authenticates by HMAC and retries on non-2xx;
+      // throttling it would delay settlements, not stop an attacker.
+      allowList: (request) => request.url.startsWith('/webhooks/'),
     });
 
     // Health check

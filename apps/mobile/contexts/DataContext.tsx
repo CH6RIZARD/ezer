@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useCallback, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useCallback, useEffect, useMemo, useRef, ReactNode } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { api } from '../utils/api';
 import { useAuth } from '../utils/AuthContext';
@@ -167,7 +167,13 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
   const [state, setState] = useState<DataState>(EMPTY_STATE);
 
+  // Stamped on every refresh entry; a snapshot from an older stamp never
+  // commits. Covers the logout race (stale authed data landing after sign-out
+  // already cleared the state) and two interleaved refreshes mixing snapshots.
+  const refreshSeq = useRef(0);
+
   const refresh = useCallback(async () => {
+    const seq = ++refreshSeq.current;
     // No session means nothing to fetch. `isEmpty` drives the "connect an
     // account" state rather than any placeholder figures.
     if (!isAuthenticated) {
@@ -189,6 +195,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
       api.get<{ success: boolean; data: FundingInstrument[] }>('/wallet/instruments'),
       api.get<{ success: boolean; data: Subscription[] }>('/subscriptions'),
     ]);
+
+    // A newer refresh (or a logout) owns the state now — drop this snapshot.
+    if (seq !== refreshSeq.current) return;
 
     const valueOf = <T,>(r: PromiseSettledResult<any>, fallback: T): T =>
       r.status === 'fulfilled' ? ((r.value as any)?.data ?? fallback) : fallback;
@@ -316,11 +325,14 @@ export function DataProvider({ children }: { children: ReactNode }) {
     };
   }, [isAuthenticated, refresh]);
 
-  return (
-    <DataContext.Provider value={{ ...state, refresh, getInstrumentSummary, getMerchants }}>
-      {children}
-    </DataContext.Provider>
+  // Stable identity: the functions are already useCallback'd, so only a real
+  // state change should re-render useData consumers.
+  const value = useMemo(
+    () => ({ ...state, refresh, getInstrumentSummary, getMerchants }),
+    [state, refresh, getInstrumentSummary, getMerchants]
   );
+
+  return <DataContext.Provider value={value}>{children}</DataContext.Provider>;
 }
 
 export function useData() {

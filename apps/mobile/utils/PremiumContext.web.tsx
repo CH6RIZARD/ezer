@@ -7,8 +7,6 @@ import React, { createContext, useContext, useState, useEffect, useCallback, Rea
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   TRIAL_DURATION_DAYS,
-  TRIAL_CASH_ADVANCE_LIMIT,
-  PREMIUM_CASH_ADVANCE_LIMIT,
   ASYNC_STORAGE_KEYS,
 } from './revenueCatConfig';
 import type { PremiumStatus } from '../types';
@@ -23,7 +21,6 @@ interface PremiumContextType {
   isPremium: () => boolean;
   isTrialActive: () => boolean;
   canAccessFeature: () => boolean;
-  getCashAdvanceLimit: () => number;
   purchasePremium: () => Promise<boolean>;
   restorePurchases: () => Promise<boolean>;
   redeemDevCode: (code: string) => Promise<string | null>;
@@ -87,17 +84,6 @@ export function PremiumProvider({ children }: { children: ReactNode }) {
   const isTrialActive = useCallback(() => status === 'trial', [status]);
   const canAccessFeature = useCallback(() => status === 'trial' || status === 'premium', [status]);
 
-  const getCashAdvanceLimit = useCallback(() => {
-    switch (status) {
-      case 'premium':
-        return PREMIUM_CASH_ADVANCE_LIMIT;
-      case 'trial':
-        return TRIAL_CASH_ADVANCE_LIMIT;
-      default:
-        return 0;
-    }
-  }, [status]);
-
   const purchasePremium = async (): Promise<boolean> => {
     // Web: no IAP; could redirect to a web paywall later
     return false;
@@ -137,7 +123,6 @@ export function PremiumProvider({ children }: { children: ReactNode }) {
         isPremium,
         isTrialActive,
         canAccessFeature,
-        getCashAdvanceLimit,
         purchasePremium,
         restorePurchases,
         redeemDevCode,

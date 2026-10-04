@@ -6,22 +6,20 @@ Turn subscriptions into explicit decisions. EZER is a production-ready subscript
 
 ### Core Features (Tier 1 - Fully Implemented)
 
-- **Pre-Trial Intercept**: Detect new trials via email/SMS/transaction parsing and prompt users to set auto-cancel rules
+- **Pre-Trial Intercept**: Detect new trials via email/transaction parsing and prompt users to set auto-cancel rules
 - **Funding-First Wallet UI**: Visual card carousel showing subscription drains by funding instrument
 - **Direct Cancellation Spine**: Guided cancel flow with proof upload and confirmation tracking
 - **Price-Drain Timeline**: Historical cost analysis with investment opportunity cost calculator (7% annualized)
 - **Reallocation Engine**: Redirect canceled subscription amounts to savings, debt, investing, or intentional subscriptions
 
 ### Data Intake
-- Email parsing (Gmail API, Outlook Graph API, IMAP fallback)
-- SMS parsing (Twilio webhook)
+- On-device inbox scan (Gmail API, Outlook Graph API) — raw email never leaves the device
 - Transaction CSV import with recurrence detection
-- .eml file upload support
 
 ### OAuth & Security
 - Google OAuth (Sign-in + Gmail API)
 - Microsoft OAuth (Sign-in + Outlook Graph API)
-- Apple Sign-In (with Gmail/Outlook/IMAP connector)
+- Apple Sign-In
 - AES-256-GCM encryption for stored tokens
 - JWT-based authentication
 - DEV_OAUTH_BYPASS mode for local development
@@ -39,7 +37,7 @@ ezer/
 │   ├── db/              # Prisma schema & migrations
 │   ├── shared/          # Shared types, utils, Zod schemas
 │   ├── ui/              # React Native UI components
-│   └── worker/          # BullMQ background jobs
+│   └── worker/          # BullMQ job scaffolding (not wired up — nothing enqueues yet)
 └── docker-compose.yml   # Postgres + Redis
 ```
 
@@ -48,14 +46,14 @@ ezer/
 - **Frontend**: Expo, React Native, TypeScript
 - **Backend**: Fastify, Node.js, TypeScript
 - **Database**: PostgreSQL (Prisma ORM)
-- **Queue**: Redis + BullMQ
+- **Queue**: Redis + BullMQ (scaffolding only; the API does not enqueue jobs yet)
 - **Auth**: OAuth 2.0 (Google, Microsoft, Apple)
 - **Storage**: Local filesystem for uploads
 
 ## Prerequisites
 
 - Node.js >= 18
-- pnpm >= 8
+- pnpm >= 9 (repo pins pnpm@9.15.0 via packageManager)
 - Docker & Docker Compose
 
 ## Quick Start
@@ -112,7 +110,7 @@ pnpm db:seed
 ### 4. Start Development
 
 ```bash
-# Start all services (API, Worker, Mobile)
+# Start all services (API, Mobile; the Worker package starts but idles — see packages/worker)
 pnpm dev
 ```
 
@@ -370,15 +368,15 @@ React Native components with theme tokens. Includes Button, Card, Text component
 ### apps/api
 Fastify server with:
 - OAuth routes (Google, Microsoft, Apple)
-- Inbox connection routes (Gmail, Outlook, IMAP)
+- Inbox connection routes (Gmail, Outlook)
 - Wallet routes (funding instruments, drain summaries)
 - Core routes (home, risks, trials, subscriptions)
 - Cancel routes (attempts, proof upload, confirmation)
-- Ingest routes (email, SMS, CSV)
+- Ingest routes (CSV)
 - Simulator routes (dev login, mock inbox)
 
 ### packages/worker
-BullMQ workers for:
+BullMQ job scaffolding — nothing in the API enqueues to it yet; wire it or delete it. Written for:
 - Email parsing (extract merchant, amount, trial dates, funding hints)
 - SMS parsing
 - CSV import processing

@@ -7,6 +7,13 @@ export type OAuthIdentity = {
   providerUserId: string;
   email: string;
   name?: string | null;
+  /**
+   * True only when the PROVIDER attests ownership of this email (Google
+   * email_verified, Apple token email, Microsoft xms_edov / MSA tenant).
+   * An unverified email may create a brand-new account but must NEVER be
+   * used to link into an existing one — that is the nOAuth account takeover.
+   */
+  emailVerified: boolean;
 };
 
 export type AuthSessionResponse = {
@@ -36,7 +43,15 @@ export async function upsertOAuthUser(identity: OAuthIdentity): Promise<AuthSess
   let user = existingAccount?.user ?? null;
 
   if (!user) {
-    user = await prisma.user.findUnique({ where: { email } });
+    const userWithEmail = await prisma.user.findUnique({ where: { email } });
+    if (userWithEmail) {
+      if (!identity.emailVerified) {
+        // The provider did not verify ownership of this email, so it cannot
+        // be a key into someone else's account.
+        throw new Error('This email is already registered; sign in with your original method');
+      }
+      user = userWithEmail;
+    }
   }
 
   if (!user) {

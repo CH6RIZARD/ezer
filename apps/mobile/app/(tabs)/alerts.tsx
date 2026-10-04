@@ -6,15 +6,15 @@
 // Upcoming renewals: purple Act button. Both open Subscription Detail.
 // =============================================================================
 
-import React, { useEffect } from 'react';
+import React from 'react';
 import { View, Text, ScrollView, StyleSheet } from 'react-native';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../../utils/ThemeContext';
 import { usePremiumGate } from '../../utils/usePremiumGate';
-import { usePremium } from '../../utils/PremiumContext';
 import { useData, type RiskItem } from '../../contexts/DataContext';
 import { formatCents } from '../../utils/calculations';
+import { parseLocalDay } from '../../utils/calendarEvents';
 import { fontFamily, typeScale, radius, layout } from '../../theme/type';
 import {
   Body,
@@ -29,7 +29,6 @@ import MerchantMark from '../../components/redesign/MerchantMark';
 export default function AlertsScreen() {
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
-  const { status: premiumStatus } = usePremium();
   const { risks } = useData();
 
   usePremiumGate();
@@ -66,7 +65,9 @@ export default function AlertsScreen() {
           >
             {isTrial
               ? `Ends in ${r.daysUntilDue}d`
-              : `Renews in ${r.daysUntilDue}d · ${new Date(r.dueDate).toLocaleDateString('en-US', {
+              : // dueDate is a calendar day at UTC midnight; new Date() would
+                // show the previous day west of UTC.
+                `Renews in ${r.daysUntilDue}d · ${parseLocalDay(r.dueDate).toLocaleDateString('en-US', {
                   month: 'short',
                   day: 'numeric',
                 })}`}

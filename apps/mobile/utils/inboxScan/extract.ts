@@ -90,15 +90,36 @@ function merchantFor(from: string): { name: string; known: boolean } | null {
 
 const CURRENCY_SYMBOL: Record<string, string> = { $: 'USD', '€': 'EUR', '£': 'GBP' };
 
+// Both separator conventions, with a trailing digit boundary: without the
+// (?!\d) lookahead "€1.234,56" parsed as 1.23 — the match stopped after two
+// decimal-looking digits with more digits still to come.
+const AMOUNT_NUM = '\\d{1,5}(?:[.,]\\d{3})*(?:[.,]\\d{1,2})?';
+
+/** '1,234.56' and '1.234,56' → cents. The last separator followed by 1-2
+ *  digits is the decimal mark; every other separator groups thousands. */
+function amountToCents(raw: string): number {
+  const m = raw.match(/^(.+)[.,](\d{1,2})$/);
+  const whole = (m ? m[1] : raw).replace(/[.,]/g, '');
+  const frac = m ? m[2].padEnd(2, '0') : '00';
+  return parseInt(whole, 10) * 100 + parseInt(frac, 10);
+}
+
 function findAmount(text: string): { cents: number; currency: string } | null {
-  const re = /(?:(US|CA|A)?([$€£])\s?(\d{1,5}(?:,\d{3})*(?:\.\d{2})?))|(?:\b(USD|EUR|GBP|CAD|AUD)\s?(\d{1,5}(?:,\d{3})*(?:\.\d{2})?))/g;
+  const re = new RegExp(
+    `(?:(US|CA|A)?([$€£])\\s?(${AMOUNT_NUM})(?!\\d))|(?:\\b(USD|EUR|GBP|CAD|AUD)\\s?(${AMOUNT_NUM})(?!\\d))`,
+    'g'
+  );
   const hits: { cents: number; currency: string; index: number }[] = [];
   for (let m; (m = re.exec(text)); ) {
-    const raw = (m[3] ?? m[5]).replace(/,/g, '');
+    // A credit is not a price: skip "-$9.99" and amounts in refund context,
+    // or a refund receipt reads as what the subscription costs.
+    if (/[-−]\s*$/.test(text.slice(Math.max(0, m.index - 3), m.index))) continue;
+    if (/\brefund(ed|s)?\b/i.test(text.slice(Math.max(0, m.index - 30), m.index))) continue;
+    const raw = m[3] ?? m[5];
     let currency = m[4] ?? CURRENCY_SYMBOL[m[2]] ?? 'USD';
     if (m[1] === 'CA') currency = 'CAD';
     if (m[1] === 'A') currency = 'AUD';
-    const cents = Math.round(parseFloat(raw) * 100);
+    const cents = amountToCents(raw);
     if (cents > 0) hits.push({ cents, currency, index: m.index });
   }
   if (!hits.length) return null;
@@ -226,8 +247,11 @@ export function htmlToText(html: string): { text: string; links: string[] } {
     .replace(/<br\s*\/?>|<\/(p|div|tr|li|h\d)>/gi, '\n')
     .replace(/<[^>]+>/g, ' ')
     .replace(/&nbsp;/g, ' ')
+    // Numeric entities BEFORE &amp;, so "&amp;#8364;" (literal text) is not
+    // double-decoded into €. Covers &#8364; / &#163; / &#36; and friends.
+    .replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(Number(n)))
+    .replace(/&#x([0-9a-f]+);/gi, (_, n) => String.fromCodePoint(parseInt(n, 16)))
     .replace(/&amp;/g, '&')
-    .replace(/&#36;/g, '$')
     .replace(/&euro;/g, '€')
     .replace(/&pound;/g, '£')
     .replace(/[ \t]+/g, ' ')

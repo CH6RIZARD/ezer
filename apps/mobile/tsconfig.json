@@ -2,6 +2,10 @@
   "extends": "expo/tsconfig.base",
   "compilerOptions": {
     "strict": true,
+    // Resolve platform-split modules (PremiumContext.native.tsx) for bare
+    // './PremiumContext' imports — tsc checks the native variant, matching
+    // what Metro bundles on device. The .web variant is bundler-resolved.
+    "moduleSuffixes": [".native", ""],
     "baseUrl": ".",
     "paths": {
       "@/*": ["./*"]

@@ -12,13 +12,6 @@ export const devLoginSchema = z.object({
   provider: authProviderSchema,
 });
 
-export const connectImapSchema = z.object({
-  host: z.string(),
-  port: z.number(),
-  email: z.string().email(),
-  password: z.string(),
-});
-
 // ============================================================================
 // Wallet Schemas
 // ============================================================================
@@ -111,12 +104,6 @@ export const ingestCsvSchema = z.object({
   ),
 });
 
-export const ingestSmsSchema = z.object({
-  from: z.string(),
-  body: z.string(),
-  timestamp: z.string(),
-});
-
 export const pullGmailSchema = z.object({
   maxResults: z.number().optional().default(100),
   afterDate: z.string().optional(),
@@ -137,7 +124,12 @@ export const detectedSubscriptionSchema = z.object({
   cadence: z.enum(['monthly', 'yearly', 'weekly', 'unknown']),
   nextChargeDate: z.string().datetime().nullable(),
   trialEndsAt: z.string().datetime().nullable(),
-  cancelUrl: z.string().url().max(500).nullable(),
+  cancelUrl: z
+    .string()
+    .url()
+    .max(500)
+    .refine(u => u.startsWith('https://'), 'cancelUrl must be https')
+    .nullable(),
   source: z.enum(['gmail', 'outlook']),
   confidence: z.number().min(0).max(1),
 });

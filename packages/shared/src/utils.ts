@@ -214,7 +214,10 @@ export function calculateInvestmentOpportunityCost(
   let total = 0;
 
   for (let i = 0; i < monthsElapsed; i++) {
-    total += monthlyAmountCents * Math.pow(1 + monthlyRate, monthsElapsed - i);
+    // Contribution i is invested at the END of month i+1 (the money only
+    // exists once the subscription payment is skipped), so the last one has
+    // had 0 months of growth — 1 month elapsed returns exactly the amount.
+    total += monthlyAmountCents * Math.pow(1 + monthlyRate, monthsElapsed - i - 1);
   }
 
   return Math.round(total);

@@ -49,6 +49,8 @@ export async function verifyGoogleIdToken(idToken: string): Promise<VerifiedGoog
     providerUserId: payload.sub,
     email: payload.email,
     name: payload.name || null,
-    emailVerified: Boolean(payload.email_verified ?? true),
+    // Absent is NOT verified: only an explicit true from Google makes this
+    // email safe to use as an account-linking key.
+    emailVerified: payload.email_verified === true,
   };
 }

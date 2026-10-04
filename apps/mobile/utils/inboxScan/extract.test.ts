@@ -130,6 +130,47 @@ test('Personal mail host with no display name is dropped', () => {
   assert.equal(r, null);
 });
 
+test('Refunded amount is not a price', () => {
+  const r = extractSubscription({
+    from: 'Netflix <info@account.netflix.com>',
+    subject: 'Your Netflix refund',
+    text: 'We issued a refund of $15.49 for your membership. Your subscription renews on October 15, 2026.',
+    receivedAt: at,
+  });
+  assert.equal(r?.amountCents, null);
+  assert.equal(day(r!.nextChargeDate), '2026-10-15');
+});
+
+test('Negative amount is not a price', () => {
+  const r = extractSubscription({
+    from: 'Spotify <no-reply@spotify.com>',
+    subject: 'Your Spotify Premium receipt',
+    text: 'Adjustment -$11.99 applied to your subscription. Billed monthly.',
+    receivedAt: at,
+  });
+  assert.equal(r?.amountCents, null);
+  assert.equal(r?.cadence, 'monthly');
+});
+
+test('European comma-decimal amount with thousands dot', () => {
+  const r = extractSubscription({
+    from: 'Adobe <mail@mail.adobe.com>',
+    subject: 'Your Adobe subscription',
+    text: 'Creative Cloud. Total €1.234,56 per year.',
+    receivedAt: at,
+  });
+  assert.equal(r?.amountCents, 123456);
+  assert.equal(r?.currency, 'EUR');
+  assert.equal(r?.cadence, 'yearly');
+});
+
+test('htmlToText decodes numeric entities', () => {
+  const { text } = htmlToText('<p>Total &#8364;9,99 or &#163;7.99 or &#x24;5</p>');
+  assert.match(text, /€9,99/);
+  assert.match(text, /£7\.99/);
+  assert.match(text, /\$5/);
+});
+
 test('htmlToText keeps links and decodes entities', () => {
   const { text, links } = htmlToText('<p>Total&nbsp;&#36;9.99</p><a href="https://x.com/cancel?a=1&amp;b=2">Cancel</a>');
   assert.match(text, /Total \$9\.99/);

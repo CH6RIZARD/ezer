@@ -122,7 +122,7 @@ export function CustomDateRangeModal({
           {isWeb ? (
             <View style={styles.webRow}>
               <Text style={[styles.label, { color: colors.textSecondary }]}>Start</Text>
-              {typeof document !== 'undefined' && document.createElement ? (
+              {typeof document !== 'undefined' ? (
                 React.createElement('input', {
                   type: 'date',
                   value: webStartStr,
@@ -179,7 +179,7 @@ export function CustomDateRangeModal({
           {isWeb ? (
             <View style={styles.webRow}>
               <Text style={[styles.label, { color: colors.textSecondary }]}>End</Text>
-              {typeof document !== 'undefined' && document.createElement ? (
+              {typeof document !== 'undefined' ? (
                 React.createElement('input', {
                   type: 'date',
                   value: webEndStr,

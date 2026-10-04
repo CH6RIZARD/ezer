@@ -1,6 +1,4 @@
 import { FastifyInstance } from 'fastify';
-import { prisma } from '@ezer/db';
-import { encrypt } from '../utils/encryption';
 import { authMiddleware } from '../middleware/auth';
 
 export async function connectRoutes(server: FastifyInstance) {
@@ -104,38 +102,7 @@ export async function connectRoutes(server: FastifyInstance) {
     });
   });
 
-  // POST /connect/imap
-  server.post<{
-    Body: { host: string; port: number; email: string; password: string };
-  }>('/imap', async (request, reply) => {
-    const userId = (request as any).userId;
-    const { host, port, email, password } = request.body;
-
-    if (!host || !port || !email || !password) {
-      return reply.status(400).send({ success: false, error: 'Missing IMAP credentials' });
-    }
-
-    // Encrypt password
-    const encryptedPassword = encrypt(password);
-
-    // Create data source
-    await prisma.dataSource.create({
-      data: {
-        userId,
-        type: 'imap',
-        status: 'active',
-        config: {
-          host,
-          port,
-          email,
-          passwordEnc: encryptedPassword,
-        },
-      },
-    });
-
-    return {
-      success: true,
-      message: 'IMAP connection saved. Email parsing will begin shortly.',
-    };
-  });
+  // /connect/imap was removed: it collected real mailbox passwords (and an
+  // unvalidated host/port — stored SSRF) for an IMAP worker that does not
+  // exist. Inbox scanning happens on-device instead (routes/inbox.ts).
 }

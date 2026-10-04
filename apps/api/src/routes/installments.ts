@@ -17,6 +17,7 @@
 // =============================================================================
 
 import { FastifyInstance } from 'fastify';
+import { timingSafeEqual } from 'crypto';
 import { authMiddleware } from '../middleware/auth';
 import { createPlan, chargeDueInstallments, sweepOverdueInstallments } from '../services/installmentEngine';
 import type { ProcessorClient } from '../services/savingsEngine';
@@ -47,12 +48,24 @@ export async function installmentRoutes(server: FastifyInstance) {
       const userId = (request as unknown as { userId: string }).userId;
       const { totalCents } = request.body || {};
 
-      if (typeof totalCents !== 'number' || !Number.isFinite(totalCents) || totalCents <= 0) {
-        return reply.status(400).send({ success: false, error: 'totalCents must be a positive number' });
+      // Integer cents only — no rounding a float the client chose.
+      if (typeof totalCents !== 'number' || !Number.isInteger(totalCents) || totalCents < 4) {
+        return reply.status(400).send({ success: false, error: 'totalCents must be an integer of at least 4' });
       }
 
-      const { planId } = await createPlan(userId, Math.round(totalCents));
-      return { success: true, data: { planId } };
+      try {
+        const { planId } = await createPlan(userId, totalCents);
+        return { success: true, data: { planId } };
+      } catch (err) {
+        const msg = (err as Error).message;
+        if (msg === 'ACCESS_SUSPENDED' || msg === 'OVER_LIMIT') {
+          return reply.status(403).send({ success: false, error: msg });
+        }
+        if (msg === 'INVALID_AMOUNT') {
+          return reply.status(400).send({ success: false, error: msg });
+        }
+        throw err; // unknown — 500 without echoing internals
+      }
     }
   );
 
@@ -65,13 +78,18 @@ export async function installmentRoutes(server: FastifyInstance) {
       return reply.status(503).send({ success: false, error: 'SWEEP_NOT_CONFIGURED' });
     }
 
-    const provided = String(request.headers['x-sweep-secret'] ?? '');
-    if (provided !== SWEEP_SECRET) {
+    // Constant-time compare, same length-guard pattern as processorWebhook.ts
+    // — `!==` leaks how many leading bytes matched via timing.
+    const provided = Buffer.from(String(request.headers['x-sweep-secret'] ?? ''));
+    const expected = Buffer.from(SWEEP_SECRET);
+    if (provided.length !== expected.length || !timingSafeEqual(provided, expected)) {
       return reply.status(401).send({ success: false, error: 'UNAUTHORIZED' });
     }
 
-    const charged = await chargeDueInstallments(stubProcessor);
+    // Sweep BEFORE charging: a stale, past-grace installment must resolve to
+    // MISSED first, not be charged and then missed in the same request.
     const missed = await sweepOverdueInstallments();
+    const charged = await chargeDueInstallments(stubProcessor);
 
     return { success: true, data: { ...charged, ...missed } };
   });

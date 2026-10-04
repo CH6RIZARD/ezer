@@ -17,9 +17,9 @@
 // belong here.
 // =============================================================================
 
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { View, Text, ScrollView, StyleSheet, Pressable, RefreshControl } from 'react-native';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -73,6 +73,22 @@ export default function SavingsScreen() {
 
   const [moveMode, setMoveMode] = useState<MoveMode | null>(null);
   const [creating, setCreating] = useState(false);
+
+  // Reallocate's "Create a new goal" lands here with ?create=1&t=<nonce> and
+  // should open the goal sheet. Keyed on create+t together — the same nonce
+  // pattern payin4.tsx uses for its sheet param — because this tab screen
+  // stays mounted across tab switches, so the same params pushed twice would
+  // otherwise only open the sheet the very first time.
+  const params = useLocalSearchParams<{ create?: string; t?: string }>();
+  const handledCreateParam = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (params.create !== '1') return;
+    const key = `${params.create}:${params.t ?? ''}`;
+    if (handledCreateParam.current !== key) {
+      handledCreateParam.current = key;
+      setCreating(true);
+    }
+  }, [params.create, params.t]);
 
   const activeGoals = goals.filter(g => g.autoSave);
   const hasGoals = goals.length > 0;

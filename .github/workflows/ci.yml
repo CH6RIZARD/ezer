@@ -1,0 +1,44 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Set up pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@9.15.0 --activate
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma client
+        run: pnpm --filter @ezer/db exec prisma generate
+
+      - name: Build packages
+        run: pnpm --filter @ezer/db build && pnpm --filter @ezer/shared build
+
+      - name: Typecheck API
+        working-directory: apps/api
+        run: npx tsc --noEmit
+
+      - name: Typecheck mobile
+        working-directory: apps/mobile
+        run: npx tsc --noEmit
+
+      - name: Shared tests
+        run: pnpm --filter @ezer/shared test
+
+      - name: Inbox extractor tests
+        run: node --test apps/mobile/utils/inboxScan/extract.test.ts

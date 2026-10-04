@@ -446,21 +446,52 @@ export interface ProcessorEvent {
   returnCode?: string;
 }
 
-export async function onTransferEvent(evt: ProcessorEvent): Promise<void> {
+/**
+ * 'NOT_FOUND' means the event references a transfer this DB has never seen —
+ * the webhook route must NOT ack that with a 2xx, or the processor's retry
+ * gets deduped and the settlement is lost forever. 'OK' covers everything
+ * else, including "not this subsystem's transfer" and "already applied".
+ */
+export type TransferEventResult = 'NOT_FOUND' | 'OK';
+
+/**
+ * Reverse a transfer's ledger rows by writing the exact inverse entries. We
+ * never delete ledger entries — the history of a reversal is itself auditable.
+ */
+async function reverseLedger(tx: Tx, transferId: string): Promise<void> {
+  const entries = await tx.savingsLedgerEntry.findMany({ where: { transferId } });
+  if (entries.length) {
+    await tx.savingsLedgerEntry.createMany({
+      data: entries.map(e => ({
+        transferId,
+        accountId: e.accountId,
+        amountCents: -e.amountCents,
+      })),
+    });
+  }
+}
+
+export async function onTransferEvent(evt: ProcessorEvent): Promise<TransferEventResult> {
   const tr = await prisma.transfer.findUnique({ where: { externalId: evt.externalId } });
-  if (!tr) return;
+  if (!tr) return 'NOT_FOUND';
   // Pay in 4 repayment debits share this table but not this subsystem's
   // semantics — a missed installment must not raise this user's savings
   // buffer or revoke their savings funding source. installmentEngine.ts's own
   // onInstallmentTransferEvent handles these.
-  if (tr.installmentId) return;
+  if (tr.installmentId) return 'OK';
 
   // Webhooks are at-least-once; replaying a settled transfer would double-credit.
-  if (tr.status === 'SETTLED' || tr.status === 'RETURNED') return;
+  if (tr.status === 'SETTLED' || tr.status === 'RETURNED') return 'OK';
 
   if (evt.type === 'settled') {
-    await prisma.$transaction(async tx => {
-      await tx.transfer.update({ where: { id: tr.id }, data: { status: 'SETTLED' } });
+    const applied = await prisma.$transaction(async tx => {
+      // CAS, not read-then-write: a settle and a return racing each other must
+      // resolve to exactly one winner applying ledger effects.
+      const claimed = await tx.transfer.updateMany({
+        where: { id: tr.id, status: { notIn: ['SETTLED', 'RETURNED'] } },
+        data: { status: 'SETTLED' },
+      });
+      if (claimed.count !== 1) return false;
 
       if (tr.direction === 'DEBIT' && tr.goalId) {
         const inTransit = await ensureAccount(tx, tr.userId, 'IN_TRANSIT');
@@ -473,40 +504,35 @@ export async function onTransferEvent(evt: ProcessorEvent): Promise<void> {
         });
         await maybeCompleteGoal(tx, tr.goalId);
       }
+      return true;
     });
-    await prisma.savingsSettings.updateMany({
-      where: { userId: tr.userId },
-      data: { consecutiveFailures: 0 },
-    });
-    return;
+    if (applied) {
+      await prisma.savingsSettings.updateMany({
+        where: { userId: tr.userId },
+        data: { consecutiveFailures: 0 },
+      });
+    }
+    return 'OK';
   }
 
   // returned — R01 NSF, R02 closed, R08 stop payment…
-  await prisma.$transaction(async tx => {
-    await tx.transfer.update({
-      where: { id: tr.id },
+  const applied = await prisma.$transaction(async tx => {
+    const claimed = await tx.transfer.updateMany({
+      where: { id: tr.id, status: { notIn: ['SETTLED', 'RETURNED'] } },
       data: { status: 'RETURNED', returnCode: evt.returnCode ?? null },
     });
-
-    // Reverse by writing the exact inverse rows. We never delete ledger
-    // entries — the history of a reversal is itself auditable.
-    const entries = await tx.savingsLedgerEntry.findMany({ where: { transferId: tr.id } });
-    if (entries.length) {
-      await tx.savingsLedgerEntry.createMany({
-        data: entries.map(e => ({
-          transferId: tr.id,
-          accountId: e.accountId,
-          amountCents: -e.amountCents,
-        })),
-      });
-    }
+    if (claimed.count !== 1) return false;
+    await reverseLedger(tx, tr.id);
+    return true;
   });
+  if (!applied) return 'OK';
 
   await bumpFailureCount(tr.userId);
 
   // Learn from the miss: an NSF means our buffer was too low for this user.
   if (evt.returnCode === 'R01') await raiseMinBuffer(tr.userId);
   if (['R02', 'R03', 'R04'].includes(evt.returnCode ?? '')) await markSourceRevoked(tr.userId);
+  return 'OK';
 }
 
 // =============================================================================
@@ -517,11 +543,23 @@ export async function onTransferEvent(evt: ProcessorEvent): Promise<void> {
  * Withdrawable = settled goal balance MINUS anything still inside the ACH
  * return window. Skip that subtraction and you are paying out money the bank
  * can still claw back.
+ *
+ * The tx-scoped variant exists so withdraw/moveBetweenGoals can recompute
+ * availability INSIDE their transaction, after locking the goal's
+ * InternalAccount row — a read outside the transaction is a TOCTOU window two
+ * concurrent withdrawals both pass.
  */
-export async function withdrawableCents(userId: string, goalId: string): Promise<Cents> {
-  const settled = await goalBalanceCents(userId, goalId);
+async function withdrawableCentsTx(tx: Tx, userId: string, goalId: string): Promise<Cents> {
+  const acct = await tx.internalAccount.findFirst({ where: { userId, kind: 'GOAL', goalId } });
+  if (!acct) return 0;
 
-  const held = await prisma.transfer.aggregate({
+  const agg = await tx.savingsLedgerEntry.aggregate({
+    where: { accountId: acct.id },
+    _sum: { amountCents: true },
+  });
+  const settled = agg._sum.amountCents ?? 0;
+
+  const held = await tx.transfer.aggregate({
     where: {
       userId,
       goalId,
@@ -535,6 +573,20 @@ export async function withdrawableCents(userId: string, goalId: string): Promise
   return Math.max(0, settled - (held._sum.amountCents ?? 0));
 }
 
+export async function withdrawableCents(userId: string, goalId: string): Promise<Cents> {
+  return withdrawableCentsTx(prisma, userId, goalId);
+}
+
+/**
+ * Serialize all balance-spending writes on one goal: lock its InternalAccount
+ * row for the duration of the transaction. Returns the locked account.
+ */
+async function lockGoalAccount(tx: Tx, userId: string, goalId: string) {
+  const acct = await ensureAccount(tx, userId, 'GOAL', goalId);
+  await tx.$queryRaw`SELECT "id" FROM "InternalAccount" WHERE "id" = ${acct.id} FOR UPDATE`;
+  return acct;
+}
+
 export async function withdraw(
   userId: string,
   goalId: string,
@@ -542,9 +594,7 @@ export async function withdraw(
   speed: 'STANDARD' | 'INSTANT',
   processor: ProcessorClient
 ): Promise<{ transferId: string }> {
-  const avail = await withdrawableCents(userId, goalId);
   if (cents <= 0) throw new Error('INVALID_AMOUNT');
-  if (cents > avail) throw new Error('INSUFFICIENT_WITHDRAWABLE');
 
   const src = await getPrimaryFundingSource(userId);
   const key = createHash('sha256')
@@ -552,6 +602,13 @@ export async function withdraw(
     .digest('hex');
 
   const transfer = await prisma.$transaction(async tx => {
+    // Availability is checked INSIDE the transaction, under a row lock on the
+    // goal account — two concurrent withdrawals serialize here and the second
+    // sees the first's debit.
+    await lockGoalAccount(tx, userId, goalId);
+    const avail = await withdrawableCentsTx(tx, userId, goalId);
+    if (cents > avail) throw new Error('INSUFFICIENT_WITHDRAWABLE');
+
     const tr = await tx.transfer.create({
       data: {
         userId,
@@ -575,18 +632,30 @@ export async function withdraw(
     return tr;
   });
 
-  const res = await processor.originateCredit({
-    processorToken: src?.processorToken ?? null,
-    amountCents: cents,
-    idempotencyKey: key,
-    // RTP/FedNow is instant but costs per transfer; ACH is free and slow.
-    rail: speed === 'INSTANT' ? 'RTP' : 'ACH',
-  });
+  try {
+    const res = await processor.originateCredit({
+      processorToken: src?.processorToken ?? null,
+      amountCents: cents,
+      idempotencyKey: key,
+      // RTP/FedNow is instant but costs per transfer; ACH is free and slow.
+      rail: speed === 'INSTANT' ? 'RTP' : 'ACH',
+    });
 
-  await prisma.transfer.update({
-    where: { id: transfer.id },
-    data: { status: 'SUBMITTED', externalId: res.externalId },
-  });
+    await prisma.transfer.update({
+      where: { id: transfer.id },
+      data: { status: 'SUBMITTED', externalId: res.externalId },
+    });
+  } catch (err) {
+    // Origination never happened (no externalId was ever assigned), so unlike
+    // a submitted debit this is safe to fail outright: mark FAILED and reverse
+    // the hold, mirroring deposit's catch — otherwise the goal money stays
+    // stuck in IN_TRANSIT forever.
+    await prisma.$transaction(async tx => {
+      await tx.transfer.update({ where: { id: transfer.id }, data: { status: 'FAILED' } });
+      await reverseLedger(tx, transfer.id);
+    });
+    throw err;
+  }
 
   return { transferId: transfer.id };
 }
@@ -653,8 +722,11 @@ export async function getSettings(userId: string) {
 }
 
 export async function getPrimaryFundingSource(userId: string) {
+  // status filter on BOTH branches: a REVOKED primary (markSourceRevoked)
+  // must never be handed back as the account to debit — same pattern as
+  // installmentEngine's getRepaymentSource.
   return (
-    (await prisma.fundingSource.findFirst({ where: { userId, isPrimary: true } })) ??
+    (await prisma.fundingSource.findFirst({ where: { userId, isPrimary: true, status: 'ACTIVE' } })) ??
     (await prisma.fundingSource.findFirst({ where: { userId, status: 'ACTIVE' } }))
   );
 }
@@ -915,7 +987,14 @@ export async function deposit(
       data: { status: 'SUBMITTED', externalId: res.externalId },
     });
   } catch (err) {
-    await prisma.transfer.update({ where: { id: transfer.id }, data: { status: 'FAILED' } });
+    // The debit never originated (no externalId), so no webhook will ever
+    // reverse it — mark FAILED AND write the inverse ledger rows here,
+    // mirroring the returned-webhook path. Marking FAILED alone leaves
+    // phantom money in IN_TRANSIT/FBO forever.
+    await prisma.$transaction(async tx => {
+      await tx.transfer.update({ where: { id: transfer.id }, data: { status: 'FAILED' } });
+      await reverseLedger(tx, transfer.id);
+    });
     throw err;
   }
 
@@ -948,14 +1027,17 @@ export async function moveBetweenGoals(
   if (cents <= 0) throw new Error('INVALID_AMOUNT');
   if (fromGoalId === toGoalId) throw new Error('SAME_GOAL');
 
-  const avail = await withdrawableCents(userId, fromGoalId);
-  if (cents > avail) throw new Error('INSUFFICIENT_WITHDRAWABLE');
-
   const key = createHash('sha256')
     .update(`mv:${userId}:${fromGoalId}:${toGoalId}:${Date.now()}:${cents}`)
     .digest('hex');
 
   const transfer = await prisma.$transaction(async tx => {
+    // Same lock-then-check as withdraw: a move and a withdrawal racing on the
+    // source goal must not both spend the same settled balance.
+    await lockGoalAccount(tx, userId, fromGoalId);
+    const avail = await withdrawableCentsTx(tx, userId, fromGoalId);
+    if (cents > avail) throw new Error('INSUFFICIENT_WITHDRAWABLE');
+
     const tr = await tx.transfer.create({
       data: {
         userId,

@@ -18,16 +18,3 @@ export async function saveFile(buffer: Buffer, extension: string): Promise<strin
   await fs.writeFile(filepath, buffer);
   return filename;
 }
-
-export async function getFilePath(filename: string): Promise<string> {
-  return path.join(UPLOAD_DIR, filename);
-}
-
-export async function deleteFile(filename: string): Promise<void> {
-  const filepath = path.join(UPLOAD_DIR, filename);
-  try {
-    await fs.unlink(filepath);
-  } catch (error) {
-    // File doesn't exist or already deleted
-  }
-}

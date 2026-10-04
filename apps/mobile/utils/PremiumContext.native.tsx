@@ -3,7 +3,7 @@
 // Manages freemium state: 7-day trial → $3 one-time purchase via RevenueCat
 // =============================================================================
 
-import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, ReactNode } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 // Dynamic import so the app doesn't crash in Expo Go (native module unavailable)
 let Purchases: any = null;
@@ -21,8 +21,6 @@ import {
   REVENUECAT_API_KEY,
   ENTITLEMENT_ID,
   TRIAL_DURATION_DAYS,
-  TRIAL_CASH_ADVANCE_LIMIT,
-  PREMIUM_CASH_ADVANCE_LIMIT,
   ASYNC_STORAGE_KEYS,
 } from './revenueCatConfig';
 import type { PremiumStatus } from '../types';
@@ -37,7 +35,6 @@ interface PremiumContextType {
   isPremium: () => boolean;
   isTrialActive: () => boolean;
   canAccessFeature: () => boolean;
-  getCashAdvanceLimit: () => number;
   purchasePremium: () => Promise<boolean>;
   restorePurchases: () => Promise<boolean>;
   /** Server-checked private bypass — see POST /account/dev-unlock. Resolves
@@ -159,18 +156,7 @@ export function PremiumProvider({ children }: { children: ReactNode }) {
   const isTrialActive = useCallback(() => status === 'trial', [status]);
   const canAccessFeature = useCallback(() => status === 'trial' || status === 'premium', [status]);
 
-  const getCashAdvanceLimit = useCallback(() => {
-    switch (status) {
-      case 'premium':
-        return PREMIUM_CASH_ADVANCE_LIMIT;
-      case 'trial':
-        return TRIAL_CASH_ADVANCE_LIMIT;
-      default:
-        return 0;
-    }
-  }, [status]);
-
-  const purchasePremium = async (): Promise<boolean> => {
+  const purchasePremium = useCallback(async (): Promise<boolean> => {
     if (!Purchases || !rcConfigured) return false;
     try {
       const offerings = await Purchases.getOfferings();
@@ -200,9 +186,9 @@ export function PremiumProvider({ children }: { children: ReactNode }) {
       console.log('[Premium] Purchase error:', error);
       return false;
     }
-  };
+  }, [rcConfigured]);
 
-  const restorePurchases = async (): Promise<boolean> => {
+  const restorePurchases = useCallback(async (): Promise<boolean> => {
     if (!Purchases || !rcConfigured) return false;
     try {
       const customerInfo = await Purchases.restorePurchases();
@@ -215,9 +201,9 @@ export function PremiumProvider({ children }: { children: ReactNode }) {
       console.log('[Premium] Restore error:', error);
       return false;
     }
-  };
+  }, [rcConfigured]);
 
-  const redeemDevCode = async (code: string): Promise<string | null> => {
+  const redeemDevCode = useCallback(async (code: string): Promise<string | null> => {
     try {
       await api.post('/account/dev-unlock', { code });
       // The server already validated and persisted the unlock; no need to
@@ -227,7 +213,7 @@ export function PremiumProvider({ children }: { children: ReactNode }) {
     } catch (err: any) {
       return err?.message || 'Could not verify that code. Try again.';
     }
-  };
+  }, []);
 
   const devCycleStatus = useCallback(() => {
     if (!__DEV__) return;
@@ -239,27 +225,27 @@ export function PremiumProvider({ children }: { children: ReactNode }) {
     if (next === 'trial') setDaysRemaining(TRIAL_DURATION_DAYS);
   }, [status]);
 
-  return (
-    <PremiumContext.Provider
-      value={{
-        status,
-        trialEndDate,
-        daysRemaining,
-        isLoading,
-        isPurchaseNativeAvailable: !!Purchases && rcConfigured,
-        isPremium,
-        isTrialActive,
-        canAccessFeature,
-        getCashAdvanceLimit,
-        purchasePremium,
-        restorePurchases,
-        redeemDevCode,
-        devCycleStatus,
-      }}
-    >
-      {children}
-    </PremiumContext.Provider>
+  // Stable identity, so a PremiumProvider render alone doesn't re-render
+  // every usePremium consumer.
+  const value = useMemo(
+    () => ({
+      status,
+      trialEndDate,
+      daysRemaining,
+      isLoading,
+      isPurchaseNativeAvailable: !!Purchases && rcConfigured,
+      isPremium,
+      isTrialActive,
+      canAccessFeature,
+      purchasePremium,
+      restorePurchases,
+      redeemDevCode,
+      devCycleStatus,
+    }),
+    [status, trialEndDate, daysRemaining, isLoading, rcConfigured, isPremium, isTrialActive, canAccessFeature, purchasePremium, restorePurchases, redeemDevCode, devCycleStatus]
   );
+
+  return <PremiumContext.Provider value={value}>{children}</PremiumContext.Provider>;
 }
 
 export function usePremium() {

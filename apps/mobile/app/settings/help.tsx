@@ -21,8 +21,8 @@ const HELP_TOPICS = [
   },
   {
     id: '2', icon: 'time', title: 'Trial Management',
-    description: 'Set up auto-cancel and manage free trials',
-    details: 'When EZER detects a free trial, you\'ll get an alert before it converts to a paid subscription. You can enable auto-cancel to automatically remind you, or use Smart Saving to pay the full subscription while automatically saving a matching amount. Navigate to the Alerts tab to see all your active trials.',
+    description: 'Keep track of your free trials',
+    details: 'When EZER detects a free trial, you\'ll get an alert before it converts to a paid subscription, so you can decide whether to keep it or cancel in time. Navigate to the Alerts tab to see all your active trials.',
   },
   {
     id: '3', icon: 'wallet', title: 'Auto-Save Features',

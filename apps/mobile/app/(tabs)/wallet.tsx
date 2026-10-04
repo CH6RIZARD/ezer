@@ -289,6 +289,12 @@ export default function WalletScreen() {
     { merchantId: string; merchantName: string; logo?: string; totalCents: number; count: number; subscriptionId: string | null }[]
   >([]);
   const [loadingBreakdown, setLoadingBreakdown] = useState(false);
+  /** Last fetch for the card on screen failed AND there was no cache to fall
+   *  back on. A swallowed network failure must not render as "$0.00 drained" —
+   *  same rule the savings tab enforces with its error banner. */
+  const [breakdownError, setBreakdownError] = useState(false);
+  /** Bumped by the error banner's Retry to re-run the fetch effect. */
+  const [retryNonce, setRetryNonce] = useState(0);
   /** Recurring charges projected to land inside the current range that
    *  haven't posted yet — see GET /wallet/instruments/:id/merchants. Shown
    *  only when `merchants` is empty, so a real $0 range (nothing was ever
@@ -327,7 +333,7 @@ export default function WalletScreen() {
     `${cardId}|${dayKey(r.start)}|${dayKey(r.end)}`;
 
   const fetchBreakdown = useCallback(
-    async (cardId: string, r: { start: Date; end: Date }): Promise<Breakdown> => {
+    async (cardId: string, r: { start: Date; end: Date }): Promise<Breakdown & { ok: boolean }> => {
       const { merchants: rows, predicted: predictedRows, ok } = await getMerchants(cardId, 'custom', {
         startDate: r.start.toISOString(),
         endDate: r.end.toISOString(),
@@ -353,8 +359,14 @@ export default function WalletScreen() {
       // charges" on every tap and swipe for BREAKDOWN_FRESH_MS after the
       // connection (or a paused API) came back — launched offline, the
       // prefetch would have warmed every card × preset with nothing.
-      if (ok) breakdownCache.current.set(keyFor(cardId, r), { b, at: Date.now() });
-      return b;
+      if (ok) {
+        const cache = breakdownCache.current;
+        cache.set(keyFor(cardId, r), { b, at: Date.now() });
+        // ponytail: FIFO eviction via Map insertion order, cap 50; make it LRU
+        // if custom ranges ever churn the cache in one session.
+        while (cache.size > 50) cache.delete(cache.keys().next().value!);
+      }
+      return { ...b, ok };
     },
     [getMerchants]
   );
@@ -435,6 +447,7 @@ export default function WalletScreen() {
       setMerchants(hit.b.merchants);
       setPredicted(hit.b.predicted);
       setLoadingBreakdown(false);
+      setBreakdownError(false);
     }
 
     // A hit younger than BREAKDOWN_FRESH_MS is current enough to stand on
@@ -445,8 +458,21 @@ export default function WalletScreen() {
     const fresh = !!hit && Date.now() - hit.at < BREAKDOWN_FRESH_MS;
     if (!fresh) {
       fetchBreakdown(cardId, range)
-        .then(b => {
+        .then(({ ok, ...b }) => {
           if (cancelled) return;
+          if (!ok) {
+            // getMerchants swallowed a network failure into empty rows. With a
+            // cache hit the stale-but-real numbers stay on screen; without one
+            // there is nothing honest to show, so show the error instead of
+            // committing empty rows that render as "$0.00".
+            if (!hit) {
+              setMerchants([]);
+              setPredicted([]);
+              setBreakdownError(true);
+            }
+            return;
+          }
+          setBreakdownError(false);
           // Same numbers as what is already on screen: leave the list alone.
           if (hit && sameBreakdown(hit.b, b)) return;
           setMerchants(b.merchants);
@@ -464,7 +490,7 @@ export default function WalletScreen() {
     return () => {
       cancelled = true;
     };
-  }, [active?.id, preset, range.start, range.end, fetchBreakdown]);
+  }, [active?.id, preset, range.start, range.end, fetchBreakdown, retryNonce]);
 
   // Warm the cache for every card × fixed preset as soon as the cards are
   // known (2 cards × 3 presets = 6 small requests, once). After this, every
@@ -581,6 +607,14 @@ export default function WalletScreen() {
    * wins, however many of them fire and in whatever order, with no guessing.
    */
   const settleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // A commit scheduled mid-unmount would call setIndex on a dead component.
+  useEffect(
+    () => () => {
+      if (settleTimer.current != null) clearTimeout(settleTimer.current);
+    },
+    []
+  );
 
   const scheduleCommit = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
     const offsetX = e.nativeEvent.contentOffset.x;
@@ -774,6 +808,20 @@ export default function WalletScreen() {
             )}
 
             {/* --- total drained --------------------------------------------- */}
+            {/* A failed load must not render as "$0.00 drained" — same banner
+                pattern as the savings tab. */}
+            {breakdownError && (
+              <Surface style={[styles.errorBanner, { borderColor: colors.red + '55' }]}>
+                <Ionicons name="cloud-offline-outline" size={16} color={colors.red} />
+                <Text style={[styles.errorText, { color: colors.red }]}>
+                  Could not load this card's charges.
+                </Text>
+                <Pressable onPress={() => setRetryNonce(n => n + 1)} hitSlop={8}>
+                  <Text style={[styles.retryText, { color: colors.accInk }]}>Retry</Text>
+                </Pressable>
+              </Surface>
+            )}
+            {!breakdownError && (
             <Surface style={styles.totalCard}>
               <Label>Total drained</Label>
               <Text style={[typeScale.totalValue, { color: colors.red, marginTop: 4 }]}>
@@ -803,6 +851,7 @@ export default function WalletScreen() {
                 </View>
               )}
             </Surface>
+            )}
 
             {/* --- where it goes --------------------------------------------- */}
             <SectionHeader style={{ marginTop: 24, marginBottom: 10 }}>Where it goes</SectionHeader>
@@ -839,7 +888,7 @@ export default function WalletScreen() {
                 </PressScale>
               ))}
 
-              {merchants.length === 0 && (
+              {merchants.length === 0 && !breakdownError && (
                 <Body style={{ textAlign: 'center', marginTop: 12 }}>
                   No charges on this card in the selected range.
                 </Body>
@@ -906,6 +955,22 @@ const styles = StyleSheet.create({
   totalCard: {
     padding: 18,
     marginTop: 16,
+  },
+  errorBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 9,
+    padding: 12,
+    marginTop: 16,
+  },
+  errorText: {
+    fontFamily: fontFamily.medium,
+    fontSize: 12,
+    flex: 1,
+  },
+  retryText: {
+    fontFamily: fontFamily.bold,
+    fontSize: 12,
   },
   predictedPill: {
     flexDirection: 'row',

@@ -1,7 +1,11 @@
 import { FastifyInstance } from 'fastify';
 import { prisma } from '@ezer/db';
 import { authMiddleware } from '../middleware/auth';
-import { calculateInvestmentOpportunityCost, getDifficultyLabel } from '@ezer/shared';
+import {
+  calculateInvestmentOpportunityCost,
+  decisionRuleTypeSchema,
+  getDifficultyLabel,
+} from '@ezer/shared';
 
 export async function coreRoutes(server: FastifyInstance) {
   server.addHook('preHandler', authMiddleware);
@@ -42,6 +46,9 @@ export async function coreRoutes(server: FastifyInstance) {
 
     const upcomingTrials = await prisma.trial.findMany({
       where: {
+        subscription: {
+          userId,
+        },
         trialEndDate: {
           gte: new Date(),
           lte: thirtyDaysFromNow,
@@ -91,6 +98,9 @@ export async function coreRoutes(server: FastifyInstance) {
 
     const activeTrials = await prisma.trial.count({
       where: {
+        subscription: {
+          userId,
+        },
         trialEndDate: {
           gte: new Date(),
         },
@@ -274,6 +284,16 @@ export async function coreRoutes(server: FastifyInstance) {
     const { id } = request.params;
     const { ruleType, usageThreshold, balanceThreshold, notes } = request.body;
 
+    // Same enum Prisma's DecisionRuleType declares — reject anything else
+    // instead of casting it straight into the database.
+    const parsedRuleType = decisionRuleTypeSchema.safeParse(ruleType);
+    if (!parsedRuleType.success) {
+      return reply.status(400).send({
+        success: false,
+        error: `ruleType must be one of: ${decisionRuleTypeSchema.options.join(', ')}`,
+      });
+    }
+
     // Verify trial belongs to user
     const trial = await prisma.trial.findFirst({
       where: {
@@ -296,13 +316,13 @@ export async function coreRoutes(server: FastifyInstance) {
       where: { trialId: trial.id },
       create: {
         trialId: trial.id,
-        type: ruleType as any,
+        type: parsedRuleType.data,
         usageThreshold,
         balanceThreshold,
         runAtDate,
       },
       update: {
-        type: ruleType as any,
+        type: parsedRuleType.data,
         usageThreshold,
         balanceThreshold,
         runAtDate,
