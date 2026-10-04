@@ -73,7 +73,14 @@ const PERSPECTIVE = 1100;
  */
 const CORE_INSET = 4;
 
-/** How far each face sits off the core along its normal (web: translateZ). */
+/**
+ * How far each face sits off the core along its normal (web: translateZ).
+ * KEEP AT 3. Dropping it to 1 "to close the gold-edge gap" (tried Oct 2026)
+ * re-opened the patched see-through-the-side glitch: with the faces nearly
+ * coplanar at grazing angles you could see through the card's edge again.
+ * The 3px separation is what keeps the two faces apart there — the slight
+ * gold offset at extreme angles is the accepted cost of that patch.
+ */
 const FACE_DEPTH = 3;
 /** Sample points for the native sin/cos lookup (15° steps; ≤0.03px error at FACE_DEPTH). */
 const TRIG_DEG = Array.from({ length: 25 }, (_, i) => i * 15);

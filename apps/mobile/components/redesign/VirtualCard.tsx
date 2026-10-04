@@ -13,6 +13,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { gradients, cardFinishes, type CardFinish } from '../../theme/tokens';
 import { fontFamily, radius } from '../../theme/type';
 import SpinCard from './SpinCard';
+import CardChip from './CardChip';
 
 const NUMBER_MASKED = '••••  ••••  ••••  ••••';
 const NUMBER_REAL = '5312 7702 4401 8873';
@@ -47,12 +48,7 @@ export function VirtualCard({ finish = 'amethyst', style, onDragChange }: Virtua
           style={[styles.fill, styles.facePad]}
         >
           <View style={styles.rowBetween}>
-            <LinearGradient
-              colors={gradients.metalEdge as unknown as readonly [string, string, ...string[]]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={styles.chip}
-            />
+            <CardChip />
           </View>
 
           <Text selectable={false} style={styles.number}>{revealed ? NUMBER_REAL : NUMBER_MASKED}</Text>
@@ -106,11 +102,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-  },
-  chip: {
-    width: 40,
-    height: 29,
-    borderRadius: 6,
   },
   number: {
     fontFamily: fontFamily.medium,

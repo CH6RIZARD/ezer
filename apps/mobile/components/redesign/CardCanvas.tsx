@@ -43,6 +43,7 @@ import Svg, { Path } from 'react-native-svg';
 import { LinearGradient } from 'expo-linear-gradient';
 import { cardFinishes, cardBackFinishes, gradients, isDarkFinish, type CardFinish } from '../../theme/tokens';
 import { fontFamily, radius } from '../../theme/type';
+import CardChip from './CardChip';
 
 export const CARD_W = 308;
 export const CARD_H = 190;
@@ -142,12 +143,7 @@ export function CardFrontFace({
           matter how heavily the user draws. Chip only — no contactless mark,
           removed on request. */}
       <View style={styles.furniture} pointerEvents="none">
-        <LinearGradient
-          colors={gradients.metalEdge as unknown as readonly [string, string, ...string[]]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={styles.chip}
-        />
+        <CardChip />
       </View>
     </View>
   );
@@ -364,11 +360,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-  },
-  chip: {
-    width: 40,
-    height: 29,
-    borderRadius: 6,
   },
   stripe: {
     position: 'absolute',
