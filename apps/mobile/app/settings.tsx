@@ -8,7 +8,8 @@
 // =============================================================================
 
 import React, { useEffect, useRef, useState } from 'react';
-import { View, Text, ScrollView, Pressable, Switch, StyleSheet, Animated, Easing } from 'react-native';
+import { View, Text, ScrollView, Pressable, Switch, StyleSheet, Animated, Easing, Platform } from 'react-native';
+import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -35,22 +36,23 @@ const NOTIFS = [
 
 // Patch 4 (Appearance Toggle mock 2b, "raised key"). Shown names map onto the
 // app's ThemeMode values ('light' | 'dark' | 'black', CLAUDE.md "three theme
-// modes"): the purple-tinted 'dark' theme is "Ezer", true 'black' is "Dark".
-// Colours come from tokens.ts (themeKeys).
+// modes"): the purple-tinted 'dark' theme is "EZER" (owner wants it in caps),
+// true 'black' is "Dark". Colours come from tokens.ts (themeKeys).
 type KeyId = 'light' | 'ezer' | 'dark';
 const THEME_KEYS: { mode: ThemeMode; key: KeyId; name: string; check: string }[] = [
   { mode: 'light', key: 'light', name: 'Light', check: lightTokens.ink },
-  { mode: 'dark', key: 'ezer', name: 'Ezer', check: '#FFFFFF' },
+  { mode: 'dark', key: 'ezer', name: 'EZER', check: '#FFFFFF' },
   { mode: 'black', key: 'dark', name: 'Dark', check: '#FFFFFF' },
 ];
 const KEY_EASE = Easing.bezier(0.22, 1, 0.36, 1);
 
 function ThemePill({ mode, onChange }: { mode: ThemeMode; onChange: (m: ThemeMode) => void }) {
   const isLight = mode === 'light';
-  // Per key: flex (layout, so JS driver) on the outer view; lift + check
-  // opacity (native driver) on inner views — one driver per view, as RN requires.
+  // Per key: flex (layout, so JS driver) on the outer view; `raised` 0→1
+  // (native driver) drives the 2px lift AND the shadow cross-fade on inner
+  // views — one driver per view, as RN requires.
   const flex = useRef(THEME_KEYS.map(k => new Animated.Value(k.mode === mode ? 2 : 1))).current;
-  const lift = useRef(THEME_KEYS.map(k => new Animated.Value(k.mode === mode ? -2 : 0))).current;
+  const raised = useRef(THEME_KEYS.map(k => new Animated.Value(k.mode === mode ? 1 : 0))).current;
   const check = useRef(THEME_KEYS.map(k => new Animated.Value(k.mode === mode ? 1 : 0))).current;
 
   useEffect(() => {
@@ -59,12 +61,19 @@ function ThemePill({ mode, onChange }: { mode: ThemeMode; onChange: (m: ThemeMod
         const on = k.mode === mode;
         return [
           Animated.timing(flex[i], { toValue: on ? 2 : 1, duration: 350, easing: KEY_EASE, useNativeDriver: false }),
-          Animated.timing(lift[i], { toValue: on ? -2 : 0, duration: 350, easing: KEY_EASE, useNativeDriver: true }),
+          Animated.timing(raised[i], { toValue: on ? 1 : 0, duration: 350, easing: KEY_EASE, useNativeDriver: true }),
           Animated.timing(check[i], { toValue: on ? 1 : 0, duration: 150, useNativeDriver: true }),
         ];
       })
     ).start();
-  }, [mode, flex, lift, check]);
+  }, [mode, flex, raised, check]);
+
+  const press = (m: ThemeMode) => {
+    if (m === mode) return;
+    // A key press, so impactLight rather than selectionChanged. No-op on web.
+    if (Platform.OS !== 'web') void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    onChange(m);
+  };
 
   return (
     <View
@@ -81,31 +90,47 @@ function ThemePill({ mode, onChange }: { mode: ThemeMode; onChange: (m: ThemeMod
         return (
           <Animated.View key={k.mode} style={{ flex: flex[i] }}>
             <Pressable
-              onPress={() => !on && onChange(k.mode)}
+              onPress={() => press(k.mode)}
               hitSlop={{ top: 4, bottom: 4 }}
               accessibilityRole="button"
               accessibilityLabel={`${k.name} theme`}
               accessibilityState={{ selected: on }}
               style={{ flex: 1 }}
             >
-              {/* Shadow swaps at once (boxShadow can't be interpolated); the
-                  flex/lift motion carries the 350ms transition. Active: a glow
-                  in the key's own colour plus a 1px top highlight. Inactive:
-                  sitting down in the trough. */}
+              {/* boxShadow itself can't be interpolated, so each key carries
+                  BOTH shadows on their own layers and cross-fades them with
+                  the same 350ms `raised` value that lifts it: the sunk inset
+                  shadow fades out while the glow (key's own colour) and 1px
+                  top highlight fade in. All native-driver opacity. */}
               <Animated.View
                 style={[
                   styles.key,
-                  {
-                    transform: [{ translateY: lift[i] }],
-                    boxShadow: on
-                      ? `0 4px 9px -2px ${themeKeys.glow[k.key]}, inset 0 1px 0 rgba(255,255,255,.35)`
-                      : 'inset 0 1px 2px rgba(0,0,0,.25)',
-                  },
+                  { transform: [{ translateY: raised[i].interpolate({ inputRange: [0, 1], outputRange: [0, -2] }) }] },
                 ]}
               >
                 <LinearGradient
                   colors={themeKeys[k.key] as unknown as readonly [string, string]}
                   style={styles.keyFace}
+                />
+                <Animated.View
+                  pointerEvents="none"
+                  style={[
+                    styles.keyFace,
+                    {
+                      boxShadow: 'inset 0 1px 2px rgba(0,0,0,.25)',
+                      opacity: raised[i].interpolate({ inputRange: [0, 1], outputRange: [1, 0] }),
+                    },
+                  ]}
+                />
+                <Animated.View
+                  pointerEvents="none"
+                  style={[
+                    styles.keyFace,
+                    {
+                      boxShadow: `0 4px 9px -2px ${themeKeys.glow[k.key]}, inset 0 1px 0 rgba(255,255,255,.35)`,
+                      opacity: raised[i],
+                    },
+                  ]}
                 />
                 <Animated.View style={{ opacity: check[i] }}>
                   <Ionicons name="checkmark" size={16} color={k.check} />

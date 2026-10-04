@@ -87,7 +87,9 @@ style problem.
   `ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL ... spawn prisma EACCES` — and every
   deploy failed at the build step. `apps/mobile`'s EAS builds already pinned
   `pnpm@9.15.0` with no such issue; matching that at the repo root fixed it.
-  The lockfile (`lockfileVersion: '6.0'`) is unaffected — pnpm 9 reads it fine.
+  The lockfile is pnpm 9's `lockfileVersion: '9.0'` since expo-haptics was
+  added (it was '6.0' before; pnpm 9 rewrote it). Add dependencies with
+  `pnpm@9.15.0`, not a newer local pnpm, so the format stays what CI reads.
 - **Wallet range presets end at 23:59:59.999 LOCAL, and the per-range
   breakdown cache keys on calendar days** (`presetRange` in
   `utils/chargeOccurrences.ts`, `keyFor` in `app/(tabs)/wallet.tsx`). The
@@ -422,7 +424,8 @@ style problem.
   synced, that document must change in the same commit. The stored file is not
   redacted (the number band is only covered when drawn) — burning redaction in
   needs `expo-image-manipulator` or a view-shot dependency; it was left out
-  because adding one rewrites `pnpm-lock.yaml` (`lockfileVersion: '6.0'`).
+  to avoid a lockfile rewrite (that rewrite has since happened for
+  expo-haptics, so it is no longer a blocker).
 - **`utils/cardArt/resolver.test.ts` uses Node's runner**, not Jest (the mobile
   app has none): `pnpm --filter @ezer/mobile exec npx tsx --test utils/cardArt/resolver.test.ts`.
   It is excluded from `tsc` in `apps/mobile/tsconfig.json`.
@@ -451,14 +454,17 @@ style problem.
   `'dark'`/`'light'` values remain valid. Settings' appearance control is ONE
   three-colour pill in the "raised key" style (Patch 4, mock 2b, `ThemePill`
   in `app/settings.tsx`): a sunk trough with three gradient keys Light /
-  Ezer / Dark (colours in `themeKeys`, `theme/tokens.ts`). The active key is
+  EZER / Dark (colours in `themeKeys`, `theme/tokens.ts`). The active key is
   flex 2, lifted 2px, glows, and shows a checkmark. NO labels inside the
   pill; only the "Theme" row's subtitle names the mode. Names map onto the
-  existing modes: "Ezer" = `'dark'` (the purple-tinted dark; the owner
-  renamed the mock's "Purple"), "Dark" = `'black'` (true dark mode). There is
-  no separate purple theme; don't invent one. Shadows use `boxShadow` (New
-  Architecture) and swap instantly, while flex and lift animate over 350ms. The mock's
-  haptic is skipped because expo-haptics isn't installed.
+  existing modes: "EZER" = `'dark'` (the purple-tinted dark; the owner
+  renamed the mock's "Purple"/"Ezer" and wants it in CAPS), "Dark" =
+  `'black'` (true dark mode). There is no separate purple theme; don't invent
+  one. Shadows: `boxShadow` can't be interpolated, so each key carries the
+  sunk inset shadow and the raised glow on separate layers and cross-fades
+  them on the same native-driven 350ms `raised` value that lifts it — don't
+  collapse them back into one swapped `boxShadow`. Haptic: `expo-haptics`
+  `impactAsync(Light)` on change, skipped on web.
 - **`inset: 0` is not implemented in React Native.** It is dropped silently, so
   an absolutely positioned box written that way has no dimensions. Use
   top/left/right/bottom.
