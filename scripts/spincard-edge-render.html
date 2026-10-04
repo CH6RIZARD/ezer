@@ -38,10 +38,12 @@ const VARIANTS = {
   // two per-axis stacks, each lit by how far its own side faces the viewer
   r: (rx, ry) => {
     const ks = Array.from({ length: N }, (_, i) => N === 1 ? 0 : -D + (2 * D) * (i + 0.5) / N);
-    const ox = ramp(sin(ry)), oy = ramp(sin(rx) * cos(ry));
+    // Cross-axis inset shrinks to 0 exactly edge-on (SpinCard's span scale).
+    const tx = Math.abs(sin(ry)), ty = Math.abs(sin(rx) * cos(ry));
+    const my = M * (1 - tx), mx = M * (1 - ty);
     return { d: D, gold: [
-      ...ks.map(k => ({ k, x: 0, y: M, w: W, h: H - 2 * M, r: R - M, o: ox })),
-      ...ks.map(k => ({ k, x: M, y: 0, w: W - 2 * M, h: H, r: R - M, o: oy })),
+      ...ks.map(k => ({ k, x: 0, y: my, w: W, h: H - 2 * my, r: R, o: ramp(tx) })),
+      ...ks.map(k => ({ k, x: mx, y: 0, w: W - 2 * mx, h: H, r: R, o: ramp(ty) })),
     ] };
   },
 };

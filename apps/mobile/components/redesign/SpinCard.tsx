@@ -65,10 +65,15 @@ const FACE_DEPTH = 1.5;
  *    rasterizes as a row of gold DASHES.
  *  - An inset stack hides that but turns the side into a thick plate whose
  *    ends stop short of the corners.
- * So: each stack runs flush with the face along ITS pair of sides, is pulled
- * in by SIDE_INSET on the other pair, and is lit by how far its own sides
- * face the viewer (SIDE_LIT) — invisible face-on, where a real card shows no
- * side and a sub-pixel strip would only alias, full gold toward edge-on.
+ *  - A FIXED inset on the other axis (SIDE_INSET everywhere) stopped the gold
+ *    2px short of each end edge-on, so on Android the faces' ends poked out
+ *    past it ("missed the end, botched").
+ * So: each stack runs flush with the face along ITS pair of sides, and on
+ * the other pair is pulled in by SIDE_INSET only while that pair is tilted
+ * away — a local scale that reaches full size exactly edge-on. It is lit by
+ * how far its own sides face the viewer (SIDE_LIT) — invisible face-on,
+ * where a real card shows no side and a sub-pixel strip would only alias,
+ * full gold toward edge-on.
  * One shared opacity cannot do this: at ry 40° / rx 5° the left/right side
  * must be bright while the top/bottom must still be dark.
  * Verify any change by rendering the layer stack in a headless browser at a
@@ -348,13 +353,23 @@ export function SpinCard({ front, back, style, onTap, onDragChange, hint = 'Drag
     const abs = (f: (rad: number) => number) => table(r => Math.abs(f(r)));
     const lit = (v: Animated.AnimatedNode) =>
       (v as Animated.Value).interpolate({ inputRange: SIDE_LIT, outputRange: [0, 1], extrapolate: 'clamp' });
+    // Inset on a stack's cross axis, as a scale: SIDE_INSET a side while its
+    // pair is tilted away, none at all exactly edge-on.
+    const span = (tilt: Animated.AnimatedNode, length: number) => {
+      const c = (SIDE_INSET * 2) / length;
+      return Animated.add(1 - c, Animated.multiply(tilt, c));
+    };
+    // How far each pair of sides faces the viewer — the same quantities the
+    // shift above is made of, so a side lights exactly as it widens.
+    const tiltX = abs(Math.sin)(ry);
+    const tiltY = Animated.multiply(abs(Math.sin)(rx), abs(Math.cos)(ry));
     return {
       dx: table(Math.sin)(ry),
       dy: Animated.multiply(Animated.multiply(table(Math.sin)(rx), table(Math.cos)(ry)), -1),
-      // How far each pair of sides faces the viewer — the same quantities
-      // the shift above is made of, so a side lights exactly as it widens.
-      sideX: lit(abs(Math.sin)(ry)),
-      sideY: lit(Animated.multiply(abs(Math.sin)(rx), abs(Math.cos)(ry))),
+      sideX: lit(tiltX),
+      sideY: lit(tiltY),
+      sideXSpan: span(tiltX, CARD_H),
+      sideYSpan: span(tiltY, CARD_W),
     };
   }, [rx, ry]);
   const at = (k: number, rest: object[] = []) =>
@@ -397,13 +412,13 @@ export function SpinCard({ front, back, style, onTap, onDragChange, hint = 'Drag
           <React.Fragment key={k}>
             <Animated.View
               pointerEvents="none"
-              style={[styles.sideX, { opacity: depth.sideX, transform: at(k) as never }]}
+              style={[styles.side, { opacity: depth.sideX, transform: at(k, [{ scaleY: depth.sideXSpan }]) as never }]}
             >
               {gold}
             </Animated.View>
             <Animated.View
               pointerEvents="none"
-              style={[styles.sideY, { opacity: depth.sideY, transform: at(k) as never }]}
+              style={[styles.side, { opacity: depth.sideY, transform: at(k, [{ scaleX: depth.sideYSpan }]) as never }]}
             >
               {gold}
             </Animated.View>
@@ -459,22 +474,12 @@ const styles = StyleSheet.create({
     flex: 1,
     borderRadius: radius.virtualCard,
   },
-  // Left/right sides: flush with the faces' left and right, pulled in top and bottom.
-  sideX: {
+  // Face-sized; each stack's cross-axis inset is a scale in its transform.
+  side: {
     position: 'absolute',
-    top: SIDE_INSET,
     width: CARD_W,
-    height: CARD_H - SIDE_INSET * 2,
-    borderRadius: radius.virtualCard - SIDE_INSET,
-    overflow: 'hidden',
-  },
-  // Top/bottom sides: flush with the faces' top and bottom, pulled in left and right.
-  sideY: {
-    position: 'absolute',
-    left: SIDE_INSET,
-    width: CARD_W - SIDE_INSET * 2,
     height: CARD_H,
-    borderRadius: radius.virtualCard - SIDE_INSET,
+    borderRadius: radius.virtualCard,
     overflow: 'hidden',
   },
   hint: {

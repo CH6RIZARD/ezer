@@ -177,8 +177,10 @@ style problem.
   opacity shows a gold rim at 10–30° and a row of gold DASHES at a few
   degrees; an inset stack reads as a thick plate glued behind the card. The
   left/right stack is flush with the faces on those sides and pulled in
-  `SIDE_INSET` top and bottom (the top/bottom stack the other way round),
-  and its opacity ramps with |sin| of its own tilt (`SIDE_LIT`): nothing
+  `SIDE_INSET` top and bottom only while tilted away — a local scale that
+  reaches full size exactly edge-on (the top/bottom stack the other way
+  round). A FIXED inset stopped the gold 2px short of each end, and on
+  Android the faces' ends poked out past it ("missed the end"). Its opacity ramps with |sin| of its own tilt (`SIDE_LIT`): nothing
   shows face-on, full gold toward edge-on. One shared opacity cannot work —
   at ry 40° / rx 5° one pair of sides must be bright and the other dark.
   `FACE_DEPTH` is 1.5 (3px thick on 308px, a real card's proportion).
