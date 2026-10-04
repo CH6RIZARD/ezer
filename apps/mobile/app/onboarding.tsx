@@ -1,7 +1,7 @@
 // =============================================================================
 // EZER Mobile — Onboarding ("Ticker Cut")
 //
-// Five screens: ticker → card → leak replay → radar → auth.
+// Six screens: ticker → card → leak replay → radar → auth → passcode.
 //
 // DARK ONLY, on purpose. The flow is designed as one committed dark aesthetic,
 // so it reads `darkTokens` directly rather than `useTheme().colors`. Running it
@@ -32,11 +32,14 @@ import {
   StyleSheet,
 } from 'react-native';
 import { router } from 'expo-router';
+import { useIsFocused } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useAuth } from '../utils/AuthContext';
 import { darkTokens as T } from '../theme/tokens';
+import PasscodeSetup from '../components/PasscodeSetup';
+import { getPasscodeInfo } from '../utils/passcode';
 
 // --- shared -----------------------------------------------------------------
 
@@ -530,7 +533,10 @@ function AuthStep({ mode, setMode, onDone }: {
 
 export default function OnboardingScreen() {
   const insets = useSafeAreaInsets();
-  const { completeOnboarding, isAuthenticated } = useAuth();
+  const { completeOnboarding, isAuthenticated, hasCompletedOnboarding } = useAuth();
+  // The email path pushes the auth screens over this one; while they are on
+  // top, this screen must not act on the sign-in itself.
+  const focused = useIsFocused();
   const { height } = useWindowDimensions();
 
   const [step, setStep] = useState(0);
@@ -554,18 +560,31 @@ export default function OnboardingScreen() {
     });
   }, [fade]);
 
-  const finish = useCallback(async () => {
+  const enterApp = useCallback(async () => {
     await completeOnboarding();
     router.replace('/(tabs)/home');
   }, [completeOnboarding]);
+
+  // Signed in. A first-time account sets its passcode as the flow's last
+  // step; anyone who has finished onboarding before (signing back in after a
+  // sign-out or "Forgot passcode") goes straight in, where LockGate asks —
+  // asking here too was a second prompt. Guarded: the provider buttons call
+  // this AND the step-4 effect below fires on the same sign-in.
+  const finishing = useRef(false);
+  const finish = useCallback(async () => {
+    if (finishing.current) return;
+    finishing.current = true;
+    if (hasCompletedOnboarding || (await getPasscodeInfo().catch(() => null))) await enterApp();
+    else go(5, false);
+  }, [hasCompletedOnboarding, enterApp, go]);
 
   // Already signed in and just replaying the story? Step 05 has nothing to ask
   // for. Anyone who authenticated before this flow existed still has
   // hasCompletedOnboarding false, and would otherwise be sent to a sign-in
   // screen for an account they are already inside.
   useEffect(() => {
-    if (step === 4 && isAuthenticated) { void finish(); }
-  }, [step, isAuthenticated, finish]);
+    if (step === 4 && isAuthenticated && focused) { void finish(); }
+  }, [step, isAuthenticated, focused, finish]);
 
   // Screen 02 auto-advances after 3.8s.
   useEffect(() => {
@@ -702,6 +721,9 @@ export default function OnboardingScreen() {
             <AuthStep mode={authMode} setMode={setAuthMode} onDone={finish} />
           </ScrollView>
         )}
+
+        {/* No back button: the account behind it already exists. */}
+        {step === 5 && <PasscodeSetup palette={T} onDone={() => void enterApp()} />}
       </Animated.View>
     </View>
   );

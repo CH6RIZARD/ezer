@@ -19,6 +19,7 @@ import { PremiumProvider } from '../utils/PremiumContext';
 import { ThemeProvider, useTheme } from '../utils/ThemeContext';
 import { DataProvider } from '../contexts/DataContext';
 import { SavingsGoalsProvider } from '../utils/SavingsGoalsContext';
+import LockGate from '../components/LockGate';
 
 class AppErrorBoundary extends React.Component<{ children: React.ReactNode }, { error: Error | null }> {
   state = { error: null as Error | null };
@@ -73,6 +74,9 @@ function RootLayoutNav() {
         translucent={false}
       />
       <View style={{ flex: 1, backgroundColor: colors.background }}>
+        {/* Wraps the Stack and draws the lock above it, so locking never
+            touches navigation. */}
+        <LockGate>
         <Stack
           screenOptions={{
             headerShown: false,
@@ -103,6 +107,7 @@ function RootLayoutNav() {
           <Stack.Screen name="savings" />
           <Stack.Screen name="screens/Paywall" options={{ presentation: 'fullScreenModal', animation: 'slide_from_bottom' }} />
         </Stack>
+        </LockGate>
       </View>
     </>
   );

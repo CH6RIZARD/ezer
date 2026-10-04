@@ -245,6 +245,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // must not outlive the session (this also covers account deletion,
       // which ends in logout()).
       clearAllCardArtPrefs(),
+      // NOT the passcode: LockGate clears it once the session has really
+      // ended (components/LockGate.tsx). Clearing it here lifted the lock
+      // while the app was still signed in.
     ]);
     setUser(null);
   }, []);

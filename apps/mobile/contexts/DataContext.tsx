@@ -120,6 +120,9 @@ interface DataState {
   isLoading: boolean;
   error: string | null;
   isEmpty: boolean; // true when user has no connected accounts yet
+  /** Something real to show: the snapshot is painted, or a refresh has
+   *  settled (success or failure). LockGate holds its EZER fade until then. */
+  isReady: boolean;
 }
 
 interface DataContextType extends DataState {
@@ -170,6 +173,7 @@ const EMPTY_STATE: DataState = {
   isLoading: false,
   error: null,
   isEmpty: false,
+  isReady: false,
 };
 
 const hasData = (d: Pick<DataState, 'instruments' | 'subscriptions'>) =>
@@ -209,7 +213,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     // No session means nothing to fetch. `isEmpty` drives the "connect an
     // account" state rather than any placeholder figures.
     if (!isAuthenticated) {
-      setState({ ...EMPTY_STATE, isEmpty: true });
+      setState({ ...EMPTY_STATE, isEmpty: true, isReady: true });
       return;
     }
 
@@ -250,13 +254,13 @@ export function DataProvider({ children }: { children: ReactNode }) {
       if (failures.every(f => f.reason?.status === 401 || f.reason?.status === 403)) {
         snapRef.current = null;
         AsyncStorage.removeItem(SNAPSHOT_KEY).catch(() => {});
-        setState({ ...EMPTY_STATE, error: message, isEmpty: true });
+        setState({ ...EMPTY_STATE, error: message, isEmpty: true, isReady: true });
         return;
       }
       // An outage: keep the last real figures on screen — offline with a
       // snapshot must not read as "connect an account". With none, this is
       // the old blank.
-      setState({ ...last, isLoading: false, error: message, isEmpty: !hasData(last) });
+      setState({ ...last, isLoading: false, error: message, isEmpty: !hasData(last), isReady: true });
       return;
     }
 
@@ -284,6 +288,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       // Empty means "nothing connected yet", which the UI turns into a prompt
       // to link a bank — not a silent blank screen.
       isEmpty: !hasData(data),
+      isReady: true,
     });
     // Only a complete server answer is saved as the snapshot.
     if (userId && failures.length === 0) {
@@ -376,7 +381,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         instruments: snap.instruments ?? [],
         subscriptions: snap.subscriptions ?? [],
       };
-      const hydrated = { ...EMPTY_STATE, ...data, isLoading: true, isEmpty: !hasData(data) };
+      const hydrated = { ...EMPTY_STATE, ...data, isLoading: true, isEmpty: !hasData(data), isReady: true };
       // Set the mirror too: refresh() below runs before the re-render.
       stateRef.current = hydrated;
       setState(hydrated);

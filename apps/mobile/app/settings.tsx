@@ -144,8 +144,8 @@ export default function SettingsScreen() {
   const { colors, mode, setMode } = useTheme();
   const auth = useAuth() as {
     user?: { email?: string; createdAt?: string };
-    signOut?: () => void;
-    logout?: () => void;
+    signOut?: () => Promise<void> | void;
+    logout?: () => Promise<void> | void;
   };
   const [notifs, setNotifs] = useState<Record<string, boolean>>({
     renewals: true,
@@ -158,10 +158,11 @@ export default function SettingsScreen() {
     void isInboxScanEnabled().then(setInboxEnabled);
   }, []);
 
-  const signOut = () => {
+  const signOut = async () => {
     // The auth context has gone by both names across revisions; call whichever
-    // exists rather than crashing on a rename.
-    (auth.signOut ?? auth.logout)?.();
+    // exists rather than crashing on a rename. Awaited: navigating first let
+    // the index screen see the still-signed-in session and route to home.
+    await (auth.signOut ?? auth.logout)?.();
     router.replace('/');
   };
 

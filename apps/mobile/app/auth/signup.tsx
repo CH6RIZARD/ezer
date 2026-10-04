@@ -62,7 +62,9 @@ export default function SignupScreen() {
     setIsLoading(false);
 
     if (result.ok) {
-      router.replace('/onboarding');
+      // See login.tsx: back to the onboarding this came from, whose last
+      // step sets the passcode.
+      router.dismissTo('/onboarding');
     } else {
       // Was a generic "An error occurred", so "Email already registered" and
       // "cannot reach the server" looked identical — and an account that was

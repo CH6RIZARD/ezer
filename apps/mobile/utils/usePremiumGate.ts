@@ -11,8 +11,9 @@
 // content the user no longer has access to.
 // =============================================================================
 
-import { useEffect } from 'react';
+import { useContext, useEffect } from 'react';
 import { router } from 'expo-router';
+import { LockOpenContext } from '../components/LockGate';
 import { usePremium } from './PremiumContext';
 import { isLoosePreviewMode } from './expoRuntime';
 
@@ -39,13 +40,16 @@ let lastRedirectAt = 0;
  */
 export function usePremiumGate(): void {
   const { status } = usePremium();
+  // Held while the passcode lock is up: on iOS a Paywall presented then would
+  // land ABOVE the lock. It redirects as soon as the user unlocks.
+  const unlocked = useContext(LockOpenContext);
 
   useEffect(() => {
-    if (status === 'expired' && !isLoosePreviewMode()) {
+    if (status === 'expired' && unlocked && !isLoosePreviewMode()) {
       const now = Date.now();
       if (now - lastRedirectAt < 1000) return;
       lastRedirectAt = now;
       router.replace('/screens/Paywall');
     }
-  }, [status]);
+  }, [status, unlocked]);
 }

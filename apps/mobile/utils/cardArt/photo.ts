@@ -14,6 +14,7 @@
 
 import { Platform } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
+import { beginInAppFlow, endInAppFlow } from '../passcode';
 
 /**
  * Upper bound on the stored data URI, in characters. Keeps a single value well
@@ -46,9 +47,16 @@ export async function pickCardPhoto(source: 'camera' | 'library'): Promise<PickP
       quality: 0.4,
       base64: true,
     };
-    const result = useCamera
-      ? await ImagePicker.launchCameraAsync(options)
-      : await ImagePicker.launchImageLibraryAsync(options);
+    // The picker is its own activity on Android; see utils/passcode.ts.
+    beginInAppFlow();
+    let result: ImagePicker.ImagePickerResult;
+    try {
+      result = useCamera
+        ? await ImagePicker.launchCameraAsync(options)
+        : await ImagePicker.launchImageLibraryAsync(options);
+    } finally {
+      endInAppFlow();
+    }
 
     if (result.canceled || !result.assets?.[0]) return { ok: false, reason: 'cancelled' };
     const b64 = result.assets[0].base64;

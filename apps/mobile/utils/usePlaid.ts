@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react';
 import { Alert, Platform } from 'react-native';
 import { api } from './api';
+import { beginInAppFlow, endInAppFlow } from './passcode';
 
 export type PlaidAccount = {
   id: string;
@@ -81,8 +82,21 @@ export function usePlaid() {
           noLoadingState: false,
         });
 
+        // Plaid Link is its own activity on Android: the app "leaves" while
+        // the user is still linking. See utils/passcode.ts.
+        beginInAppFlow();
+        let ended = false;
+        const endFlow = () => {
+          if (!ended) {
+            ended = true;
+            endInAppFlow();
+          }
+        };
+
+        try {
         PlaidLink.open({
           onSuccess: async (success: any) => {
+            endFlow();
             const accounts: PlaidAccount[] = (success.metadata?.accounts || []).map((a: any) => ({
               id: a.id,
               name: a.name,
@@ -119,10 +133,16 @@ export function usePlaid() {
             }
           },
           onExit: (exit: any) => {
+            endFlow();
             setState(prev => ({ ...prev, isLoading: false }));
             onExit?.(exit);
           },
         });
+        } catch (err) {
+          // open() threw, so neither callback will ever end the flow.
+          endFlow();
+          throw err;
+        }
       } catch (err: any) {
         // Thrown here means the link-token request failed before Plaid Link
         // ever had a chance to open. None of the five call sites read

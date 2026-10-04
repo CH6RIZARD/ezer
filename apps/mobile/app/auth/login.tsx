@@ -43,11 +43,12 @@ export default function LoginScreen() {
     setIsLoading(false);
 
     if (result.ok) {
-      if (result.ok && result.hasCompletedOnboarding) {
-        router.replace('/(tabs)/home');
-      } else {
-        router.replace('/onboarding');
-      }
+      // Back to the onboarding screen this was pushed from (a new one only if
+      // there is none): its sign-in step decides between home and the
+      // passcode step, so the passcode is asked for exactly once. replace()
+      // left the first onboarding mounted underneath, reacting to the same
+      // sign-in, and started a second one from the beginning.
+      router.dismissTo('/onboarding');
     } else {
       // The server's actual reason — "invalid email or password" was shown
       // even when the API was unreachable.
