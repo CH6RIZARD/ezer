@@ -7,11 +7,11 @@
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
     "splash": {
-      "image": "./assets/splash.png",
+      "image": "./assets/splash-blank.png",
       "resizeMode": "contain",
       "backgroundColor": "#F7F3EA",
       "dark": {
-        "image": "./assets/splash.png",
+        "image": "./assets/splash-blank.png",
         "backgroundColor": "#151021"
       }
     },
