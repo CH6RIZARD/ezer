@@ -54,43 +54,36 @@ const FACE_DEPTH = 3;
  * the two faces read as two separate sheets with see-through between them.
  * Stacked, the gap fills solid.
  *
- * DENSE: 0.25px apart. Every sheet is a plane parallel to the faces, so
+ * DENSE: 0.3px apart. Every sheet is a plane parallel to the faces, so
  * edge-on each one is a hairline; Android does not anti-alias 3D-transformed
  * views, and at the old 0.75px spacing (7 sheets) it drew seven separate
  * stripes with see-through gaps and prongs at the ends (device capture, Oct
- * 2026). At 0.25px — under a device pixel — neighbouring hairlines overlap
+ * 2026). At 0.3px — under a device pixel — neighbouring hairlines overlap
  * into one band. Placing perpendicular "walls" instead was tried and missed
  * on Android: its camera projection does not match a computed placement.
  *
- * Each sheet is a RING (a gold border, transparent inside), not a filled
- * card: the faces cover the middle anyway, and 23 filled card-sized layers
- * would be 23× the overdraw on a low-end phone. See SIDE_RING for how wide.
- * Shaded darker toward the faces, brighter mid-thickness, like a milled
- * metal edge.
+ * Each sheet is FILLED, a plain colour (no gradient, so cheap to draw).
+ * Rings with a transparent middle were tried to save overdraw and failed on
+ * the k62: just short of edge-on, the line of sight runs between the faces
+ * and through the card's interior, and an empty middle showed the page
+ * through the band. Shaded darker toward the faces, brighter mid-thickness,
+ * like a milled metal edge.
  *
  * The stack fades in with tilt (see `edge` below): at rest and at a few
  * degrees the side is sub-pixel, and a sub-pixel gold strip rasterizes as a
  * row of dashes / a gold rim on the faces' anti-aliased edge.
  */
-const SIDE_STEP = 0.25;
+const SIDE_STEP = 0.3;
 const SIDE_DEPTHS = Array.from(
   { length: Math.round((FACE_DEPTH * 2) / SIDE_STEP) - 1 },
   (_, i) => -FACE_DEPTH + SIDE_STEP * (i + 1)
 );
-/**
- * Ring width. Not just "wider than a sheet's shift": edge-on, the ring's own
- * width is what is foreshortened into the visible band (w·cos a), and a thin
- * ring drew sub-pixel on Android, so the band's middle came out dark and
- * see-through (S22 capture, 8px ring). 40px still covers a device pixel at
- * 89.5° while leaving the middle ~45% of each sheet transparent.
- */
-const SIDE_RING = 40;
 const mixHex = (a: string, b: string, t: number) => {
   const p = (h: string) => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
   const [x, y] = [p(a), p(b)];
   return `rgb(${x.map((v, i) => Math.round(v + (y[i] - v) * t)).join(',')})`;
 };
-/** Ring colour per sheet: the metal-edge gradient's ends, deep at the faces, bright mid-way. */
+/** Colour per sheet: the metal-edge gradient's ends, deep at the faces, bright mid-way. */
 const sideColor = (k: number) =>
   mixHex(gradients.metalEdge[1], gradients.metalEdge[0], 1 - Math.abs(k) / FACE_DEPTH);
 /** Sample points for the native sin/cos lookup (15° steps; ≤0.03px error at FACE_DEPTH). */
@@ -399,8 +392,8 @@ export function SpinCard({ front, back, style, onTap, onDragChange, hint = 'Drag
             key={k}
             pointerEvents="none"
             style={[
-              styles.ring,
-              { borderColor: sideColor(k), opacity: depth.edge, transform: at(k) as never },
+              styles.sheet,
+              { backgroundColor: sideColor(k), opacity: depth.edge, transform: at(k) as never },
             ]}
           />
         ))}
@@ -450,12 +443,11 @@ const styles = StyleSheet.create({
   hidden: {
     backfaceVisibility: 'hidden',
   },
-  ring: {
+  sheet: {
     position: 'absolute',
     width: CARD_W,
     height: CARD_H,
     borderRadius: radius.virtualCard,
-    borderWidth: SIDE_RING,
   },
   hint: {
     marginTop: 14,
