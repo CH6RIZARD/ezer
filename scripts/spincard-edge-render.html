@@ -35,7 +35,12 @@ const ramp = s => Math.max(0, Math.min(1, (Math.abs(s) - LO) / (HI - LO)));
 const VARIANTS = {
   // 4:45pm / 10am: one gold core at depth 0, inset 4, faces at +-3
   old: () => ({ d: 3, gold: [{ k: 0, x: 4, y: 4, w: W - 8, h: H - 8, r: R - 4, o: 1 }] }),
-  // two per-axis stacks, each lit by how far its own side faces the viewer
+  // The card the owner approved on the dev page (commit 90687a9): seven
+  // full-size gold sheets between faces at +-3, faded in by |sin rx|+|sin ry|.
+  dev: (rx, ry) => {
+    const o = Math.max(0, Math.min(1, (Math.abs(sin(rx)) + Math.abs(sin(ry)) - 0.1) / 0.2));
+    return { d: 3, gold: [-3, -2, -1, 0, 1, 2, 3].map(i => ({ k: (i * 3) / 4, x: 0, y: 0, w: W, h: H, r: R, o })) };
+  },  // two per-axis stacks, each lit by how far its own side faces the viewer
   r: (rx, ry) => {
     const ks = Array.from({ length: N }, (_, i) => N === 1 ? 0 : -D + (2 * D) * (i + 0.5) / N);
     // Cross-axis inset shrinks to 0 exactly edge-on (SpinCard's span scale).

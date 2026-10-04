@@ -15,7 +15,7 @@
 //   * release snaps each axis to the nearest multiple of 180 over 900ms
 //     cubic-bezier(.22,1,.36,1)
 //   * movement < 4px counts as a tap -> onTap
-//   * a thin gold side joins the faces, lit only as it turns toward the viewer
+//   * a solid gold side fills the gap between the faces, visible only mid-spin
 //
 // Rotation state lives in Animated.Values driven by a PanResponder, tracked
 // with setValue on every move (see the comment at onPanResponderMove below for
@@ -47,47 +47,20 @@ const CARD_H = 190;
 const CONTAINER_H = 250;
 /** Matches the prototype's perspective: 1100px. */
 const PERSPECTIVE = 1100;
+/** How far each face sits off the card's centre plane along its normal (web: translateZ). */
+const FACE_DEPTH = 3;
 /**
- * Half the card's thickness: each face sits this far off the centre plane
- * along its normal. 3px total on a 308px card is a real bank card's
- * proportion (0.76mm on 85.6mm). The old ±3 read as a slab.
+ * The card's gold side: full-size gold sheets stacked between the faces,
+ * FACE_DEPTH/4 apart. A single flat core (what this used to be) is a
+ * zero-width line edge-on, so at 90° the two faces read as two separate
+ * sheets with see-through between them. Stacked, the gap fills solid.
+ * The stack fades in with tilt (see `edge` below): at rest and at a few
+ * degrees the side is sub-pixel, and a sub-pixel gold strip rasterizes as a
+ * row of dashes / a gold rim on the faces' anti-aliased edge — the old
+ * "botched edges" report the inset single core used to dodge.
  */
-const FACE_DEPTH = 1.5;
-/**
- * The card's gold side, as depths between the faces. It is built from two
- * stacks of gold sheets at these depths — one for the left/right sides, one
- * for the top/bottom — because every simpler shape has been tried and
- * rejected on a device (Oct 2026):
- *  - ONE inset gold sheet at depth 0 sits beside the face near edge-on, so
- *    the card reads as two unconnected sheets with spacing between them.
- *  - Full-size gold at constant opacity peeks past the face at every angle:
- *    a gold rim at 10–30° and, at a few degrees, a sub-pixel strip that
- *    rasterizes as a row of gold DASHES.
- *  - An inset stack hides that but turns the side into a thick plate whose
- *    ends stop short of the corners.
- *  - A FIXED inset on the other axis (SIDE_INSET everywhere) stopped the gold
- *    2px short of each end edge-on, so on Android the faces' ends poked out
- *    past it ("missed the end, botched").
- * So: each stack runs flush with the face along ITS pair of sides, and on
- * the other pair is pulled in by SIDE_INSET only while that pair is tilted
- * away — a local scale that reaches full size exactly edge-on. It is lit by
- * how far its own sides face the viewer (SIDE_LIT) — invisible face-on,
- * where a real card shows no side and a sub-pixel strip would only alias,
- * full gold toward edge-on.
- * One shared opacity cannot do this: at ry 40° / rx 5° the left/right side
- * must be bright while the top/bottom must still be dark.
- * Verify any change by rendering the layer stack in a headless browser at a
- * grid of angles (see CLAUDE.md) — reasoning about it has been wrong twice.
- */
-const SIDE_DEPTHS = [-1.2, -0.6, 0, 0.6, 1.2];
-const SIDE_INSET = 2;
-/**
- * |sin| of a side's tilt at which it starts to show (~20°) and is full gold
- * (~49°). Starting earlier (0.15) left a faint gold hairline on the face's
- * outline at 6–25° that read as the rejected gold rim.
- */
-const SIDE_LIT = [0.35, 0.75];
-/** Sample points for the sin/cos lookups (15° steps; ≤0.03px error at FACE_DEPTH). */
+const SIDE_DEPTHS = Array.from({ length: 7 }, (_, i) => ((i - 3) * FACE_DEPTH) / 4);
+/** Sample points for the native sin/cos lookup (15° steps; ≤0.03px error at FACE_DEPTH). */
 const TRIG_DEG = Array.from({ length: 25 }, (_, i) => i * 15);
 
 /**
@@ -339,38 +312,28 @@ export function SpinCard({ front, back, style, onTap, onDragChange, hint = 'Drag
     : [{ perspective: PERSPECTIVE }, { rotateX: deg(rx) }, { rotateY: deg(ry) }];
 
   // Depth k along the card's normal. Web: a real translateZ(k). RN 0.81 has
-  // no translateZ on native (Android TransformHelper.kt and iOS
-  // RCTConvert+Transform.m log "Unsupported transform type" and skip it), so
-  // native reproduces what translateZ AFTER rotateX·rotateY does on screen —
-  // a shift of (k·sin ry, −k·sin rx·cos ry) — as a screen-space translate
-  // placed BEFORE the rotations. Built from modulo/interpolate/multiply only
-  // — all native-driver nodes, so no JS work per frame (and no listeners; see
-  // the rule in CLAUDE.md). `translate: [0, 0, k]` is not an option: the
-  // native driver only accepts numeric transform values.
+  // no translateZ on native (Android TransformHelper.kt / iOS
+  // RCTConvert+Transform.m skip it), so native reproduces what translateZ
+  // AFTER rotateX·rotateY does on screen — a shift of (k·sin ry,
+  // −k·sin rx·cos ry) — as a screen-space translate placed BEFORE the
+  // rotations. Built from modulo/interpolate/multiply only — all
+  // native-driver nodes, so no JS work per frame (and no listeners; see the
+  // rule in CLAUDE.md). `translate: [0, 0, k]` is not an option: the native
+  // driver only accepts numeric transform values.
   const depth = useMemo(() => {
     const table = (f: (rad: number) => number) => (v: Animated.Value) =>
       Animated.modulo(v, 360).interpolate({ inputRange: TRIG_DEG, outputRange: TRIG_DEG.map(d => f((d * Math.PI) / 180)) });
-    const abs = (f: (rad: number) => number) => table(r => Math.abs(f(r)));
-    const lit = (v: Animated.AnimatedNode) =>
-      (v as Animated.Value).interpolate({ inputRange: SIDE_LIT, outputRange: [0, 1], extrapolate: 'clamp' });
-    // Inset on a stack's cross axis, as a scale: SIDE_INSET a side while its
-    // pair is tilted away, none at all exactly edge-on.
-    const span = (tilt: Animated.AnimatedNode, length: number) => {
-      const c = (SIDE_INSET * 2) / length;
-      return Animated.add(1 - c, Animated.multiply(tilt, c));
-    };
-    // How far each pair of sides faces the viewer — the same quantities the
-    // shift above is made of, so a side lights exactly as it widens.
-    const tiltX = abs(Math.sin)(ry);
-    const tiltY = Animated.multiply(abs(Math.sin)(rx), abs(Math.cos)(ry));
-    return {
-      dx: table(Math.sin)(ry),
-      dy: Animated.multiply(Animated.multiply(table(Math.sin)(rx), table(Math.cos)(ry)), -1),
-      sideX: lit(tiltX),
-      sideY: lit(tiltY),
-      sideXSpan: span(tiltX, CARD_H),
-      sideYSpan: span(tiltY, CARD_W),
-    };
+    const sin = table(Math.sin);
+    const absSin = table(r => Math.abs(Math.sin(r)));
+    const dx = sin(ry);
+    const dy = Animated.multiply(Animated.multiply(sin(rx), table(Math.cos)(ry)), -1);
+    // Side opacity: 0 below ~6° of tilt, full by ~17° (side ≈ 1.8px wide).
+    const edge = Animated.add(absSin(rx), absSin(ry)).interpolate({
+      inputRange: [0.1, 0.3],
+      outputRange: [0, 1],
+      extrapolate: 'clamp',
+    });
+    return { dx, dy, edge };
   }, [rx, ry]);
   const at = (k: number, rest: object[] = []) =>
     IS_WEB
@@ -382,15 +345,6 @@ export function SpinCard({ front, back, style, onTap, onDragChange, hint = 'Drag
           ...faceTransform.slice(1),
           ...rest,
         ];
-  const gold = (
-    <LinearGradient
-      colors={gradients.metalEdge as unknown as readonly [string, string, ...string[]]}
-      locations={gradients.metalEdgeLocations as unknown as readonly [number, number, ...number[]]}
-      start={{ x: 0, y: 0 }}
-      end={{ x: 1, y: 1 }}
-      style={StyleSheet.absoluteFill}
-    />
-  );
 
   return (
     <View style={[styles.container, style]}>
@@ -402,27 +356,25 @@ export function SpinCard({ front, back, style, onTap, onDragChange, hint = 'Drag
           { transform: [{ translateY: floatY }] },
         ]}
       >
-        {/* Gold side — see SIDE_DEPTHS. Painted before the faces, so the
-            faces cover it wherever they overlap; both insets are symmetric,
-            so every sheet rotates about the same centre as the faces.
+        {/* Gold side — see SIDE_DEPTHS. Painted before the faces, so with
+            no real Z on native the faces still cover it face-on.
             Do not add renderToHardwareTextureAndroid to fight grazing-angle
             tearing: flattening into a bitmap layer broke Android's
             backfaceVisibility culling, so the mirrored FRONT showed at rest. */}
         {SIDE_DEPTHS.map(k => (
-          <React.Fragment key={k}>
-            <Animated.View
-              pointerEvents="none"
-              style={[styles.side, { opacity: depth.sideX, transform: at(k, [{ scaleY: depth.sideXSpan }]) as never }]}
-            >
-              {gold}
-            </Animated.View>
-            <Animated.View
-              pointerEvents="none"
-              style={[styles.side, { opacity: depth.sideY, transform: at(k, [{ scaleX: depth.sideYSpan }]) as never }]}
-            >
-              {gold}
-            </Animated.View>
-          </React.Fragment>
+          <Animated.View
+            key={k}
+            pointerEvents="none"
+            style={[styles.face, { opacity: depth.edge, transform: at(k) as never }]}
+          >
+            <LinearGradient
+              colors={gradients.metalEdge as unknown as readonly [string, string, ...string[]]}
+              locations={gradients.metalEdgeLocations as unknown as readonly [number, number, ...number[]]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.fill}
+            />
+          </Animated.View>
         ))}
 
         <Animated.View
@@ -431,7 +383,7 @@ export function SpinCard({ front, back, style, onTap, onDragChange, hint = 'Drag
           {front}
         </Animated.View>
 
-        {/* Back face is turned after the shift, so its normal points the other way. */}
+        {/* Back face is rotateY(180) after the shift, so its normal points the other way. */}
         <Animated.View
           style={[
             styles.face,
@@ -473,14 +425,6 @@ const styles = StyleSheet.create({
   fill: {
     flex: 1,
     borderRadius: radius.virtualCard,
-  },
-  // Face-sized; each stack's cross-axis inset is a scale in its transform.
-  side: {
-    position: 'absolute',
-    width: CARD_W,
-    height: CARD_H,
-    borderRadius: radius.virtualCard,
-    overflow: 'hidden',
   },
   hint: {
     marginTop: 14,

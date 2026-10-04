@@ -169,31 +169,26 @@ style problem.
   blurred tab's subtree stops rendering at all — don't remove it to "fix" a
   stale-looking tab; use `useFocusEffect` on that screen instead (Wallet
   already does, for its carousel position).
-- **SpinCard's gold side is two stacks of gold sheets between the faces
-  (`SIDE_DEPTHS`), one per axis, each lit by how far its own sides face the
-  viewer — do not simplify it.** Every simpler shape was rejected on a
-  device (Oct 2026): ONE inset gold sheet sits beside the face near edge-on,
-  so the card reads as two unconnected sheets; full-size gold at constant
-  opacity shows a gold rim at 10–30° and a row of gold DASHES at a few
-  degrees; an inset stack reads as a thick plate glued behind the card. The
-  left/right stack is flush with the faces on those sides and pulled in
-  `SIDE_INSET` top and bottom only while tilted away — a local scale that
-  reaches full size exactly edge-on (the top/bottom stack the other way
-  round). A FIXED inset stopped the gold 2px short of each end, and on
-  Android the faces' ends poked out past it ("missed the end"). Its opacity ramps with |sin| of its own tilt (`SIDE_LIT`): nothing
-  shows face-on, full gold toward edge-on. One shared opacity cannot work —
-  at ry 40° / rx 5° one pair of sides must be bright and the other dark.
-  `FACE_DEPTH` is 1.5 (3px thick on 308px, a real card's proportion).
-  **Check any change by rendering it, not by reasoning:** open
-  `scripts/spincard-edge-render.html?v=r&mode=web` (or `mode=native`, `v=old`
-  for the rejected single-sheet version) in headless Edge with
-  `--screenshot`; it draws the same layer stack at a grid of angles. RN
-  0.81 has no `translateZ` natively (Android `TransformHelper.kt` and iOS
-  `RCTConvert+Transform.m` skip it), so `at(k)` in SpinCard fakes depth k as
-  a screen-space shift of (k·sin ry, −k·sin rx·cos ry) placed before the
-  rotations, built from `Animated.modulo`/`interpolate`/`multiply` so it
-  stays on the native driver. `translate: [0, 0, k]` is NOT usable — the
-  native driver only takes numeric transform values.
+- **SpinCard's gold side is the design the owner approved on the dev page
+  (commit 90687a9, re-confirmed Oct 4 2026): seven FULL-SIZE gold sheets
+  (`SIDE_DEPTHS`) between faces at ±3 (`FACE_DEPTH`), all faded in together
+  by |sin rx|+|sin ry| (0 below ~6°, full by ~17°). Do not redesign it.**
+  A flat single core between the faces reads as two unconnected sheets
+  edge-on, which is why the stack exists. Two later redesigns (per-axis
+  stacks with insets, 3px thickness) were judged against a STALE dev page
+  and rejected once the APK showed them: the APK must match this design.
+  **The dev server must not be started with `CI=1`**: CI mode turns off
+  Metro's file watching, so the page keeps serving the code from launch;
+  that is how the dev page and the APK drifted apart for a whole day.
+  **Check any change by rendering it:** `scripts/spincard-edge-render.html
+  ?v=dev&mode=web` (or `mode=native`) in headless Edge with `--screenshot`
+  draws this layer stack at a grid of angles, both render paths. RN 0.81 has
+  no `translateZ` natively (Android `TransformHelper.kt` and iOS
+  `RCTConvert+Transform.m` skip it), so `withDepth`/`at` in SpinCard fakes
+  depth k as a screen-space shift of (k·sin ry, −k·sin rx·cos ry) placed
+  before the rotations, built from `Animated.modulo`/`interpolate`/`multiply`
+  so it stays on the native driver. `translate: [0, 0, k]` is NOT usable —
+  the native driver only takes numeric transform values.
 - **The Pay in 4 card's free-drag spin physics live in
   `components/redesign/SpinCard.tsx`**, not in `VirtualCard.tsx` — extracted
   so `PhysicalCardReview.tsx`'s finished-design preview gets the exact same
