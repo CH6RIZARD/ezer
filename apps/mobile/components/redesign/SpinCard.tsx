@@ -15,7 +15,7 @@
 //   * release snaps each axis to the nearest multiple of 180 over 900ms
 //     cubic-bezier(.22,1,.36,1)
 //   * movement < 4px counts as a tap -> onTap
-//   * a solid gold side fills the gap between the faces, visible only mid-spin
+//   * a gold metal core sits between the faces, visible only edge-on mid-spin
 //
 // Rotation state lives in Animated.Values driven by a PanResponder, tracked
 // with setValue on every move (see the comment at onPanResponderMove below for
@@ -47,19 +47,41 @@ const CARD_H = 190;
 const CONTAINER_H = 250;
 /** Matches the prototype's perspective: 1100px. */
 const PERSPECTIVE = 1100;
-/** How far each face sits off the card's centre plane along its normal (web: translateZ). */
-const FACE_DEPTH = 3;
 /**
- * The card's gold side: full-size gold sheets stacked between the faces,
- * FACE_DEPTH/4 apart. A single flat core (what this used to be) is a
- * zero-width line edge-on, so at 90° the two faces read as two separate
- * sheets with see-through between them. Stacked, the gap fills solid.
- * The stack fades in with tilt (see `edge` below): at rest and at a few
- * degrees the side is sub-pixel, and a sub-pixel gold strip rasterizes as a
- * row of dashes / a gold rim on the faces' anti-aliased edge — the old
- * "botched edges" report the inset single core used to dodge.
+ * How far the gold core sits inside the faces, on every side. Each face is
+ * pushed 3 units along its normal (translateZ: 3), which after projection
+ * offsets its silhouette from the core's by 3·sin(angle) px — so a core the
+ * same size as the faces peeks out past the near face at EVERY angle: a
+ * continuous 1.5px gold sliver down one side at 30° of Y-rotation, and at a
+ * few degrees of X-tilt a 0.26px sub-pixel strip along the top/bottom that
+ * rasterizes as a row of gold dashes. That was the "botched edges" report.
+ * With an inset the core's own edge sits 4·cos(angle) px inside the face,
+ * so it shows only once 3·sin(a) > 4·cos(a), i.e. past ~53° — exactly the
+ * approach to edge-on where a visible gold thickness is the intent.
+ *
+ * That geometry is the WEB export's. On native, React Native 0.81 has no
+ * `translateZ` transform at all: Android's TransformHelper.kt logs
+ * "Unsupported transform type" and skips it, iOS's RCTConvert+Transform.m
+ * does the same, and Fabric's conversions.h has no branch for it — only a
+ * three-element `translate: [x, y, z]` carries a Z. So on a phone the two
+ * faces and the core are coplanar, and a full-size core could only ever
+ * show through the faces' anti-aliased edge pixels; the inset takes it out
+ * from under those edges entirely, which is why the fix held on the iOS
+ * screenshots too. Do not swap `translateZ` for `translate: [0, 0, 3]` to
+ * "make the depth real" without looking at a device first — native would
+ * honour it, and the card's edge-on look has never been seen that way.
  */
-const SIDE_DEPTHS = Array.from({ length: 7 }, (_, i) => ((i - 3) * FACE_DEPTH) / 4);
+const CORE_INSET = 4;
+
+/**
+ * How far each face sits off the core along its normal (web: translateZ).
+ * KEEP AT 3. Dropping it to 1 "to close the gold-edge gap" (tried Oct 2026)
+ * re-opened the patched see-through-the-side glitch: with the faces nearly
+ * coplanar at grazing angles you could see through the card's edge again.
+ * The 3px separation is what keeps the two faces apart there — the slight
+ * gold offset at extreme angles is the accepted cost of that patch.
+ */
+const FACE_DEPTH = 3;
 /** Sample points for the native sin/cos lookup (15° steps; ≤0.03px error at FACE_DEPTH). */
 const TRIG_DEG = Array.from({ length: 25 }, (_, i) => i * 15);
 
@@ -311,40 +333,34 @@ export function SpinCard({ front, back, style, onTap, onDragChange, hint = 'Drag
     ? [{ rotateX: deg(rx) }, { rotateY: deg(ry) }]
     : [{ perspective: PERSPECTIVE }, { rotateX: deg(rx) }, { rotateY: deg(ry) }];
 
-  // Depth k along the card's normal. Web: a real translateZ(k). RN 0.81 has
-  // no translateZ on native (Android TransformHelper.kt / iOS
-  // RCTConvert+Transform.m skip it), so native reproduces what translateZ
-  // AFTER rotateX·rotateY does on screen — a shift of (k·sin ry,
-  // −k·sin rx·cos ry) — as a screen-space translate placed BEFORE the
-  // rotations. Built from modulo/interpolate/multiply only — all
-  // native-driver nodes, so no JS work per frame (and no listeners; see the
-  // rule in CLAUDE.md). `translate: [0, 0, k]` is not an option: the native
-  // driver only accepts numeric transform values.
+  // Face depth. Web: a real translateZ(FACE_DEPTH) along each face's normal.
+  // Native has no Z (see CORE_INSET), so the faces sat coplanar with the core
+  // and the card read paper-thin on the phone while web showed its gold edge.
+  // What translateZ AFTER rotateX·rotateY actually does on screen is shift the
+  // face by (d·sin ry, −d·sin rx·cos ry); native reproduces exactly that as a
+  // screen-space translate placed BEFORE the rotations. Built from modulo/
+  // interpolate/multiply only — all native-driver nodes, so still no JS work
+  // per frame (and no listeners; see the rule in CLAUDE.md). The array form
+  // `translate: [0, 0, d]` is not an option: the native driver only accepts
+  // numeric transform values.
   const depth = useMemo(() => {
-    const table = (f: (rad: number) => number) => (v: Animated.Value) =>
-      Animated.modulo(v, 360).interpolate({ inputRange: TRIG_DEG, outputRange: TRIG_DEG.map(d => f((d * Math.PI) / 180)) });
-    const sin = table(Math.sin);
-    const absSin = table(r => Math.abs(Math.sin(r)));
-    const dx = sin(ry);
-    const dy = Animated.multiply(Animated.multiply(sin(rx), table(Math.cos)(ry)), -1);
-    // Side opacity: 0 below ~6° of tilt, full by ~17° (side ≈ 1.8px wide).
-    const edge = Animated.add(absSin(rx), absSin(ry)).interpolate({
-      inputRange: [0.1, 0.3],
-      outputRange: [0, 1],
-      extrapolate: 'clamp',
-    });
-    return { dx, dy, edge };
+    if (IS_WEB) return null;
+    const sin = (v: Animated.Value) =>
+      Animated.modulo(v, 360).interpolate({ inputRange: TRIG_DEG, outputRange: TRIG_DEG.map(d => Math.sin((d * Math.PI) / 180)) });
+    const cos = (v: Animated.Value) =>
+      Animated.modulo(v, 360).interpolate({ inputRange: TRIG_DEG, outputRange: TRIG_DEG.map(d => Math.cos((d * Math.PI) / 180)) });
+    const dx = Animated.multiply(sin(ry), FACE_DEPTH);
+    const dy = Animated.multiply(Animated.multiply(sin(rx), cos(ry)), -FACE_DEPTH);
+    // Back face is rotateY(180) first, so its normal points the other way.
+    return {
+      front: [{ translateX: dx }, { translateY: dy }],
+      back: [{ translateX: Animated.multiply(dx, -1) }, { translateY: Animated.multiply(dy, -1) }],
+    };
   }, [rx, ry]);
-  const at = (k: number, rest: object[] = []) =>
+  const withDepth = (side: 'front' | 'back', rest: object[]) =>
     IS_WEB
-      ? [...faceTransform, { translateZ: k }, ...rest]
-      : [
-          faceTransform[0],
-          { translateX: Animated.multiply(depth.dx, k) },
-          { translateY: Animated.multiply(depth.dy, k) },
-          ...faceTransform.slice(1),
-          ...rest,
-        ];
+      ? [...faceTransform, ...rest, { translateZ: FACE_DEPTH }]
+      : [faceTransform[0], ...depth![side], ...faceTransform.slice(1), ...rest];
 
   return (
     <View style={[styles.container, style]}>
@@ -356,39 +372,49 @@ export function SpinCard({ front, back, style, onTap, onDragChange, hint = 'Drag
           { transform: [{ translateY: floatY }] },
         ]}
       >
-        {/* Gold side — see SIDE_DEPTHS. Painted before the faces, so with
-            no real Z on native the faces still cover it face-on.
-            Do not add renderToHardwareTextureAndroid to fight grazing-angle
-            tearing: flattening into a bitmap layer broke Android's
-            backfaceVisibility culling, so the mirrored FRONT showed at rest. */}
-        {SIDE_DEPTHS.map(k => (
-          <Animated.View
-            key={k}
-            pointerEvents="none"
-            style={[styles.face, { opacity: depth.edge, transform: at(k) as never }]}
-          >
-            <LinearGradient
-              colors={gradients.metalEdge as unknown as readonly [string, string, ...string[]]}
-              locations={gradients.metalEdgeLocations as unknown as readonly [number, number, ...number[]]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={styles.fill}
-            />
-          </Animated.View>
-        ))}
-
-        <Animated.View
-          style={[styles.face, styles.hidden, { transform: at(FACE_DEPTH) as never }]}
-        >
-          {front}
+        {/* Gold metal core — sits between the faces, seen only edge-on.
+            An earlier attempt added renderToHardwareTextureAndroid here to
+            fight z-fighting/tearing at grazing angles — it made that worse,
+            not better: flattening each face into a pre-rendered bitmap layer
+            broke Android's backfaceVisibility culling entirely, so the FRONT
+            face stayed visible (mirrored) even at rest instead of only the
+            back showing. Reverted. The hairline highlights below are a
+            smaller, purely additive fix for the same edge-on flatness that
+            doesn't touch how the faces are composited. */}
+        {/* Inset by CORE_INSET on every side (see that constant for the
+            geometry) and symmetric, so its centre — and therefore its
+            rotation origin — is the same point as both faces'. The two
+            2px "edge highlight" strips that used to sit at the core's
+            top/bottom are gone: with the core hidden until ~53° they
+            could never show except as the sub-pixel peek that produced
+            the dashed artifact in the first place. */}
+        <Animated.View style={[styles.core, { transform: faceTransform }]}>
+          <LinearGradient
+            colors={gradients.metalEdge as unknown as readonly [string, string, ...string[]]}
+            locations={gradients.metalEdgeLocations as unknown as readonly [number, number, ...number[]]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={[styles.fill, { borderRadius: radius.virtualCard - CORE_INSET }]}
+          />
         </Animated.View>
 
-        {/* Back face is rotateY(180) after the shift, so its normal points the other way. */}
         <Animated.View
           style={[
             styles.face,
             styles.hidden,
-            { transform: at(-FACE_DEPTH, [{ rotateY: '180deg' }]) as never },
+            { transform: withDepth('front', []) as never },
+          ]}
+        >
+          {front}
+        </Animated.View>
+
+        <Animated.View
+          style={[
+            styles.face,
+            styles.hidden,
+            {
+              transform: withDepth('back', [{ rotateY: '180deg' }]) as never,
+            },
           ]}
         >
           {back}
@@ -425,6 +451,16 @@ const styles = StyleSheet.create({
   fill: {
     flex: 1,
     borderRadius: radius.virtualCard,
+  },
+  core: {
+    position: 'absolute',
+    left: CORE_INSET,
+    top: CORE_INSET,
+    width: CARD_W - CORE_INSET * 2,
+    height: CARD_H - CORE_INSET * 2,
+    // Concentric with the faces' corners, not just smaller.
+    borderRadius: radius.virtualCard - CORE_INSET,
+    overflow: 'hidden',
   },
   hint: {
     marginTop: 14,
