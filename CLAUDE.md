@@ -183,8 +183,8 @@ style problem.
   gold RING (border only) to keep overdraw low. Perpendicular side walls
   placed by projection maths were tried and missed on Android (its camera
   projection does not match a computed placement) — don't retry them.
-  Seven "dev" variant (`v=dev`) cards per harness page is the most headless
-  Edge renders before it drops layers; use 4-angle pages. Two later redesigns (per-axis
+  With 25 layers a card, headless Edge drops whole faces once a harness page
+  holds 16 cards; render `v=dev` four angles at a time. Two later redesigns (per-axis
   stacks with insets, 3px thickness) were judged against a STALE dev page
   and rejected once the APK showed them: the APK must match this design.
   **The dev server must not be started with `CI=1`**: CI mode turns off

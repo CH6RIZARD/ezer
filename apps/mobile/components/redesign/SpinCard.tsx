@@ -64,8 +64,7 @@ const FACE_DEPTH = 3;
  *
  * Each sheet is a RING (a gold border, transparent inside), not a filled
  * card: the faces cover the middle anyway, and 23 filled card-sized layers
- * would be 23× the overdraw on a low-end phone. The ring only has to be
- * wider than the most a sheet can shift past the face (2·FACE_DEPTH).
+ * would be 23× the overdraw on a low-end phone. See SIDE_RING for how wide.
  * Shaded darker toward the faces, brighter mid-thickness, like a milled
  * metal edge.
  *
@@ -78,7 +77,14 @@ const SIDE_DEPTHS = Array.from(
   { length: Math.round((FACE_DEPTH * 2) / SIDE_STEP) - 1 },
   (_, i) => -FACE_DEPTH + SIDE_STEP * (i + 1)
 );
-const SIDE_RING = FACE_DEPTH * 2 + 2;
+/**
+ * Ring width. Not just "wider than a sheet's shift": edge-on, the ring's own
+ * width is what is foreshortened into the visible band (w·cos a), and a thin
+ * ring drew sub-pixel on Android, so the band's middle came out dark and
+ * see-through (S22 capture, 8px ring). 40px still covers a device pixel at
+ * 89.5° while leaving the middle ~45% of each sheet transparent.
+ */
+const SIDE_RING = 40;
 const mixHex = (a: string, b: string, t: number) => {
   const p = (h: string) => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
   const [x, y] = [p(a), p(b)];
