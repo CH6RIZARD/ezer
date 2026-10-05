@@ -58,7 +58,13 @@ export async function highnoteAuthRoutes(server: FastifyInstance) {
     // Replay guard on the part that matters: a captured approval request.
     if (!fresh(body?.extensions?.signatureTimestamp)) return reject(401, 'STALE_SIGNATURE');
     const transactionId = req.transaction?.id;
-    if (!transactionId) return reject(400, 'MISSING_TRANSACTION');
+    if (!transactionId) {
+      // Activation's verification event is a signed request with no
+      // transaction. It needs a 2xx; answering it with a decline keeps this
+      // fail-closed if a real swipe ever arrived without one.
+      request.log.error({ keys: Object.keys(req), data: Object.keys(body?.data ?? {}) }, 'highnote auth: no transaction (verification?)');
+      return reply.send({ responseCode: 'INSUFFICIENT_FUNDS' });
+    }
 
     const user = req.paymentCard?.id
       ? await prisma.user.findUnique({ where: { highnoteCardId: req.paymentCard.id }, select: { id: true } })
