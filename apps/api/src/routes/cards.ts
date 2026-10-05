@@ -19,6 +19,7 @@ import { FastifyInstance, FastifyRequest } from 'fastify';
 import { prisma } from '@ezer/db';
 import { verifyJwt, extractTokenFromHeader } from '../utils/jwt';
 import { assessAccess, type AccessStatus } from '../services/trustScoring';
+import { highnoteEnabled, issueTestCard, readTestCard } from '../services/highnote';
 
 // -----------------------------------------------------------------------------
 // Types
@@ -173,6 +174,13 @@ export async function cardRoutes(server: FastifyInstance) {
       data: { userId, designId: designId || null, mode: 'plaid', status, limitCents, trustScore },
     });
 
+    // Approved → issue the Highnote TEST card in the background: onboarding
+    // takes seconds and the join must not wait on it. GET /cards/highnote
+    // reports 'pending' meanwhile.
+    if (userId !== 'anonymous' && status === 'approved_pending_issuance' && limitCents > 0 && highnoteEnabled()) {
+      void issueTestCard(userId, limitCents).catch(err => request.log.error({ err: err.message, userId }, 'highnote issuance failed'));
+    }
+
     return {
       success: true,
       data: { status, limitCents, trustScore },
@@ -259,5 +267,26 @@ export async function cardRoutes(server: FastifyInstance) {
     });
 
     return { success: true, data: { status, limitCents, trustScore } };
+  });
+
+  /**
+   * GET /cards/highnote — the user's Highnote TEST card and its live Pay in 4
+   * schedules. `status: 'pending'` while issueTestCard is still onboarding.
+   */
+  server.get('/highnote', async (request, reply) => {
+    const userId = resolveUserId(request);
+    if (userId === 'anonymous') return reply.status(401).send({ success: false, error: 'Sign in required' });
+    if (!highnoteEnabled()) return { success: true, data: { status: 'none' } };
+    const view = await readTestCard(userId);
+    if (view.status === 'none') {
+      // Approved before card issuing existed: issue now rather than making
+      // them re-check Spending Power.
+      const latest = await prisma.cardAccessList.findFirst({ where: { userId }, orderBy: { createdAt: 'desc' } });
+      if (latest?.status === 'approved_pending_issuance' && latest.limitCents && latest.limitCents > 0) {
+        void issueTestCard(userId, latest.limitCents).catch(err => request.log.error({ err: err.message, userId }, 'highnote issuance failed'));
+        return { success: true, data: { status: 'pending' } };
+      }
+    }
+    return { success: true, data: view };
   });
 }

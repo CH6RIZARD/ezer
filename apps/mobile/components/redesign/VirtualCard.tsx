@@ -27,9 +27,11 @@ export interface VirtualCardProps {
    * scrolling the page.
    */
   onDragChange?: (dragging: boolean) => void;
+  /** Issued card (Highnote TEST). Absent = the preview card. */
+  issued?: { last4: string; expiry: string };
 }
 
-export function VirtualCard({ finish = 'amethyst', style, onDragChange }: VirtualCardProps) {
+export function VirtualCard({ finish = 'amethyst', style, onDragChange, issued }: VirtualCardProps) {
   const [revealed, setRevealed] = useState(false);
   const finishColors = cardFinishes[finish];
 
@@ -51,7 +53,7 @@ export function VirtualCard({ finish = 'amethyst', style, onDragChange }: Virtua
             <CardChip />
           </View>
 
-          <Text selectable={false} style={styles.number}>{revealed ? NUMBER_REAL : NUMBER_MASKED}</Text>
+          <Text selectable={false} style={styles.number}>{issued ? `••••  ••••  ••••  ${issued.last4}` : revealed ? NUMBER_REAL : NUMBER_MASKED}</Text>
 
           <View style={styles.rowBetween}>
             <View>
@@ -60,10 +62,10 @@ export function VirtualCard({ finish = 'amethyst', style, onDragChange }: Virtua
             </View>
             <View>
               <Text selectable={false} style={styles.cardLabel}>
-                {revealed ? 'EXPIRES' : 'STATUS'}
+                {issued || revealed ? 'EXPIRES' : 'STATUS'}
               </Text>
               <Text selectable={false} style={styles.cardValue}>
-                {revealed ? '09/29' : 'PREVIEW'}
+                {issued ? issued.expiry : revealed ? '09/29' : 'PREVIEW'}
               </Text>
             </View>
           </View>
