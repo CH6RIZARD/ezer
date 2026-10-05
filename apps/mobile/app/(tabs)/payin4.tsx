@@ -76,6 +76,13 @@ export default function PayInFourScreen() {
   // While the card is being turned the page must not scroll — otherwise a
   // vertical drag fights the rotation and the screen slides away underneath it.
   const [cardDragging, setCardDragging] = useState(false);
+  // The SAME element every render: toggling cardDragging re-renders this
+  // screen at the start and end of every turn, and re-rendering the card
+  // then rebuilt its animated layers — a hitch at the start of each drag.
+  const card = useMemo(
+    () => <VirtualCard style={{ marginTop: 10 }} onDragChange={setCardDragging} />,
+    []
+  );
   const installments = useInstallments();
 
   // --- Spending Power sheet --------------------------------------------------
@@ -161,7 +168,7 @@ export default function PayInFourScreen() {
           </View>
 
           {/* --- the card ---------------------------------------------------- */}
-          <VirtualCard style={{ marginTop: 10 }} onDragChange={setCardDragging} />
+          {card}
 
           {/* --- spend with clarity ------------------------------------------ */}
           <Surface style={styles.block}>

@@ -34,7 +34,7 @@
 // the standard fix for that class of bug.
 // =============================================================================
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef } from 'react';
 import { View, Text, Animated, PanResponder, Platform, StyleSheet, Easing, type StyleProp, type ViewStyle } from 'react-native';
 import { useTheme } from '../../utils/ThemeContext';
 import { gradients } from '../../theme/tokens';
@@ -134,8 +134,10 @@ export function SpinCard({ front, back, style, onTap, onDragChange, hint = 'Drag
   const { colors } = useTheme();
 
   // Once touched, the idle float never resumes — per the spec it pauses in
-  // place, it does not restart when the finger lifts.
-  const [interacted, setInteracted] = useState(false);
+  // place, it does not restart when the finger lifts. A ref, not state: a
+  // re-render on the first touch rebuilt every layer's animated style at the
+  // exact moment the drag starts (see the memoized `layers` below).
+  const interacted = useRef(false);
 
   // --- rotation ---------------------------------------------------------------
   const rx = useRef(new Animated.Value(0)).current;
@@ -243,7 +245,7 @@ export function SpinCard({ front, back, style, onTap, onDragChange, hint = 'Drag
   // instead, which is the one-shot read this ever actually needed.
 
   useEffect(() => {
-    if (interacted) return;
+    if (interacted.current) return;
     const loop = Animated.loop(
       Animated.sequence([
         Animated.timing(float, {
@@ -263,17 +265,17 @@ export function SpinCard({ front, back, style, onTap, onDragChange, hint = 'Drag
     floatLoop.current = loop;
     loop.start();
     return () => loop.stop();
-  }, [float, interacted]);
+  }, [float]);
 
   /** Freeze the float at whatever frame it is on — no snap back to 0. */
   const freezeFloat = useCallback(() => {
-    if (interacted) return;
+    if (interacted.current) return;
+    interacted.current = true;
     floatLoop.current?.stop();
     // stopAnimation hands back the value the native driver is currently at —
     // the one-shot read the old per-frame listener was standing in for.
     float.stopAnimation(v => float.setValue(v));
-    setInteracted(true);
-  }, [float, interacted]);
+  }, [float]);
 
   // --- gesture ----------------------------------------------------------------
   const panResponder = useMemo(
@@ -354,17 +356,29 @@ export function SpinCard({ front, back, style, onTap, onDragChange, hint = 'Drag
   );
 
   // --- transforms -------------------------------------------------------------
-  const deg = (v: Animated.Value) =>
-    v.interpolate({ inputRange: [-360, 360], outputRange: ['-360deg', '360deg'] });
+  // EVERY animated node and style below is built once (useMemo on the
+  // Animated values, which never change). Built inline, each render made
+  // fresh interpolate/multiply nodes for all ~25 layers, and Animated tore
+  // down and re-attached the whole native graph — and renders happen exactly
+  // when a drag STARTS (first-touch float freeze, the parent disabling its
+  // ScrollView), so every drag began with a visible hitch.
+  const deg = useCallback(
+    (v: Animated.Value) => v.interpolate({ inputRange: [-360, 360], outputRange: ['-360deg', '360deg'] }),
+    []
+  );
 
-  const floatY = float.interpolate({
-    inputRange: [0, 1],
-    outputRange: [0, motion.cardFloatTravel],
-  });
+  const floatY = useMemo(
+    () => float.interpolate({ inputRange: [0, 1], outputRange: [0, motion.cardFloatTravel] }),
+    [float]
+  );
 
-  const faceTransform = IS_WEB
-    ? [{ rotateX: deg(rx) }, { rotateY: deg(ry) }]
-    : [{ perspective: PERSPECTIVE }, { rotateX: deg(rx) }, { rotateY: deg(ry) }];
+  const faceTransform = useMemo(
+    () =>
+      IS_WEB
+        ? [{ rotateX: deg(rx) }, { rotateY: deg(ry) }]
+        : [{ perspective: PERSPECTIVE }, { rotateX: deg(rx) }, { rotateY: deg(ry) }],
+    [deg, rx, ry]
+  );
 
   // Depth k along the card's normal. Web: a real translateZ(k). RN 0.81 has
   // no translateZ on native (Android TransformHelper.kt / iOS
@@ -398,63 +412,51 @@ export function SpinCard({ front, back, style, onTap, onDragChange, hint = 'Drag
     });
     return { dx, dy, edge, fine };
   }, [rx, ry]);
-  const at = (k: number, rest: object[] = []) =>
-    IS_WEB
-      ? [...faceTransform, { translateZ: k }, ...rest]
-      : [
-          faceTransform[0],
-          { translateX: Animated.multiply(depth.dx, k) },
-          { translateY: Animated.multiply(depth.dy, k) },
-          ...faceTransform.slice(1),
-          ...rest,
-        ];
+  const layers = useMemo(() => {
+    const at = (k: number, rest: object[] = []) =>
+      IS_WEB
+        ? [...faceTransform, { translateZ: k }, ...rest]
+        : [
+            faceTransform[0],
+            { translateX: Animated.multiply(depth.dx, k) },
+            { translateY: Animated.multiply(depth.dy, k) },
+            ...faceTransform.slice(1),
+            ...rest,
+          ];
+    return {
+      card: [
+        styles.card,
+        IS_WEB ? ({ perspective: PERSPECTIVE } as unknown as ViewStyle) : null,
+        { transform: [{ translateY: floatY }] },
+      ],
+      sheets: SIDE_DEPTHS.map((k, i) => [
+        styles.sheet,
+        {
+          backgroundColor: sideColor(k),
+          opacity: isCoarse(i) ? depth.edge : depth.fine,
+          transform: at(k) as never,
+        },
+      ]),
+      front: [styles.face, styles.hidden, { transform: at(FACE_DEPTH) as never }],
+      // rotateY(180) after the shift, so its normal points the other way.
+      back: [styles.face, styles.hidden, { transform: at(-FACE_DEPTH, [{ rotateY: '180deg' }]) as never }],
+    };
+  }, [faceTransform, depth, floatY]);
 
   return (
     <View style={[styles.container, style]}>
-      <Animated.View
-        {...panResponder.panHandlers}
-        style={[
-          styles.card,
-          IS_WEB ? ({ perspective: PERSPECTIVE } as unknown as ViewStyle) : null,
-          { transform: [{ translateY: floatY }] },
-        ]}
-      >
+      <Animated.View {...panResponder.panHandlers} style={layers.card}>
         {/* Gold side — see SIDE_DEPTHS. Painted before the faces, so with
             no real Z on native the faces still cover it face-on.
             Do not add renderToHardwareTextureAndroid to fight grazing-angle
             tearing: flattening into a bitmap layer broke Android's
             backfaceVisibility culling, so the mirrored FRONT showed at rest. */}
-        {SIDE_DEPTHS.map((k, i) => (
-          <Animated.View
-            key={k}
-            pointerEvents="none"
-            style={[
-              styles.sheet,
-              {
-                backgroundColor: sideColor(k),
-                opacity: isCoarse(i) ? depth.edge : depth.fine,
-                transform: at(k) as never,
-              },
-            ]}
-          />
+        {layers.sheets.map((sheetStyle, i) => (
+          <Animated.View key={SIDE_DEPTHS[i]} pointerEvents="none" style={sheetStyle} />
         ))}
 
-        <Animated.View
-          style={[styles.face, styles.hidden, { transform: at(FACE_DEPTH) as never }]}
-        >
-          {front}
-        </Animated.View>
-
-        {/* Back face is rotateY(180) after the shift, so its normal points the other way. */}
-        <Animated.View
-          style={[
-            styles.face,
-            styles.hidden,
-            { transform: at(-FACE_DEPTH, [{ rotateY: '180deg' }]) as never },
-          ]}
-        >
-          {back}
-        </Animated.View>
+        <Animated.View style={layers.front}>{front}</Animated.View>
+        <Animated.View style={layers.back}>{back}</Animated.View>
       </Animated.View>
 
       {hint ? (

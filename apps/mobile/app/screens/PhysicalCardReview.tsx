@@ -16,7 +16,7 @@
 // screens that render a design.
 // =============================================================================
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { View, Text, ScrollView, ActivityIndicator, StyleSheet } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -51,6 +51,20 @@ export default function PhysicalCardReviewScreen() {
   const [strokes, setStrokes] = useState<CardStroke[]>([]);
   const [access, setAccess] = useState<CardAccessOutcome | null>(null);
   const [dragging, setDragging] = useState(false);
+  // Same element across the dragging re-renders (see payin4.tsx): otherwise
+  // the start of every turn re-rendered the card and rebuilt its layers.
+  const card = useMemo(
+    () => (
+      <SpinCard
+        style={{ marginTop: 8 }}
+        onDragChange={setDragging}
+        hint="Drag to spin it around"
+        front={<CardFrontFace finish={finish} strokes={strokes} />}
+        back={<CardBackFace finish={finish} />}
+      />
+    ),
+    [finish, strokes]
+  );
 
   useEffect(() => {
     let alive = true;
@@ -133,13 +147,7 @@ export default function PhysicalCardReviewScreen() {
             <Text style={[typeScale.screenTitle, { color: colors.ink, marginLeft: 12 }]}>Your card</Text>
           </View>
 
-          <SpinCard
-            style={{ marginTop: 8 }}
-            onDragChange={setDragging}
-            hint="Drag to spin it around"
-            front={<CardFrontFace finish={finish} strokes={strokes} />}
-            back={<CardBackFace finish={finish} />}
-          />
+          {card}
 
           {access?.status === 'approved' && access.limitCents !== null && (
             <Surface style={[styles.reveal, { borderColor: colors.goldLine, backgroundColor: colors.goldSoft }]}>
