@@ -88,7 +88,9 @@ function RootLayoutNav() {
           <Stack.Screen name="auth/login" />
           <Stack.Screen name="auth/signup" />
           <Stack.Screen name="onboarding" />
-          <Stack.Screen name="(tabs)" />
+          {/* No slide: the app is entered from behind the lock's EZER fade,
+              and a slide-in showed the blank entry screen underneath. */}
+          <Stack.Screen name="(tabs)" options={{ animation: 'none' }} />
           <Stack.Screen name="settings" />
           <Stack.Screen name="screens/CardDetail" />
           <Stack.Screen name="screens/SubscriptionDetail" />
