@@ -117,7 +117,11 @@ style problem.
   the P2021/P2022 "table/column does not exist" errors it threw before.
   `20260930030000_add_linked_banks_model` (`User.payIn4InstrumentId`,
   `PlaidItem.readForSubscriptions`, `FundingInstrument.subtype`/`itemId`) HAS
-  been applied.
+  been applied. `20261005000000_add_highnote_card_id` (`User.highnoteCardId`)
+  HAS been applied. Apply each one with `railway run --service ezer-api npx
+  prisma db execute --schema prisma\schema.prisma --file <migration.sql>` from
+  `packages/db`. NEVER `migrate deploy`: this DB was never baselined, so it
+  replays `0_init` and fails on "type already exists".
 
 ## Card Studio
 
