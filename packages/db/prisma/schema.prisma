@@ -38,6 +38,9 @@ model User {
   /// (PayIn4AccountPicker.tsx) is the only place this is set deliberately;
   /// see CLAUDE.md's Linked banks section.
   payIn4InstrumentId String?
+  /// Highnote (TEST) payment card issued for Pay in 4 — how a collaborative
+  /// authorization request (routes/highnoteAuth.ts) finds its user.
+  highnoteCardId String? @unique
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 

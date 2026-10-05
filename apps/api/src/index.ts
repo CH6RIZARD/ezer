@@ -21,6 +21,7 @@ import { cardRoutes } from './routes/cards';
 import { installmentRoutes } from './routes/installments';
 import { savingsRoutes } from './routes/savings';
 import { processorWebhookRoutes } from './routes/processorWebhook';
+import { highnoteAuthRoutes } from './routes/highnoteAuth';
 import { inboxRoutes } from './routes/inbox';
 import { ensureUploadsDir } from './utils/storage';
 
@@ -115,6 +116,8 @@ async function start() {
     // savings auth preHandler cannot reach it. Authenticated by HMAC signature
     // over the raw request bytes, not by a user JWT.
     await server.register(processorWebhookRoutes, { prefix: '/webhooks/processor' });
+    // Highnote collaborative authorization — same HMAC-not-JWT reasoning.
+    await server.register(highnoteAuthRoutes, { prefix: '/webhooks/highnote' });
 
     // Start server
     await server.listen({ port: PORT, host: HOST });
