@@ -16,12 +16,22 @@ import { decide, fresh, signatureValid } from '../services/highnoteAuth';
 const SECRET = process.env.HIGHNOTE_COLLAB_AUTH_SECRET || '';
 
 export async function highnoteAuthRoutes(server: FastifyInstance) {
+  // Every content type as raw bytes — the signature covers them, whatever Highnote labels them.
+  server.addContentTypeParser('*', { parseAs: 'buffer' }, (_req, body, done) => done(null, body));
   server.addContentTypeParser('application/json', { parseAs: 'buffer' }, (_req, body, done) => done(null, body));
 
+  // Reachability probe: harmless, and a GET-based verification would 404 otherwise.
+  server.get('/authorize', async () => ({ success: true }));
+
   server.post('/authorize', async (request, reply) => {
-    const raw = request.body as Buffer;
+    const raw = Buffer.isBuffer(request.body) ? request.body : Buffer.alloc(0);
     const reject = (status: number, reason: string) => {
-      request.log.warn({ ip: request.ip, reason }, 'highnote auth rejected');
+      // error level: production logs only errors, and a rejected Highnote call
+      // is exactly what needs to be visible.
+      request.log.error(
+        { ip: request.ip, reason, ua: request.headers['user-agent'], ct: request.headers['content-type'], bytes: raw.length, signed: !!request.headers['highnote-signature'] },
+        'highnote auth rejected'
+      );
       return reply.status(status).send({ error: reason });
     };
 
