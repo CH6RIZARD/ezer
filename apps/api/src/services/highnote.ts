@@ -111,9 +111,11 @@ export async function issueTestCard(userId: string, limitCents: number): Promise
       'issueFinancialAccountForApplication'
     );
 
-    // Only ever RAISES the line (Test underwriting grants $1,000 and this
-    // can't lower it) — Spending Power itself is enforced per swipe by
-    // routes/highnoteAuth.ts against cardSpentCents.
+    // Sets the line to Spending Power, ASYNCHRONOUSLY: Test underwriting
+    // grants $1,000 and the ledger shows that for a few minutes before this
+    // lands. Spending Power is also enforced per swipe by
+    // routes/highnoteAuth.ts against cardSpentCents, which covers that window
+    // and any later drop in Spending Power.
     const lim = await hn(
       `mutation($input: InitiateFinancialAccountCreditLimitUpdateFromProductFundingInput!) { initiateFinancialAccountCreditLimitUpdateFromProductFunding(input: $input) { __typename ${ERR} } }`,
       { input: { financialAccountId: account.id, amount: { value: limitCents, currencyCode: 'USD' }, memo: 'EZER Spending Power' } }
@@ -145,9 +147,9 @@ export async function issueTestCard(userId: string, limitCents: number): Promise
 
 /**
  * What's already in use on the card's account: held authorizations plus the
- * posted balance (credit limit − available credit). Highnote's own limit is
- * set by its underwriting ($1,000 in Test) and can't simply be lowered, so
- * collaborative authorization enforces Spending Power against this instead.
+ * posted balance (credit limit − available credit). Highnote's own line can
+ * lag Spending Power (set asynchronously at issuance, never re-synced after),
+ * so collaborative authorization enforces Spending Power against this too.
  * Throws on timeout — the caller declines.
  */
 export async function cardSpentCents(cardId: string, timeoutMs = 1200): Promise<number> {
