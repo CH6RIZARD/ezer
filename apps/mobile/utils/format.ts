@@ -22,6 +22,25 @@ export function formatCompactCurrency(amount: number): string {
 }
 
 /**
+ * A money amount for a tight slot (a calendar day cell, ~35px wide), short
+ * at every size; the sign is the caller's.
+ *   $85.44 · $326 · $1.3k · $13k · $130k · $1.3M
+ * Cents only under $100; whole dollars to $999; then k / M with one decimal
+ * below 10, none from 10 up. A rounding that reaches the next unit moves up
+ * ($999.60 → $1k, not $1000; $999,999 → $1M, not $1000k).
+ */
+export function formatCompactCents(cents: number): string {
+  const c = Math.abs(Math.round(Number.isFinite(cents) ? cents : 0));
+  if (c < 10000) return `$${(c / 100).toFixed(2)}`;
+  const dollars = Math.round(c / 100);
+  if (dollars < 1000) return `$${dollars}`;
+  const fmt = (v: number) => (v < 9.95 ? String(Math.round(v * 10) / 10) : String(Math.round(v)));
+  const k = dollars / 1000;
+  if (Math.round(k) < 1000) return `$${fmt(k)}k`;
+  return `$${fmt(dollars / 1e6)}M`;
+}
+
+/**
  * Format a percentage (0-100)
  */
 export function formatPercentage(value: number, decimals = 0): string {

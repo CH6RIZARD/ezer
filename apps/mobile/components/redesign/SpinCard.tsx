@@ -36,6 +36,7 @@
 
 import React, { useCallback, useEffect, useMemo, useRef } from 'react';
 import { View, Text, Animated, PanResponder, Platform, StyleSheet, Easing, type StyleProp, type ViewStyle } from 'react-native';
+import { PanGestureHandler, State, type PanGestureHandlerStateChangeEvent } from 'react-native-gesture-handler';
 import { useTheme } from '../../utils/ThemeContext';
 import { gradients } from '../../theme/tokens';
 import { fontFamily, motion, radius } from '../../theme/type';
@@ -114,6 +115,9 @@ const TRIG_DEG = Array.from({ length: 25 }, (_, i) => i * 15);
  */
 const IS_WEB = Platform.OS === 'web';
 
+/** A rotation in degrees: the settled base, or base + live drag. */
+type Rotation = Animated.Value | Animated.AnimatedAddition<number>;
+
 export interface SpinCardProps {
   front: React.ReactNode;
   back: React.ReactNode;
@@ -161,6 +165,23 @@ export function SpinCard({ front, back, style, onTap, onDragChange, hint = 'Drag
     Animated.timing(rx, { toValue: 0, duration: 0, useNativeDriver: true }).start();
     Animated.timing(ry, { toValue: 0, duration: 0, useNativeDriver: true }).start();
   }, [rx, ry]);
+
+  // Native: the drag itself never touches JS. react-native-gesture-handler
+  // writes the finger's translation straight into tx/ty on the native side
+  // (Animated.event, useNativeDriver), and the rotation the layers read is
+  // base + translation. With PanResponder every move went through the JS
+  // thread first, and right after the screen opens that thread is busy
+  // rendering and fetching, so the first drags barely turned the card ("takes
+  // a couple of touches", S22: 20° instead of 75° for the same swipe). JS only
+  // runs at touch-down and release. Web keeps PanResponder (see the header).
+  const tx = useRef(new Animated.Value(0)).current;
+  const ty = useRef(new Animated.Value(0)).current;
+  const rotX = useMemo(() => Animated.add(rx, Animated.multiply(ty, -motion.cardRotatePerPx)), [rx, ty]);
+  const rotY = useMemo(() => Animated.add(ry, Animated.multiply(tx, motion.cardRotatePerPx)), [ry, tx]);
+  const onGestureEvent = useMemo(
+    () => Animated.event([{ nativeEvent: { translationX: tx, translationY: ty } }], { useNativeDriver: true }),
+    [tx, ty]
+  );
 
   // rxVal/ryVal are kept by hand at the two places THIS code writes the
   // values (applyMove below, and the release settle's known snap target) —
@@ -278,6 +299,31 @@ export function SpinCard({ front, back, style, onTap, onDragChange, hint = 'Drag
   }, [float]);
 
   // --- gesture ----------------------------------------------------------------
+  // Snap each axis to the nearest half-turn with a slow soft settle. The snap
+  // target is written into rxVal/ryVal up front: once the settle finishes that
+  // IS the value, and the gesture handlers are the only other writers — so the
+  // mirrors stay exact with no per-frame listener.
+  const settle = useCallback(() => {
+    const snap = (v: number) => Math.round(v / 180) * 180;
+    const [c0, c1, c2, c3] = motion.cardSettleBezier;
+    ryVal.current = snap(ryVal.current);
+    rxVal.current = snap(rxVal.current);
+    Animated.parallel([
+      Animated.timing(ry, {
+        toValue: ryVal.current,
+        duration: motion.cardSettle,
+        easing: Easing.bezier(c0, c1, c2, c3),
+        useNativeDriver: true,
+      }),
+      Animated.timing(rx, {
+        toValue: rxVal.current,
+        duration: motion.cardSettle,
+        easing: Easing.bezier(c0, c1, c2, c3),
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, [rx, ry]);
+
   const panResponder = useMemo(
     () =>
       PanResponder.create({
@@ -326,33 +372,38 @@ export function SpinCard({ front, back, style, onTap, onDragChange, hint = 'Drag
             return;
           }
 
-          // Snap each axis to the nearest half-turn with a slow soft settle.
-          // The snap target is written into rxVal/ryVal up front: once the
-          // settle finishes that IS the value, and it's the only place other
-          // than applyMove that moves these — so the mirrors stay exact with
-          // no per-frame listener.
-          const snap = (v: number) => Math.round(v / 180) * 180;
-          const [c0, c1, c2, c3] = motion.cardSettleBezier;
-          ryVal.current = snap(ryVal.current);
-          rxVal.current = snap(rxVal.current);
-
-          Animated.parallel([
-            Animated.timing(ry, {
-              toValue: ryVal.current,
-              duration: motion.cardSettle,
-              easing: Easing.bezier(c0, c1, c2, c3),
-              useNativeDriver: true,
-            }),
-            Animated.timing(rx, {
-              toValue: rxVal.current,
-              duration: motion.cardSettle,
-              easing: Easing.bezier(c0, c1, c2, c3),
-              useNativeDriver: true,
-            }),
-          ]).start();
+          settle();
         },
       }),
-    [freezeFloat, scheduleMove, flushMove, rx, ry, onDragChange, onTap]
+    [freezeFloat, scheduleMove, flushMove, settle, onDragChange, onTap]
+  );
+
+  // Native gesture: touch-down and release only (the moves are native).
+  const onHandlerStateChange = useCallback(
+    (e: PanGestureHandlerStateChangeEvent) => {
+      const { state, translationX, translationY } = e.nativeEvent;
+      if (state === State.BEGAN) {
+        freezeFloat();
+        onDragChange?.(true);
+        return;
+      }
+      if (state !== State.END && state !== State.CANCELLED && state !== State.FAILED) return;
+      onDragChange?.(false);
+      // Fold the drag into the base in one batch, so base + translation is
+      // unchanged on screen: no jump between the gesture and the settle.
+      ryVal.current += translationX * motion.cardRotatePerPx;
+      rxVal.current -= translationY * motion.cardRotatePerPx;
+      ry.setValue(ryVal.current);
+      rx.setValue(rxVal.current);
+      tx.setValue(0);
+      ty.setValue(0);
+      if (state !== State.CANCELLED && Math.hypot(translationX, translationY) < motion.cardTapSlop) {
+        onTap?.();
+        return;
+      }
+      settle();
+    },
+    [freezeFloat, onDragChange, onTap, rx, ry, tx, ty, settle]
   );
 
   // --- transforms -------------------------------------------------------------
@@ -363,7 +414,7 @@ export function SpinCard({ front, back, style, onTap, onDragChange, hint = 'Drag
   // when a drag STARTS (first-touch float freeze, the parent disabling its
   // ScrollView), so every drag began with a visible hitch.
   const deg = useCallback(
-    (v: Animated.Value) => v.interpolate({ inputRange: [-360, 360], outputRange: ['-360deg', '360deg'] }),
+    (v: Rotation) => v.interpolate({ inputRange: [-360, 360], outputRange: ['-360deg', '360deg'] }),
     []
   );
 
@@ -375,9 +426,9 @@ export function SpinCard({ front, back, style, onTap, onDragChange, hint = 'Drag
   const faceTransform = useMemo(
     () =>
       IS_WEB
-        ? [{ rotateX: deg(rx) }, { rotateY: deg(ry) }]
-        : [{ perspective: PERSPECTIVE }, { rotateX: deg(rx) }, { rotateY: deg(ry) }],
-    [deg, rx, ry]
+        ? [{ rotateX: deg(rotX) }, { rotateY: deg(rotY) }]
+        : [{ perspective: PERSPECTIVE }, { rotateX: deg(rotX) }, { rotateY: deg(rotY) }],
+    [deg, rotX, rotY]
   );
 
   // Depth k along the card's normal. Web: a real translateZ(k). RN 0.81 has
@@ -390,14 +441,14 @@ export function SpinCard({ front, back, style, onTap, onDragChange, hint = 'Drag
   // rule in CLAUDE.md). `translate: [0, 0, k]` is not an option: the native
   // driver only accepts numeric transform values.
   const depth = useMemo(() => {
-    const table = (f: (rad: number) => number) => (v: Animated.Value) =>
+    const table = (f: (rad: number) => number) => (v: Rotation) =>
       Animated.modulo(v, 360).interpolate({ inputRange: TRIG_DEG, outputRange: TRIG_DEG.map(d => f((d * Math.PI) / 180)) });
     const sin = table(Math.sin);
     const absSin = table(r => Math.abs(Math.sin(r)));
-    const dx = sin(ry);
-    const dy = Animated.multiply(Animated.multiply(sin(rx), table(Math.cos)(ry)), -1);
+    const dx = sin(rotY);
+    const dy = Animated.multiply(Animated.multiply(sin(rotX), table(Math.cos)(rotY)), -1);
     // Side opacity: 0 below ~6° of tilt, full by ~17° (side ≈ 1.8px wide).
-    const edge = Animated.add(absSin(rx), absSin(ry)).interpolate({
+    const edge = Animated.add(absSin(rotX), absSin(rotY)).interpolate({
       inputRange: [0.1, 0.3],
       outputRange: [0, 1],
       extrapolate: 'clamp',
@@ -405,13 +456,13 @@ export function SpinCard({ front, back, style, onTap, onDragChange, hint = 'Drag
     // Fill-in sheets: |cos rx·cos ry| is how squarely the face still points
     // at the viewer; they fade in from ~65° of tilt and are full by ~75°.
     const absCos = table(r => Math.abs(Math.cos(r)));
-    const fine = Animated.multiply(absCos(rx), absCos(ry)).interpolate({
+    const fine = Animated.multiply(absCos(rotX), absCos(rotY)).interpolate({
       inputRange: [0.26, 0.42],
       outputRange: [1, 0],
       extrapolate: 'clamp',
     });
     return { dx, dy, edge, fine };
-  }, [rx, ry]);
+  }, [rotX, rotY]);
   const layers = useMemo(() => {
     const at = (k: number, rest: object[] = []) =>
       IS_WEB
@@ -443,9 +494,8 @@ export function SpinCard({ front, back, style, onTap, onDragChange, hint = 'Drag
     };
   }, [faceTransform, depth, floatY]);
 
-  return (
-    <View style={[styles.container, style]}>
-      <Animated.View {...panResponder.panHandlers} style={layers.card}>
+  const card = (
+    <Animated.View {...(IS_WEB ? panResponder.panHandlers : null)} style={layers.card}>
         {/* Gold side — see SIDE_DEPTHS. Painted before the faces, so with
             no real Z on native the faces still cover it face-on.
             Do not add renderToHardwareTextureAndroid to fight grazing-angle
@@ -457,7 +507,24 @@ export function SpinCard({ front, back, style, onTap, onDragChange, hint = 'Drag
 
         <Animated.View style={layers.front}>{front}</Animated.View>
         <Animated.View style={layers.back}>{back}</Animated.View>
-      </Animated.View>
+    </Animated.View>
+  );
+
+  return (
+    <View style={[styles.container, style]}>
+      {IS_WEB ? (
+        card
+      ) : (
+        // minDist 2: a drag claims the touch before the page's ScrollView
+        // (whose slop is larger) can start scrolling it.
+        <PanGestureHandler
+          minDist={2}
+          onGestureEvent={onGestureEvent}
+          onHandlerStateChange={onHandlerStateChange}
+        >
+          {card}
+        </PanGestureHandler>
+      )}
 
       {hint ? (
         <Text selectable={false} style={[styles.hint, { color: colors.mut }]}>{hint}</Text>

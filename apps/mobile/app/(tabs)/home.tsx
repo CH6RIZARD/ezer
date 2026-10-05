@@ -21,6 +21,7 @@ import { usePremiumGate } from '../../utils/usePremiumGate';
 import { usePremium } from '../../utils/PremiumContext';
 import { useData } from '../../contexts/DataContext';
 import { formatCents } from '../../utils/calculations';
+import { formatCompactCents } from '../../utils/format';
 
 import { fontFamily, typeScale, radius, layout, motion } from '../../theme/type';
 import {
@@ -42,11 +43,6 @@ import { useCardFlowStatus } from '../../utils/useCardFlowStatus';
 
 const WEEKDAYS = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
 
-/** A day's total inside a calendar cell: whole dollars from $100 up, so
- *  "-$325.64" (which wrapped onto two lines) reads "-$326". The day popover
- *  still shows exact amounts. */
-const cellAmount = (cents: number) =>
-  cents >= 10000 ? formatCents(Math.round(cents / 100) * 100).replace(/\.00$/, '') : formatCents(cents);
 /** Handoff: spending power is a fixed $400 in the prototype. */
 const SPENDING_POWER_CENTS = 40000;
 
@@ -646,7 +642,9 @@ export default function HomeScreen() {
                                   adjustsFontSizeToFit
                                   minimumFontScale={0.7}
                                 >
-                                  -{cellAmount(dayTotal)}
+                                  {/* Compact ("-$326", "-$1.3k"): "-$325.64" wrapped onto
+                                      two lines. The day popover shows exact amounts. */}
+                                  -{formatCompactCents(dayTotal)}
                                 </Text>
                               </>
                             )}
