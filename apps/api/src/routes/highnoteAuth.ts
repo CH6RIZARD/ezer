@@ -12,6 +12,7 @@
 import { FastifyInstance } from 'fastify';
 import { prisma } from '@ezer/db';
 import { decide, fresh, signatureValid } from '../services/highnoteAuth';
+import { cardSpentCents } from '../services/highnote';
 
 const SECRET = process.env.HIGHNOTE_COLLAB_AUTH_SECRET || '';
 
@@ -72,7 +73,7 @@ export async function highnoteAuthRoutes(server: FastifyInstance) {
 
     let responseCode: ReturnType<typeof decide> = 'INSUFFICIENT_FUNDS';
     if (user) {
-      const [access, owed, missed] = await Promise.all([
+      const [access, owed, missed, spent] = await Promise.all([
         prisma.cardAccessList.findFirst({
           where: { userId: user.id },
           orderBy: { createdAt: 'desc' },
@@ -83,14 +84,23 @@ export async function highnoteAuthRoutes(server: FastifyInstance) {
           _sum: { amountCents: true },
         }),
         prisma.installment.count({ where: { userId: user.id, status: 'MISSED' } }),
+        // null = couldn't read the card's balance in time → decline below.
+        cardSpentCents(req.paymentCard!.id!).catch(err => {
+          request.log.error({ err: err.message }, 'highnote auth: balance read failed');
+          return null;
+        }),
       ]);
-      responseCode = decide({
-        amountCents: Number(req.requestedAmount?.value),
-        currencyCode: String(req.requestedAmount?.currencyCode ?? ''),
-        access,
-        outstandingCents: owed._sum.amountCents ?? 0,
-        hasMissed: missed > 0,
-      });
+      if (spent !== null) {
+        responseCode = decide({
+          amountCents: Number(req.requestedAmount?.value),
+          currencyCode: String(req.requestedAmount?.currencyCode ?? ''),
+          access,
+          // Card usage in Highnote plus anything EZER's own installment engine
+          // is still owed — separate obligations, so they add.
+          outstandingCents: spent + (owed._sum.amountCents ?? 0),
+          hasMissed: missed > 0,
+        });
+      }
     }
 
     request.log.info({ transactionId, card: req.paymentCard?.id, responseCode }, 'highnote auth decided');

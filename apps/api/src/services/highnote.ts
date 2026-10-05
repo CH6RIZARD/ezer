@@ -111,10 +111,17 @@ export async function issueTestCard(userId: string, limitCents: number): Promise
       'issueFinancialAccountForApplication'
     );
 
-    await hn(
+    // Only ever RAISES the line (Test underwriting grants $1,000 and this
+    // can't lower it) — Spending Power itself is enforced per swipe by
+    // routes/highnoteAuth.ts against cardSpentCents.
+    const lim = await hn(
       `mutation($input: InitiateFinancialAccountCreditLimitUpdateFromProductFundingInput!) { initiateFinancialAccountCreditLimitUpdateFromProductFunding(input: $input) { __typename ${ERR} } }`,
       { input: { financialAccountId: account.id, amount: { value: limitCents, currencyCode: 'USD' }, memo: 'EZER Spending Power' } }
     );
+    const limType = lim.initiateFinancialAccountCreditLimitUpdateFromProductFunding?.__typename;
+    if (limType === 'UserError' || limType === 'AccessDeniedError') {
+      throw new Error(`highnote credit limit: ${JSON.stringify(lim.initiateFinancialAccountCreditLimitUpdateFromProductFunding).slice(0, 300)}`);
+    }
 
     const exp = new Date();
     exp.setFullYear(exp.getFullYear() + 3);
@@ -134,6 +141,38 @@ export async function issueTestCard(userId: string, limitCents: number): Promise
     await prisma.user.updateMany({ where: { id: userId, highnoteCardId: claim }, data: { highnoteCardId: null } });
     throw err;
   }
+}
+
+/**
+ * What's already in use on the card's account: held authorizations plus the
+ * posted balance (credit limit − available credit). Highnote's own limit is
+ * set by its underwriting ($1,000 in Test) and can't simply be lowered, so
+ * collaborative authorization enforces Spending Power against this instead.
+ * Throws on timeout — the caller declines.
+ */
+export async function cardSpentCents(cardId: string, timeoutMs = 1200): Promise<number> {
+  const res = await fetch(URL, {
+    method: 'POST',
+    signal: AbortSignal.timeout(timeoutMs),
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: 'Basic ' + Buffer.from(`${process.env.HIGHNOTE_API_KEY}:`).toString('base64'),
+    },
+    body: JSON.stringify({
+      query: `query($id: ID!) { node(id: $id) { ... on PaymentCard { financialAccounts {
+        ledgers(ledgerNames: [ACCOUNT_HOLDER_CREDIT_LIMIT, AVAILABLE_CREDIT]) { name creditBalance { value } } } } } }`,
+      variables: { id: cardId },
+    }),
+  });
+  const json: any = await res.json();
+  const accounts = json.data?.node?.financialAccounts;
+  const ledgers: Array<{ name: string; creditBalance: { value: number } }> =
+    (Array.isArray(accounts) ? accounts[0] : accounts)?.ledgers ?? [];
+  const value = (n: string) => ledgers.find(l => l.name === n)?.creditBalance?.value;
+  const limit = value('ACCOUNT_HOLDER_CREDIT_LIMIT');
+  const available = value('AVAILABLE_CREDIT');
+  if (typeof limit !== 'number' || typeof available !== 'number') throw new Error('highnote: ledgers unavailable');
+  return Math.max(0, limit - available);
 }
 
 export interface TestCardView {
