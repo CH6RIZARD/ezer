@@ -105,6 +105,10 @@ style problem.
   whose chips never shrink (`flexShrink: 0`) — four equal-width chips and
   then four shrinkable ones both clipped "This month"/"Last month" on a 360dp
   phone with a larger system font. Don't put them back in a fixed row.
+- **The build needs devDependencies** (prisma CLI, typescript). Railway's
+  `NODE_ENV=production` makes `pnpm install` skip them, which shows up as
+  "spawn prisma EACCES". That's why `railway.json`'s buildCommand installs
+  with `--prod=false`. Keep it, and keep `NODE_ENV=production` for runtime.
 - **Migrations do not run on deploy.** `railway.json` runs `prisma generate`
   only — `migrate deploy` needs a session-mode connection (port 5432), not the
   transaction pooler. Apply migrations manually.
