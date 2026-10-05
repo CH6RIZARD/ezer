@@ -41,6 +41,12 @@ import { useConnectBank } from '../../utils/useConnectBank';
 import { useCardFlowStatus } from '../../utils/useCardFlowStatus';
 
 const WEEKDAYS = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
+
+/** A day's total inside a calendar cell: whole dollars from $100 up, so
+ *  "-$325.64" (which wrapped onto two lines) reads "-$326". The day popover
+ *  still shows exact amounts. */
+const cellAmount = (cents: number) =>
+  cents >= 10000 ? formatCents(Math.round(cents / 100) * 100).replace(/\.00$/, '') : formatCents(cents);
 /** Handoff: spending power is a fixed $400 in the prototype. */
 const SPENDING_POWER_CENTS = 40000;
 
@@ -634,8 +640,13 @@ export default function HomeScreen() {
                                     />
                                   ))}
                                 </View>
-                                <Text style={[styles.dayTotal, { color: colors.red }]}>
-                                  -{formatCents(dayTotal)}
+                                <Text
+                                  style={[styles.dayTotal, { color: colors.red }]}
+                                  numberOfLines={1}
+                                  adjustsFontSizeToFit
+                                  minimumFontScale={0.7}
+                                >
+                                  -{cellAmount(dayTotal)}
                                 </Text>
                               </>
                             )}

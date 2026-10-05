@@ -218,11 +218,20 @@ export default function LockGate({ children }: { children: React.ReactNode }) {
     });
   }, [layer, enter]);
 
-  // Unlocked: wait out the session check and the first data, on the EZER fade.
+  // Unlocked: one full EZER breath (up and back down), then in. Always the
+  // one cycle, even when the saved dashboard is ready at once (the owner
+  // wants the beat); longer only if auth or the first data are still out.
+  const [cycleDone, setCycleDone] = useState(false);
   useEffect(() => {
-    if (phase !== 'loading' || auth.isLoading) return;
+    if (phase !== 'loading') return;
+    setCycleDone(false);
+    const t = setTimeout(() => setCycleDone(true), FADE_MS * 2);
+    return () => clearTimeout(t);
+  }, [phase]);
+  useEffect(() => {
+    if (phase !== 'loading' || !cycleDone || auth.isLoading) return;
     if (!auth.isAuthenticated || dataReady) lift();
-  }, [phase, auth.isLoading, auth.isAuthenticated, dataReady, lift]);
+  }, [phase, cycleDone, auth.isLoading, auth.isAuthenticated, dataReady, lift]);
 
   // A keyboard left open in a sheet sits in its own window ABOVE the lock on
   // iOS, covering the keypad and typing into the hidden field. Blur it.
@@ -255,6 +264,8 @@ export default function LockGate({ children }: { children: React.ReactNode }) {
       return () => fade.stop();
     }
     if (phase === 'cover' || phase === 'loading') {
+      // Loading starts dim so its one cycle is a full rise and fall.
+      if (phase === 'loading') mark.setValue(0.3);
       const loop = Animated.loop(
         Animated.sequence([
           Animated.timing(mark, { toValue: 1, duration: FADE_MS, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
