@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHmac } from 'crypto';
-import { decide, signatureValid } from './highnoteAuth';
+import { decide, fresh, signatureValid } from './highnoteAuth';
 
 const ok = { status: 'approved_pending_issuance', limitCents: 10000 };
 const base = { amountCents: 2000, currencyCode: 'USD', access: ok, outstandingCents: 0, hasMissed: false };
@@ -32,4 +32,14 @@ test('signature: hex and base64 accepted, tampering rejected', () => {
   assert.ok(!signatureValid('other', raw, mac.toString('hex')));
   assert.ok(!signatureValid('', raw, mac.toString('hex')));
   assert.ok(!signatureValid('s3cret', raw, ''));
+  // key rotation: any one of the listed signatures may match
+  assert.ok(signatureValid('s3cret', raw, `deadbeef, ${mac.toString('hex')}`));
+});
+
+test('freshness window', () => {
+  const now = 1_700_000_000_000;
+  assert.ok(fresh(now - 60_000, now));
+  assert.ok(!fresh(now - 16 * 60_000, now));
+  assert.ok(!fresh(undefined, now));
+  assert.ok(!fresh('abc', now));
 });

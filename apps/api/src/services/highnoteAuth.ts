@@ -34,16 +34,24 @@ export function decide(i: AuthInputs): AuthResponseCode {
 }
 
 /**
- * `highnote-signature` is HMAC-SHA256 of the raw body with the endpoint's
- * signing secret. Accept hex or base64 — Highnote's docs don't pin the
- * encoding and guessing wrong would decline every swipe.
+ * `highnote-signature` is HMAC-SHA256 (hex) of the raw body with the
+ * endpoint's signing secret; base64 is accepted too in case that changes.
  */
 export function signatureValid(secret: string, raw: Buffer, provided: string): boolean {
   if (!secret || !provided) return false;
   const mac = createHmac('sha256', secret).update(raw).digest();
-  const p = provided.trim();
-  for (const candidate of [Buffer.from(p, 'hex'), Buffer.from(p, 'base64')]) {
-    if (candidate.length === mac.length && timingSafeEqual(candidate, mac)) return true;
+  // Comma-separated during key rotation: one signature per active key.
+  for (const p of provided.split(',').map(x => x.trim()).filter(Boolean)) {
+    for (const candidate of [Buffer.from(p, 'hex'), Buffer.from(p, 'base64')]) {
+      if (candidate.length === mac.length && timingSafeEqual(candidate, mac)) return true;
+    }
   }
   return false;
+}
+
+/** Highnote's own sample rejects anything signed more than 15 minutes ago. */
+export const MAX_SIGNATURE_AGE_MS = 15 * 60 * 1000;
+export function fresh(signatureTimestamp: unknown, now = Date.now()): boolean {
+  const ts = Number(signatureTimestamp);
+  return Number.isFinite(ts) && Math.abs(now - ts) <= MAX_SIGNATURE_AGE_MS;
 }

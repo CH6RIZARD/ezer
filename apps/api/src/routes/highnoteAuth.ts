@@ -11,7 +11,7 @@
 
 import { FastifyInstance } from 'fastify';
 import { prisma } from '@ezer/db';
-import { decide, signatureValid } from '../services/highnoteAuth';
+import { decide, fresh, signatureValid } from '../services/highnoteAuth';
 
 const SECRET = process.env.HIGHNOTE_COLLAB_AUTH_SECRET || '';
 
@@ -31,17 +31,22 @@ export async function highnoteAuthRoutes(server: FastifyInstance) {
       return reject(401, 'BAD_SIGNATURE');
     }
 
-    let req: {
-      id?: string;
-      transaction?: { id?: string };
-      paymentCard?: { id?: string };
-      requestedAmount?: { value?: number; currencyCode?: string };
-    };
+    let body: any;
     try {
-      req = JSON.parse(raw.toString('utf8'))?.data?.collaborativeAuthorizationRequest ?? {};
+      body = JSON.parse(raw.toString('utf8'));
     } catch {
       return reject(400, 'MALFORMED_JSON');
     }
+    const req: {
+      transaction?: { id?: string };
+      paymentCard?: { id?: string };
+      requestedAmount?: { value?: number; currencyCode?: string };
+    } | undefined = body?.data?.collaborativeAuthorizationRequest;
+    // Activation sends a signed test event with no authorization request in
+    // it and only needs a 2xx back — a 400 here is what failed activation.
+    if (!req) return reply.send({ success: true });
+    // Replay guard on the part that matters: a captured approval request.
+    if (!fresh(body?.extensions?.signatureTimestamp)) return reject(401, 'STALE_SIGNATURE');
     const transactionId = req.transaction?.id;
     if (!transactionId) return reject(400, 'MISSING_TRANSACTION');
 
