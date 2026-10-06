@@ -328,7 +328,7 @@ export default function SubscriptionDetailScreen() {
       title: 'Pay full + match full',
       sub: `Pay ${formatCents(priceCents)} + match ${formatCents(
         priceCents
-      )} into savings · ${formatCents(priceCents * 2)} total/mo`,
+      )} into investing · ${formatCents(priceCents * 2)} total/mo`,
       icon: 'trending-up' as const,
       tileBg: colors.accSoft,
       tileFg: colors.accInk,
@@ -541,12 +541,9 @@ export default function SubscriptionDetailScreen() {
             {smartEnabled && (
               <View style={[styles.banner, { backgroundColor: colors.successBg }]}>
                 <Text style={[styles.bannerText, { color: colors.success }]}>
-                  {/* Honest about the one missing piece: nothing schedules the
-                      savings sweep yet and its processor is a stub, so the
-                      goal and its monthly amount are real, the transfer isn't. */}
-                  ✓ “{smartGoalName}” goal created — {formatCents(payOpt === 'full' ? priceCents : halfCents)}
-                  /month. Automatic transfers start once bank transfers go live; add to it any time
-                  from Savings.
+                  ✓ Smart saving on — each cycle pays {formatCents(priceCents)} and moves{' '}
+                  {formatCents(payOpt === 'full' ? priceCents : halfCents)} to your{' '}
+                  {payOpt === 'full' ? 'investments' : 'savings'} automatically.
                 </Text>
               </View>
             )}
