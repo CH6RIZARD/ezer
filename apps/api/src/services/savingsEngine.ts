@@ -184,10 +184,16 @@ function periodsBetween(from: Date, to: Date, cadence: GoalWithFunding['rule']['
 export function fixedPerPeriod(goal: GoalWithFunding, fundedCents: Cents): Cents {
   const remaining = goal.targetCents - fundedCents;
   if (remaining <= 0) return 0;
-  if (!goal.targetDate) return goal.rule.fixedAmountCents ?? 0;
+  // The sweep runs once per WEEK (weekKey), whatever the goal's cadence — so a
+  // cadence amount is converted to a per-week share. Returning the full
+  // MONTHLY amount on every weekly run saved ~4x what the user chose.
+  if (!goal.targetDate) {
+    const perCadence = goal.rule.fixedAmountCents ?? 0;
+    return Math.min(Math.ceil((perCadence * CADENCE_DAYS.WEEKLY) / CADENCE_DAYS[goal.rule.cadence]), remaining);
+  }
 
-  const periodsLeft = Math.max(1, periodsBetween(today(), goal.targetDate, goal.rule.cadence));
-  return Math.min(Math.ceil(remaining / periodsLeft), remaining);
+  const runsLeft = Math.max(1, periodsBetween(today(), goal.targetDate, 'WEEKLY'));
+  return Math.min(Math.ceil(remaining / runsLeft), remaining);
 }
 
 /**

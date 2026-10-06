@@ -150,6 +150,8 @@ export type NewGoalInput = {
   icon?: string;
   color?: string;
   autoSave?: boolean;
+  /** Save this many dollars every month (FIXED/MONTHLY rule). Absent = adaptive. */
+  monthlyAmount?: number;
 };
 
 interface SavingsContextValue {
@@ -563,6 +565,9 @@ export function SavingsGoalsProvider({ children }: { children: ReactNode }) {
         const res: any = await api.post('/savings/goals', {
           name: input.name,
           targetCents: toCents(input.targetAmount),
+          ...(input.monthlyAmount
+            ? { mode: 'FIXED', cadence: 'MONTHLY', fixedAmountCents: toCents(input.monthlyAmount) }
+            : {}),
         });
         const id = res?.data?.id as string | undefined;
 

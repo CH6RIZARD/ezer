@@ -38,6 +38,7 @@ import { Body, Surface, PressScale, ScreenBody } from '../../components/redesign
 import MerchantMark from '../../components/redesign/MerchantMark';
 import PriceChart, { type PricePoint } from '../../components/redesign/PriceChart';
 import { api } from '../../utils/api';
+import { useSavingsGoals } from '../../utils/SavingsGoalsContext';
 
 /** Shape of GET /subscriptions/:id — see apps/api/src/routes/core.ts. */
 interface SubscriptionDetailResponse {
@@ -95,6 +96,9 @@ export default function SubscriptionDetailScreen() {
 
   const [payOpt, setPayOpt] = useState<null | 'half' | 'full'>(null);
   const [smartEnabled, setSmartEnabled] = useState(false);
+  const [smartBusy, setSmartBusy] = useState(false);
+  const [smartError, setSmartError] = useState<string | null>(null);
+  const { goals, addGoal } = useSavingsGoals();
   const [saveSmart, setSaveSmart] = useState(false);
   const [ssMonths, setSsMonths] = useState<6 | 12 | 24>(12);
   const [cancelStarted, setCancelStarted] = useState(false);
@@ -283,6 +287,31 @@ export default function SubscriptionDetailScreen() {
     }
   };
 
+  // "Enable smart saving" makes it real: a goal for this subscription that
+  // auto-saves the chosen amount every month (FIXED/MONTHLY on the server's
+  // sweep). Re-enabling reuses the same goal rather than stacking duplicates.
+  const smartGoalName = `${name} savings`;
+  const enableSmartSaving = async () => {
+    if (!payOpt || smartBusy) return;
+    const monthlyCents = payOpt === 'full' ? priceCents : halfCents;
+    if (goals.some(g => g.name === smartGoalName)) {
+      setSmartEnabled(true);
+      return;
+    }
+    setSmartBusy(true);
+    setSmartError(null);
+    const res = await addGoal({
+      name: smartGoalName,
+      // A year of saving is the target; the goal keeps going if they want more.
+      targetAmount: (monthlyCents * 12) / 100,
+      monthlyAmount: monthlyCents / 100,
+      autoSave: true,
+    });
+    setSmartBusy(false);
+    if (res.ok) setSmartEnabled(true);
+    else setSmartError(res.error ?? 'Could not set up smart saving.');
+  };
+
   const payOptions = [
     {
       key: 'half' as const,
@@ -299,7 +328,7 @@ export default function SubscriptionDetailScreen() {
       title: 'Pay full + match full',
       sub: `Pay ${formatCents(priceCents)} + match ${formatCents(
         priceCents
-      )} into investing · ${formatCents(priceCents * 2)} total/mo`,
+      )} into savings · ${formatCents(priceCents * 2)} total/mo`,
       icon: 'trending-up' as const,
       tileBg: colors.accSoft,
       tileFg: colors.accInk,
@@ -495,19 +524,29 @@ export default function SubscriptionDetailScreen() {
             })}
 
             {payOpt && !smartEnabled && (
-              <PressScale onPress={() => setSmartEnabled(true)} scaleTo={0.98}>
+              <PressScale onPress={() => void enableSmartSaving()} scaleTo={0.98} disabled={smartBusy}>
                 <View style={[styles.enableBtn, { backgroundColor: colors.accent }]}>
-                  <Text style={styles.enableText}>Enable smart saving</Text>
+                  {smartBusy ? (
+                    <ActivityIndicator color="#FFFFFF" />
+                  ) : (
+                    <Text style={styles.enableText}>Enable smart saving</Text>
+                  )}
                 </View>
               </PressScale>
+            )}
+            {smartError && !smartEnabled && (
+              <Text style={[styles.optSub, { color: colors.red, marginTop: 8 }]}>{smartError}</Text>
             )}
 
             {smartEnabled && (
               <View style={[styles.banner, { backgroundColor: colors.successBg }]}>
                 <Text style={[styles.bannerText, { color: colors.success }]}>
-                  ✓ Smart saving on — each cycle pays {formatCents(priceCents)} and moves{' '}
-                  {formatCents(payOpt === 'full' ? priceCents : halfCents)} to your{' '}
-                  {payOpt === 'full' ? 'investments' : 'savings'} automatically.
+                  {/* Honest about the one missing piece: nothing schedules the
+                      savings sweep yet and its processor is a stub, so the
+                      goal and its monthly amount are real, the transfer isn't. */}
+                  ✓ “{smartGoalName}” goal created — {formatCents(payOpt === 'full' ? priceCents : halfCents)}
+                  /month. Automatic transfers start once bank transfers go live; add to it any time
+                  from Savings.
                 </Text>
               </View>
             )}
