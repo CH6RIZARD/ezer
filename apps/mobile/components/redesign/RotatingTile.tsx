@@ -109,7 +109,7 @@ export function RotatingTile({
         Animated.timing(fade, {
           toValue: 1,
           duration: FADE_MS / 2,
-          easing: Easing.in(Easing.ease),
+          easing: Easing.out(Easing.ease), // entering: ease-out, never ease-in
           useNativeDriver: true,
         }).start(({ finished: settled }) => {
           animating.current = false;

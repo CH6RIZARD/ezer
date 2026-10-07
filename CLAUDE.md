@@ -496,6 +496,19 @@ style problem.
   charge-shaped comes from the API; `DataContext` deliberately shows nothing
   rather than substituting on a failed call.
 
+## Motion
+
+- **Animation rules come from `.claude/skills/` (Emil Kowalski's skills,
+  MIT, vendored).** `animate-expo` is the one for this app. Enter/press motion
+  uses `motion.easeOut` (`theme/type.ts`, `0.23,1,0.32,1`), never `Easing.in`
+  or RN's default curve. DayPopover/RangeCalendar used to overshoot
+  (`0.2,0.9,0.3,1.2`, from the design handoff); that was removed on purpose,
+  since a tapped popover carries no momentum to bounce with.
+- **`useReduceMotion()` (`components/redesign/Primitives.tsx`)** reads the OS
+  setting. Reduced = fades stay, travel and idle loops go (ScreenBody's rise,
+  PulseRing's loop). The app has no Reanimated; adding it is a native
+  dependency plus a rebuild, so it hasn't been done.
+
 ## Secrets
 
 `env.ts` refuses to boot in production without `JWT_SECRET`, `ENCRYPTION_KEY`

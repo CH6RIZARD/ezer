@@ -8,8 +8,10 @@
 // Source of truth: "Handoff: Ezer Redesign — Full Light + Dark Patch".
 // =============================================================================
 
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
+  AccessibilityInfo,
+  Easing,
   View,
   Text,
   Pressable,
@@ -21,6 +23,26 @@ import {
 } from 'react-native';
 import { useTheme } from '../../utils/ThemeContext';
 import { typeScale, radius, motion, layout } from '../../theme/type';
+
+const EASE_OUT = Easing.bezier(...motion.easeOut);
+
+/**
+ * The OS "Reduce motion" setting, live. Reduced means fewer and gentler, not
+ * none: keep fades that explain a change, drop travel, scale and idle loops.
+ */
+export function useReduceMotion(): boolean {
+  const [reduced, setReduced] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    AccessibilityInfo.isReduceMotionEnabled().then(v => alive && setReduced(v)).catch(() => {});
+    const sub = AccessibilityInfo.addEventListener('reduceMotionChanged', setReduced);
+    return () => {
+      alive = false;
+      sub.remove();
+    };
+  }, []);
+  return reduced;
+}
 
 // -----------------------------------------------------------------------------
 // Text helpers
@@ -138,6 +160,7 @@ export function PressScale({
     Animated.timing(scale, {
       toValue: v,
       duration: motion.press,
+      easing: EASE_OUT,
       useNativeDriver: true,
     }).start();
 
@@ -222,8 +245,10 @@ export function Chip({
 export function PulseRing({ radius: r = radius.card }: { radius?: number }) {
   const { colors } = useTheme();
   const pulse = useRef(new Animated.Value(0)).current;
+  const reduced = useReduceMotion();
 
   useEffect(() => {
+    if (reduced) return; // a static ring at full strength still marks it
     const loop = Animated.loop(
       Animated.timing(pulse, {
         toValue: 1,
@@ -232,8 +257,11 @@ export function PulseRing({ radius: r = radius.card }: { radius?: number }) {
       })
     );
     loop.start();
-    return () => loop.stop();
-  }, [pulse]);
+    return () => {
+      loop.stop();
+      pulse.setValue(0);
+    };
+  }, [pulse, reduced]);
 
   return (
     <Animated.View
@@ -263,11 +291,13 @@ export function ScreenBody({
   style?: StyleProp<ViewStyle>;
 }) {
   const anim = useRef(new Animated.Value(0)).current;
+  const reduced = useReduceMotion();
 
   useEffect(() => {
     Animated.timing(anim, {
       toValue: 1,
       duration: motion.screenIn,
+      easing: EASE_OUT,
       useNativeDriver: true,
     }).start();
   }, [anim]);
@@ -278,7 +308,7 @@ export function ScreenBody({
         {
           opacity: anim,
           transform: [
-            { translateY: anim.interpolate({ inputRange: [0, 1], outputRange: [14, 0] }) },
+            { translateY: anim.interpolate({ inputRange: [0, 1], outputRange: [reduced ? 0 : 14, 0] }) },
           ],
         },
         style,

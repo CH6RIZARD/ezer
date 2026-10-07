@@ -45,7 +45,7 @@ export function RangeCalendar({
     Animated.timing(anim, {
       toValue: 1,
       duration: motion.popover,
-      easing: Easing.bezier(0.2, 0.9, 0.3, 1.2),
+      easing: Easing.bezier(...motion.easeOut), // no overshoot: see DayPopover
       useNativeDriver: true,
     }).start();
   }, [anim]);

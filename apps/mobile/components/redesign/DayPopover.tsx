@@ -67,8 +67,9 @@ export function DayPopover({
       Animated.timing(anim, {
         toValue: 1,
         duration: motion.popover,
-        // Overshooting spring-up from the handoff.
-        easing: Easing.bezier(0.2, 0.9, 0.3, 1.2),
+        // Ease-out, not the handoff's overshoot: a popover opened by a tap
+        // carries no momentum, so a bounce past its resting place reads wrong.
+        easing: Easing.bezier(...motion.easeOut),
         useNativeDriver: true,
       }).start();
     }

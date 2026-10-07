@@ -171,4 +171,9 @@ export const motion = {
   cardTapSlop: 4,
   /** Gold pulse loop. */
   pulse: 2400,
+  /**
+   * Strong ease-out for UI that enters or responds to a press — RN's default
+   * (and Easing.in) starts slow, delaying the exact moment the user watches.
+   */
+  easeOut: [0.23, 1, 0.32, 1] as const,
 } as const;
