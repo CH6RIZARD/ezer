@@ -6,7 +6,7 @@ Highnote ID.
 
 ## Where things are
 
-- **The one real repo:** `E:\The Void\ezer` (moved here 2026-10-06 from
+- **The one real repo:** `E:\ezer` (moved here 2026-10-06 from
   `E:\c-offload\New folder\ezer`; branch `main`, remote `CH6RIZARD/ezer`). All
   other local EZER copies were deleted on purpose. Start Claude in this folder.
 - **Leave alone:** every `ezer forex` / `ezer-morgan-futures` folder (a separate
