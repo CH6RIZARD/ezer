@@ -36,6 +36,7 @@ import {
 } from '../../components/redesign/Primitives';
 import { getCardDesignId, loadCardDesign, saveCardAccessOutcome } from '../../utils/cardDesignStore';
 import { usePlaid } from '../../utils/usePlaid';
+import { useData } from '../../contexts/DataContext';
 import { api } from '../../utils/api';
 
 // -----------------------------------------------------------------------------
@@ -87,6 +88,13 @@ export default function PhysicalCardApprovalScreen() {
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
   const { openPlaidLink } = usePlaid();
+  // Same "already has a bank" test as SpendingPowerSheet.tsx: someone whose
+  // bank is already linked (for Pay in 4, subscriptions, anything) is assessed
+  // against it directly — /cards/access-list picks the Pay in 4 account
+  // server-side (resolvePayIn4Instrument) — instead of being sent through a
+  // second Plaid Link they don't need.
+  const { instruments, subscriptions } = useData();
+  const hasBank = instruments.length > 0 || subscriptions.length > 0;
 
   const [phase, setPhase] = useState<Phase>('choice');
   const [stepIndex, setStepIndex] = useState(0);
@@ -168,8 +176,8 @@ export default function PhysicalCardApprovalScreen() {
     if (busy) return;
     setBusy(true);
 
-    if (!FEATURE_PLAID) {
-      // MOCKED PATH (demo build): no Plaid Link, no credentials, deterministic
+    if (!FEATURE_PLAID || hasBank) {
+      // Already linked, or the MOCKED PATH (demo build): no Plaid Link, no credentials, deterministic
       // outcome. Everything downstream of the link step is identical to the
       // real path, so the screen is fully exercised.
       await runAssessment();
@@ -194,7 +202,7 @@ export default function PhysicalCardApprovalScreen() {
         }
       }
     );
-  }, [busy, openPlaidLink, runAssessment]);
+  }, [busy, hasBank, openPlaidLink, runAssessment]);
 
   const handleSkip = useCallback(async () => {
     if (busy) return;
@@ -263,15 +271,17 @@ export default function PhysicalCardApprovalScreen() {
                 >
                   <View style={styles.optionHead}>
                     <Ionicons name="link-outline" size={18} color={colors.gold} />
-                    <Text style={[styles.optionTitle, { color: colors.ink }]}>Connect your bank</Text>
+                    <Text style={[styles.optionTitle, { color: colors.ink }]}>
+                      {hasBank ? 'Use your connected bank' : 'Connect your bank'}
+                    </Text>
                     <View style={[styles.pill, { backgroundColor: colors.goldBg }]}>
                       <Text style={styles.pillText}>Priority</Text>
                     </View>
                   </View>
                   <Body style={{ marginTop: 8 }}>
-                    A read-only connection. We assess your account and reveal your
-                    starting spending limit right now, and you move to the front
-                    of the access list.
+                    {hasBank
+                      ? 'We assess the bank you already linked and reveal your starting spending limit right now, and you move to the front of the access list.'
+                      : 'A read-only connection. We assess your account and reveal your starting spending limit right now, and you move to the front of the access list.'}
                   </Body>
                 </View>
               </PressScale>
@@ -370,7 +380,9 @@ export default function PhysicalCardApprovalScreen() {
               {phase === 'waitlist' && (
                 <PressScale onPress={handleConnectBank} scaleTo={0.97} disabled={busy} style={{ marginTop: 16 }}>
                   <View style={[styles.cta, { backgroundColor: colors.goldBg, opacity: busy ? 0.6 : 1 }]}>
-                    <Text style={styles.ctaText}>Connect your bank instead</Text>
+                    <Text style={styles.ctaText}>
+                      {hasBank ? 'Use your connected bank instead' : 'Connect your bank instead'}
+                    </Text>
                   </View>
                 </PressScale>
               )}

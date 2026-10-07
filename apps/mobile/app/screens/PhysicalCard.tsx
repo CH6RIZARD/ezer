@@ -54,7 +54,13 @@ import {
 } from '../../components/redesign/Primitives';
 import CardCanvas, { CARD_W, type Stroke } from '../../components/redesign/CardCanvas';
 import { cardFinishes, type CardFinish } from '../../theme/tokens';
-import { saveCardDesign, loadCardDesign, getCardAccessOutcome } from '../../utils/cardDesignStore';
+import {
+  saveCardDesign,
+  loadCardDesign,
+  getCardAccessOutcome,
+  getSpendingPowerOutcome,
+  saveCardAccessOutcome,
+} from '../../utils/cardDesignStore';
 
 const FINISHES: { key: CardFinish; label: string }[] = [
   { key: 'amethyst', label: 'Amethyst' },
@@ -366,7 +372,20 @@ export default function PhysicalCardScreen() {
       // from the finished review then resurrected a blank canvas the user
       // was done with, instead of exiting, and took a second Back press to
       // actually leave.
-      const access = await getCardAccessOutcome();
+      //
+      // Someone already assessed through the Pay in 4 Spending Power sheet
+      // has a bank-based outcome under its own key, never attached to a design
+      // (there wasn't one yet). Carry it onto the design now rather than
+      // asking them to connect a bank all over again. Only bank-assessed
+      // outcomes: a sheet waitlist join still gets offered the bank option.
+      let access = await getCardAccessOutcome();
+      if (!access) {
+        const sp = await getSpendingPowerOutcome();
+        if (sp && (sp.status === 'approved' || sp.status === 'suspended')) {
+          await saveCardAccessOutcome(sp);
+          access = sp;
+        }
+      }
       router.replace(access ? '/screens/PhysicalCardReview' : '/screens/PhysicalCardApproval');
     } catch {
       // Keep the user on the screen with their artwork intact rather than
