@@ -29,7 +29,6 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   View,
   Text,
-  ScrollView,
   Modal,
   Pressable,
   StyleSheet,
@@ -38,6 +37,8 @@ import {
   PanResponder,
 } from 'react-native';
 import { router } from 'expo-router';
+// RNGH's ScrollView: CardCanvas's stroke gesture cancels page scroll natively.
+import { ScrollView } from 'react-native-gesture-handler';
 import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Polygon } from 'react-native-svg';
 import { Ionicons } from '@expo/vector-icons';
@@ -405,9 +406,9 @@ export default function PhysicalCardScreen() {
         showsVerticalScrollIndicator={false}
         bounces={false}
         overScrollMode="never"
-        // Frozen while a stroke is in progress: on Android the ScrollView will
-        // otherwise claim the responder as soon as the drag turns vertical and
-        // the stroke dies mid-line.
+        // Frozen while a stroke is in progress (web only now: on native the
+        // canvas's gesture cancels this RNGH ScrollView itself, and
+        // CardCanvas only reports drawing on web).
         scrollEnabled={!drawing}
       >
         <ScreenBody>

@@ -18,6 +18,12 @@ import { useAuth } from '../utils/AuthContext';
 import { fontFamily, typeScale, radius, layout } from '../theme/type';
 import { themeKeys } from '../theme/tokens';
 import { LinearGradient } from 'expo-linear-gradient';
+import Reanimated, {
+  Easing as REasing,
+  useAnimatedStyle,
+  useSharedValue,
+  withTiming,
+} from 'react-native-reanimated';
 import {
   Body,
   Label,
@@ -45,13 +51,27 @@ const THEME_KEYS: { mode: ThemeMode; key: KeyId; name: string }[] = [
   { mode: 'black', key: 'dark', name: 'Dark' },
 ];
 const KEY_EASE = Easing.bezier(0.22, 1, 0.36, 1);
+const KEY_EASE_R = REasing.bezier(0.22, 1, 0.36, 1);
+
+/**
+ * One key's flex (1 → 2 when active). Flex is layout, which core Animated can
+ * only drive from JS; Reanimated runs the same 350ms curve on the UI thread,
+ * so the pill keeps moving even while the theme change re-renders the app.
+ */
+function FlexKey({ on, children }: { on: boolean; children: React.ReactNode }) {
+  const flex = useSharedValue(on ? 2 : 1);
+  useEffect(() => {
+    flex.set(withTiming(on ? 2 : 1, { duration: 350, easing: KEY_EASE_R }));
+  }, [on, flex]);
+  const style = useAnimatedStyle(() => ({ flex: flex.get() }));
+  return <Reanimated.View style={style}>{children}</Reanimated.View>;
+}
 
 function ThemePill({ mode, onChange }: { mode: ThemeMode; onChange: (m: ThemeMode) => void }) {
   const isLight = mode === 'light';
-  // Per key: flex (layout, so JS driver) on the outer view; `raised` 0→1
-  // (native driver) drives the 2px lift AND the shadow cross-fade on inner
-  // views — one driver per view, as RN requires.
-  const flex = useRef(THEME_KEYS.map(k => new Animated.Value(k.mode === mode ? 2 : 1))).current;
+  // Per key: flex on the outer view (FlexKey, Reanimated, UI thread);
+  // `raised` 0→1 (native driver) drives the 2px lift AND the shadow
+  // cross-fade on inner views.
   const raised = useRef(THEME_KEYS.map(k => new Animated.Value(k.mode === mode ? 1 : 0))).current;
 
   useEffect(() => {
@@ -59,12 +79,11 @@ function ThemePill({ mode, onChange }: { mode: ThemeMode; onChange: (m: ThemeMod
       THEME_KEYS.flatMap((k, i) => {
         const on = k.mode === mode;
         return [
-          Animated.timing(flex[i], { toValue: on ? 2 : 1, duration: 350, easing: KEY_EASE, useNativeDriver: false }),
           Animated.timing(raised[i], { toValue: on ? 1 : 0, duration: 350, easing: KEY_EASE, useNativeDriver: true }),
         ];
       })
     ).start();
-  }, [mode, flex, raised]);
+  }, [mode, raised]);
 
   const press = (m: ThemeMode) => {
     if (m === mode) return;
@@ -86,7 +105,7 @@ function ThemePill({ mode, onChange }: { mode: ThemeMode; onChange: (m: ThemeMod
       {THEME_KEYS.map((k, i) => {
         const on = k.mode === mode;
         return (
-          <Animated.View key={k.mode} style={{ flex: flex[i] }}>
+          <FlexKey key={k.mode} on={on}>
             <Pressable
               onPress={() => press(k.mode)}
               hitSlop={{ top: 4, bottom: 4 }}
@@ -132,7 +151,7 @@ function ThemePill({ mode, onChange }: { mode: ThemeMode; onChange: (m: ThemeMod
                 />
               </Animated.View>
             </Pressable>
-          </Animated.View>
+          </FlexKey>
         );
       })}
     </View>

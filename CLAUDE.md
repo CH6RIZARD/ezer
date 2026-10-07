@@ -514,8 +514,20 @@ style problem.
   since a tapped popover carries no momentum to bounce with.
 - **`useReduceMotion()` (`components/redesign/Primitives.tsx`)** reads the OS
   setting. Reduced = fades stay, travel and idle loops go (ScreenBody's rise,
-  PulseRing's loop). The app has no Reanimated; adding it is a native
-  dependency plus a rebuild, so it hasn't been done.
+  PulseRing's loop, SpinCard's idle float).
+- **Reanimated 4.1 + worklets 0.5.1 are installed** (SDK 54's pinned
+  versions; `babel-preset-expo` adds the worklets plugin by itself; clear the
+  Metro cache, `--clear`, after touching either). On it so far: PressScale,
+  ScreenBody, PulseRing, the Settings theme pill's flex (`FlexKey`; flex is
+  layout, which core Animated could only drive from JS), and Card Studio's
+  drawing canvas: the live stroke is built in a worklet and painted through
+  an animated `Path`, so drawing runs no React render per touch sample, and
+  the parent gets the stroke once on release. Card Studio's ScrollView is
+  RNGH's, for the same native scroll-cancel reason as SpinCard's parents.
+  SpinCard itself stays on core Animated with the native driver: it works
+  and its layer stack was tuned against that driver; don't port it casually.
+  The colour/line-weight sliders still use PanResponder (setState per move
+  is their whole job, since the ink colour is React state).
 
 ## Secrets
 

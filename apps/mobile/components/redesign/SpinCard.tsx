@@ -40,6 +40,7 @@ import { PanGestureHandler, State, type PanGestureHandlerStateChangeEvent } from
 import { useTheme } from '../../utils/ThemeContext';
 import { gradients } from '../../theme/tokens';
 import { fontFamily, motion, radius } from '../../theme/type';
+import { useReduceMotion } from './Primitives';
 
 const CARD_W = 308;
 const CARD_H = 190;
@@ -265,8 +266,12 @@ export function SpinCard({ front, back, style, onTap, onDragChange, hint = 'Drag
   // freezeFloat gets the current value from stopAnimation's callback
   // instead, which is the one-shot read this ever actually needed.
 
+  // Reduce Motion: the idle float is decoration, so it simply doesn't run.
+  // Drag and settle are the user's own motion and stay as they are.
+  const reduced = useReduceMotion();
+
   useEffect(() => {
-    if (interacted.current) return;
+    if (interacted.current || reduced) return;
     const loop = Animated.loop(
       Animated.sequence([
         Animated.timing(float, {
@@ -285,8 +290,12 @@ export function SpinCard({ front, back, style, onTap, onDragChange, hint = 'Drag
     );
     floatLoop.current = loop;
     loop.start();
-    return () => loop.stop();
-  }, [float]);
+    return () => {
+      loop.stop();
+      // Turning Reduce Motion on mid-loop parks the card at rest, not mid-bob.
+      if (!interacted.current) float.setValue(0);
+    };
+  }, [float, reduced]);
 
   /** Freeze the float at whatever frame it is on — no snap back to 0. */
   const freezeFloat = useCallback(() => {
