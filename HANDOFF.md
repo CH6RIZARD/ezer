@@ -6,12 +6,11 @@ Highnote ID.
 
 ## Where things are
 
-- **The one real repo:** `E:\c-offload\New folder\ezer` (branch `main`, remote
-  `CH6RIZARD/ezer`, in sync at handoff). All other local EZER copies were deleted
-  on purpose. `C:\New folder\ezer` holds only `.claude` settings, and sessions
-  start from there, so always work with absolute paths into the E: repo.
+- **The one real repo:** `E:\The Void\ezer` (moved here 2026-10-06 from
+  `E:\c-offload\New folder\ezer`; branch `main`, remote `CH6RIZARD/ezer`). All
+  other local EZER copies were deleted on purpose. Start Claude in this folder.
 - **Leave alone:** every `ezer forex` / `ezer-morgan-futures` folder (a separate
-  project), and `C:\the void\...` (a different app, unrelated to EZER).
+  project), and the other app in `C:\the void\the-void` (unrelated to EZER).
 - **Newest APK:** `E:\tmp\ezer-build-37386522539` (preview build, installed on
   the S22). The k62 was disconnected, so it still has an older build.
 - **Scratch scripts:** `E:\tmp\claude\c--New-folder-ezer\73fc1941-...\scratchpad\`.
