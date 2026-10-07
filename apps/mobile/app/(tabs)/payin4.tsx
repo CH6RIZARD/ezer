@@ -8,7 +8,9 @@
 // =============================================================================
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { View, Text, ScrollView, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet } from 'react-native';
+// RNGH's ScrollView, so the card's pan cancels page scroll natively (SpinCard).
+import { ScrollView } from 'react-native-gesture-handler';
 import { useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';

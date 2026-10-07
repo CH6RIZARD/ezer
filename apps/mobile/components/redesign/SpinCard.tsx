@@ -382,13 +382,17 @@ export function SpinCard({ front, back, style, onTap, onDragChange, hint = 'Drag
   const onHandlerStateChange = useCallback(
     (e: PanGestureHandlerStateChangeEvent) => {
       const { state, translationX, translationY } = e.nativeEvent;
+      // No onDragChange here: on native the page's scroll is blocked by
+      // gesture-handler itself (the parents use RNGH's ScrollView, which is
+      // cancelled when this pan activates first at minDist 2). Calling it set
+      // parent state at touch-down, and that whole-screen re-render landed on
+      // Android's UI thread exactly as the finger started moving: the
+      // "initial lag" on every drag that the web dev page never had.
       if (state === State.BEGAN) {
         freezeFloat();
-        onDragChange?.(true);
         return;
       }
       if (state !== State.END && state !== State.CANCELLED && state !== State.FAILED) return;
-      onDragChange?.(false);
       // Fold the drag into the base in one batch, so base + translation is
       // unchanged on screen: no jump between the gesture and the settle.
       ryVal.current += translationX * motion.cardRotatePerPx;
@@ -403,7 +407,7 @@ export function SpinCard({ front, back, style, onTap, onDragChange, hint = 'Drag
       }
       settle();
     },
-    [freezeFloat, onDragChange, onTap, rx, ry, tx, ty, settle]
+    [freezeFloat, onTap, rx, ry, tx, ty, settle]
   );
 
   // --- transforms -------------------------------------------------------------

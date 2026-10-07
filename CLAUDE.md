@@ -212,6 +212,14 @@ style problem.
   before the rotations, built from `Animated.modulo`/`interpolate`/`multiply`
   so it stays on the native driver. `translate: [0, 0, k]` is NOT usable —
   the native driver only takes numeric transform values.
+- **On native, SpinCard's drag must run no React work at touch-down.** Page
+  scroll is blocked by gesture-handler exclusivity: `payin4.tsx` and
+  `PhysicalCardReview.tsx` use RNGH's `ScrollView`, and the card's pan
+  (minDist 2) activates first and cancels it. The native handler does NOT
+  call `onDragChange`; it used to, and the parent's `setState` re-rendered
+  the whole screen on Android's UI thread right as the finger moved, giving
+  an initial lag on every drag that the web dev page never showed.
+  `onDragChange` + `scrollEnabled` remain for the web (PanResponder) path only.
 - **The Pay in 4 card's free-drag spin physics live in
   `components/redesign/SpinCard.tsx`**, not in `VirtualCard.tsx` — extracted
   so `PhysicalCardReview.tsx`'s finished-design preview gets the exact same
