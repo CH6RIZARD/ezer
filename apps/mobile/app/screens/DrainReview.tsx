@@ -582,8 +582,12 @@ export default function DrainReviewScreen() {
               <View style={[styles.grabber, { backgroundColor: colors.line2 }]} />
               <View style={styles.sheetHead}>
                 <MerchantMark name={sheetFor.name} merchantId={sheetFor.merchantId} logoUrl={sheetFor.logo} size={40} />
-                <View style={{ marginLeft: 12 }}>
-                  <Text style={[styles.sheetName, { color: colors.ink }]}>{sheetFor.name}</Text>
+                {/* flex 1 + minWidth 0: a long name wraps inside the sheet instead
+                    of pushing past its right edge (a raw bank descriptor did). */}
+                <View style={{ marginLeft: 12, flex: 1, minWidth: 0 }}>
+                  <Text style={[styles.sheetName, { color: colors.ink }]} numberOfLines={2}>
+                    {sheetFor.name}
+                  </Text>
                   <Text style={[styles.sheetPrice, { color: colors.mut }]}>
                     {formatCents(sheetFor.amountCents)}/mo
                   </Text>

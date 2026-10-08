@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useCallback, useEffect, useMemo, useRef, ReactNode } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { api } from '../utils/api';
+import { prettyMerchantName } from '../utils/merchantName';
 import { useAuth } from '../utils/AuthContext';
 import { parseLocalDay } from '../utils/calendarEvents';
 // demoDataAdapter is intentionally NOT imported any more — see the note above
@@ -275,11 +276,16 @@ export function DataProvider({ children }: { children: ReactNode }) {
       );
     }
 
+    // Names shown to the user are prettified ONCE here (utils/merchantName):
+    // the API's canonical name is a cleaned bank descriptor and the server's
+    // matching key, so it is left as it is server-side.
+    const pretty = <T extends { merchantName: string }>(xs: T[]): T[] =>
+      xs.map(x => ({ ...x, merchantName: prettyMerchantName(x.merchantName) }));
     const data: SnapshotData = {
       homeSummary: valueOf<HomeSummary | null>(summaryRes, null, last.homeSummary),
-      risks: valueOf<RiskItem[]>(risksRes, [], last.risks),
+      risks: pretty(valueOf<RiskItem[]>(risksRes, [], last.risks)),
       instruments: valueOf<FundingInstrument[]>(instrumentsRes, [], last.instruments),
-      subscriptions: valueOf<Subscription[]>(subsRes, [], last.subscriptions),
+      subscriptions: pretty(valueOf<Subscription[]>(subsRes, [], last.subscriptions)),
     };
 
     setState({
