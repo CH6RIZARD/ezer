@@ -540,17 +540,29 @@ style problem.
   phone and the Reanimated one had clearly faster Wallet date-range chips,
   while tab switching was slow on BOTH (that was lazy mounting, below). Judge
   this on the phone, not by reasoning about setup cost.
-- **Tabs: `lazy: false` AND `freezeOnBlur: false` (`app/(tabs)/_layout.tsx`).**
-  Every tab mounts at launch behind the passcode screen and stays live, so
-  a tab tap is only a native view swap. The thread profile on the S22 (Oct 8
-  2026, `top -H` on mqt_v_js) showed the JS thread idle after launch except
-  a ~0.5s burst on every tab tap — the frozen tab re-rendering top to
-  bottom on focus — which is what "tab switching is catastrophically slow"
-  was (seconds on the k62). That same focus re-render rebuilt SpinCard's
-  native animation graph right before the first drag after a switch, so
-  the first ~100ms of that drag was lost ("first frame skips", frame-by-frame
-  capture). Don't turn either back on; a stale-looking tab gets a
-  `useFocusEffect` (Wallet's carousel already has one).
+- **Tabs are expo-router/ui HEADLESS tabs (`app/(tabs)/_layout.tsx`), not
+  the bottom-tabs navigator, and every tab stays mounted AND laid out while
+  hidden (opacity 0, untouchable, `pointerEvents: none`).** Both ways
+  bottom-tabs hides an inactive tab — detaching its native view (default)
+  or `display: none` (`detachInactiveScreens={false}`) — made switching back
+  re-layout/re-mount that tab's whole view tree: S22 frame timeline (Oct 8
+  2026, `dumpsys gfxinfo framestats`): after a Home tap two tab-bar frames,
+  then NOTHING drawn for 2.3s, then Home; Savings 0.03s, Pay in 4 1.3s,
+  Wallet 1.7s, Home 3.1s — cost ∝ tree size, no JS render of Home involved
+  (the DIAG render log was silent). `freezeOnBlur` is gone with it (a frozen
+  tab re-rendered top to bottom on focus). The bar is a custom `TabList`;
+  `saved`/`alerts` have hidden triggers so `router.push('/(tabs)/saved')`
+  still works. Only Home mounts under the passcode keypad (`renderTab`
+  returns null for unloaded tabs until `LockWarmContext`); the other three
+  mount during the splash breath after the code is accepted.
+- **`useCardFlowStatus` must not set a fresh object on every focus.** It
+  refreshes on every focus of Home; a new `access` object each time
+  re-rendered the whole Home tree on every switch back. It keeps the previous
+  state when the outcome is unchanged.
+- **The hourly Plaid re-sync waits for `lockWarm`** (`utils/lockWarm.ts`,
+  resolved by LockGate when the code is accepted): its reply re-renders every
+  mounted screen, which under the keypad was the difference between the first
+  digit showing in 0.4s and 1.9s.
 
 ## No swipe between tabs
 

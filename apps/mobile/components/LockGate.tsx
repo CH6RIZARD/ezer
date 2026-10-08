@@ -44,6 +44,7 @@ import {
 } from 'react-native';
 import { FullWindowOverlay } from 'react-native-screens';
 import { router } from 'expo-router';
+import { markLockWarm } from '../utils/lockWarm';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../utils/ThemeContext';
 import { useAuth } from '../utils/AuthContext';
@@ -112,6 +113,7 @@ export default function LockGate({ children }: { children: React.ReactNode }) {
   const move = useCallback(
     (next: Phase) => {
       console.log('DIAG phase', next, Date.now());
+      if (next === 'open' || next === 'loading') markLockWarm();
       if (next !== 'open') layer.setValue(1);
       phaseRef.current = next;
       setPhase(next);
@@ -130,6 +132,7 @@ export default function LockGate({ children }: { children: React.ReactNode }) {
       .then(stored => {
         if (cancelled) return;
         setInfo(stored);
+        if (!stored) markLockWarm();
         setPhase(stored ? 'intro' : 'open');
       });
     const off = onPasscodeChange(next => {

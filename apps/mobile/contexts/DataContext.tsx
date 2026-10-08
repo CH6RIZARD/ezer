@@ -4,6 +4,7 @@ import { api } from '../utils/api';
 import { prettyMerchantName } from '../utils/merchantName';
 import { useAuth } from '../utils/AuthContext';
 import { parseLocalDay } from '../utils/calendarEvents';
+import { lockWarm } from '../utils/lockWarm';
 // demoDataAdapter is intentionally NOT imported any more — see the note above
 // EMPTY_STATE. All figures come from the Plaid-backed API.
 
@@ -422,6 +423,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
         if (!due) return;
 
         await AsyncStorage.setItem(LAST_BG_SYNC_KEY, String(Date.now()));
+        // Not while the keypad is up: the sync's reply re-renders every
+        // mounted screen, and on the S22 that was the difference between the
+        // first digit showing in 0.4s and in 1.9s.
+        await lockWarm;
+        if (cancelled) return;
 
         // 404s harmlessly when nothing is linked yet — a normal state, not a
         // failure worth surfacing.
