@@ -117,7 +117,9 @@ const TRIG_DEG = Array.from({ length: 25 }, (_, i) => i * 15);
 const IS_WEB = Platform.OS === 'web';
 
 /** A rotation in degrees: the settled base, or base + live drag. */
-type Rotation = Animated.Value | Animated.AnimatedAddition<number>;
+type Rotation = Animated.Value | Animated.AnimatedAddition<number> | Animated.AnimatedMultiplication<number>;
+/** The vertical idle float: an interpolation of a 0→1 loop, or a plain value. */
+type Float = Animated.AnimatedInterpolation<number> | Animated.Value;
 
 export interface SpinCardProps {
   front: React.ReactNode;
@@ -133,6 +135,125 @@ export interface SpinCardProps {
   onDragChange?: (dragging: boolean) => void;
   /** "Drag to spin it around" by default — pass '' to hide the hint entirely. */
   hint?: string;
+}
+
+/**
+ * The card's layer styles — faces at ±FACE_DEPTH and the gold sheet stack
+ * between them — for ANY rotation source. SpinCard drives it from the drag;
+ * the onboarding's self-spinning card (app/onboarding.tsx) drives it from a
+ * timing loop, so both cards share one thickness instead of the onboarding
+ * having a thin single sheet. EVERY animated node and style is built once
+ * (useMemo on the Animated nodes, which never change): built inline, each
+ * render made fresh interpolate/multiply nodes for all ~25 layers, and
+ * Animated tore down and re-attached the whole native graph — and renders
+ * happen exactly when a drag STARTS (first-touch float freeze), so every
+ * drag began with a visible hitch.
+ */
+export function useCardLayers(rotX: Rotation, rotY: Rotation, floatY: Float) {
+  const deg = useCallback(
+    (v: Rotation) => v.interpolate({ inputRange: [-360, 360], outputRange: ['-360deg', '360deg'] }),
+    []
+  );
+
+  const faceTransform = useMemo(
+    () =>
+      IS_WEB
+        ? [{ rotateX: deg(rotX) }, { rotateY: deg(rotY) }]
+        : [{ perspective: PERSPECTIVE }, { rotateX: deg(rotX) }, { rotateY: deg(rotY) }],
+    [deg, rotX, rotY]
+  );
+
+  // Depth k along the card's normal. Web: a real translateZ(k). RN 0.81 has
+  // no translateZ on native (Android TransformHelper.kt / iOS
+  // RCTConvert+Transform.m skip it), so native reproduces what translateZ
+  // AFTER rotateX·rotateY does on screen — a shift of (k·sin ry,
+  // −k·sin rx·cos ry) — as a screen-space translate placed BEFORE the
+  // rotations. Built from modulo/interpolate/multiply only — all
+  // native-driver nodes, so no JS work per frame (and no listeners; see the
+  // rule in CLAUDE.md). `translate: [0, 0, k]` is not an option: the native
+  // driver only accepts numeric transform values.
+  const depth = useMemo(() => {
+    const table = (f: (rad: number) => number) => (v: Rotation) =>
+      Animated.modulo(v, 360).interpolate({ inputRange: TRIG_DEG, outputRange: TRIG_DEG.map(d => f((d * Math.PI) / 180)) });
+    const sin = table(Math.sin);
+    const absSin = table(r => Math.abs(Math.sin(r)));
+    const dx = sin(rotY);
+    const dy = Animated.multiply(Animated.multiply(sin(rotX), table(Math.cos)(rotY)), -1);
+    // Side opacity: 0 below ~6° of tilt, full by ~17° (side ≈ 1.8px wide).
+    const edge = Animated.add(absSin(rotX), absSin(rotY)).interpolate({
+      inputRange: [0.1, 0.3],
+      outputRange: [0, 1],
+      extrapolate: 'clamp',
+    });
+    // Fill-in sheets: |cos rx·cos ry| is how squarely the face still points
+    // at the viewer; they fade in from ~65° of tilt and are full by ~75°.
+    const absCos = table(r => Math.abs(Math.cos(r)));
+    const fine = Animated.multiply(absCos(rotX), absCos(rotY)).interpolate({
+      inputRange: [0.26, 0.42],
+      outputRange: [1, 0],
+      extrapolate: 'clamp',
+    });
+    return { dx, dy, edge, fine };
+  }, [rotX, rotY]);
+  const layers = useMemo(() => {
+    const at = (k: number, rest: object[] = []) =>
+      IS_WEB
+        ? [...faceTransform, { translateZ: k }, ...rest]
+        : [
+            faceTransform[0],
+            { translateX: Animated.multiply(depth.dx, k) },
+            { translateY: Animated.multiply(depth.dy, k) },
+            ...faceTransform.slice(1),
+            ...rest,
+          ];
+    return {
+      card: [
+        styles.card,
+        IS_WEB ? ({ perspective: PERSPECTIVE } as unknown as ViewStyle) : null,
+        { transform: [{ translateY: floatY }] },
+      ],
+      sheets: SIDE_DEPTHS.map((k, i) => [
+        styles.sheet,
+        {
+          backgroundColor: sideColor(k),
+          opacity: isCoarse(i) ? depth.edge : depth.fine,
+          transform: at(k) as never,
+        },
+      ]),
+      front: [styles.face, styles.hidden, { transform: at(FACE_DEPTH) as never }],
+      // rotateY(180) after the shift, so its normal points the other way.
+      back: [styles.face, styles.hidden, { transform: at(-FACE_DEPTH, [{ rotateY: '180deg' }]) as never }],
+    };
+  }, [faceTransform, depth, floatY]);
+
+  return layers;
+}
+
+/** The card's layers rendered: gold sheets first, then the two faces. */
+export function CardStack({
+  layers,
+  front,
+  back,
+  ...rest
+}: {
+  layers: ReturnType<typeof useCardLayers>;
+  front: React.ReactNode;
+  back: React.ReactNode;
+} & Record<string, unknown>) {
+  return (
+    <Animated.View {...rest} style={layers.card}>
+      {/* Gold side — see SIDE_DEPTHS. Painted before the faces, so with
+          no real Z on native the faces still cover it face-on.
+          Do not add renderToHardwareTextureAndroid to fight grazing-angle
+          tearing: flattening into a bitmap layer broke Android's
+          backfaceVisibility culling, so the mirrored FRONT showed at rest. */}
+      {layers.sheets.map((sheetStyle, i) => (
+        <Animated.View key={SIDE_DEPTHS[i]} pointerEvents="none" style={sheetStyle} />
+      ))}
+      <Animated.View style={layers.front}>{front}</Animated.View>
+      <Animated.View style={layers.back}>{back}</Animated.View>
+    </Animated.View>
+  );
 }
 
 export function SpinCard({ front, back, style, onTap, onDragChange, hint = 'Drag to spin it around' }: SpinCardProps) {
@@ -419,108 +540,14 @@ export function SpinCard({ front, back, style, onTap, onDragChange, hint = 'Drag
     [freezeFloat, onTap, rx, ry, tx, ty, settle]
   );
 
-  // --- transforms -------------------------------------------------------------
-  // EVERY animated node and style below is built once (useMemo on the
-  // Animated values, which never change). Built inline, each render made
-  // fresh interpolate/multiply nodes for all ~25 layers, and Animated tore
-  // down and re-attached the whole native graph — and renders happen exactly
-  // when a drag STARTS (first-touch float freeze, the parent disabling its
-  // ScrollView), so every drag began with a visible hitch.
-  const deg = useCallback(
-    (v: Rotation) => v.interpolate({ inputRange: [-360, 360], outputRange: ['-360deg', '360deg'] }),
-    []
-  );
-
   const floatY = useMemo(
     () => float.interpolate({ inputRange: [0, 1], outputRange: [0, motion.cardFloatTravel] }),
     [float]
   );
-
-  const faceTransform = useMemo(
-    () =>
-      IS_WEB
-        ? [{ rotateX: deg(rotX) }, { rotateY: deg(rotY) }]
-        : [{ perspective: PERSPECTIVE }, { rotateX: deg(rotX) }, { rotateY: deg(rotY) }],
-    [deg, rotX, rotY]
-  );
-
-  // Depth k along the card's normal. Web: a real translateZ(k). RN 0.81 has
-  // no translateZ on native (Android TransformHelper.kt / iOS
-  // RCTConvert+Transform.m skip it), so native reproduces what translateZ
-  // AFTER rotateX·rotateY does on screen — a shift of (k·sin ry,
-  // −k·sin rx·cos ry) — as a screen-space translate placed BEFORE the
-  // rotations. Built from modulo/interpolate/multiply only — all
-  // native-driver nodes, so no JS work per frame (and no listeners; see the
-  // rule in CLAUDE.md). `translate: [0, 0, k]` is not an option: the native
-  // driver only accepts numeric transform values.
-  const depth = useMemo(() => {
-    const table = (f: (rad: number) => number) => (v: Rotation) =>
-      Animated.modulo(v, 360).interpolate({ inputRange: TRIG_DEG, outputRange: TRIG_DEG.map(d => f((d * Math.PI) / 180)) });
-    const sin = table(Math.sin);
-    const absSin = table(r => Math.abs(Math.sin(r)));
-    const dx = sin(rotY);
-    const dy = Animated.multiply(Animated.multiply(sin(rotX), table(Math.cos)(rotY)), -1);
-    // Side opacity: 0 below ~6° of tilt, full by ~17° (side ≈ 1.8px wide).
-    const edge = Animated.add(absSin(rotX), absSin(rotY)).interpolate({
-      inputRange: [0.1, 0.3],
-      outputRange: [0, 1],
-      extrapolate: 'clamp',
-    });
-    // Fill-in sheets: |cos rx·cos ry| is how squarely the face still points
-    // at the viewer; they fade in from ~65° of tilt and are full by ~75°.
-    const absCos = table(r => Math.abs(Math.cos(r)));
-    const fine = Animated.multiply(absCos(rotX), absCos(rotY)).interpolate({
-      inputRange: [0.26, 0.42],
-      outputRange: [1, 0],
-      extrapolate: 'clamp',
-    });
-    return { dx, dy, edge, fine };
-  }, [rotX, rotY]);
-  const layers = useMemo(() => {
-    const at = (k: number, rest: object[] = []) =>
-      IS_WEB
-        ? [...faceTransform, { translateZ: k }, ...rest]
-        : [
-            faceTransform[0],
-            { translateX: Animated.multiply(depth.dx, k) },
-            { translateY: Animated.multiply(depth.dy, k) },
-            ...faceTransform.slice(1),
-            ...rest,
-          ];
-    return {
-      card: [
-        styles.card,
-        IS_WEB ? ({ perspective: PERSPECTIVE } as unknown as ViewStyle) : null,
-        { transform: [{ translateY: floatY }] },
-      ],
-      sheets: SIDE_DEPTHS.map((k, i) => [
-        styles.sheet,
-        {
-          backgroundColor: sideColor(k),
-          opacity: isCoarse(i) ? depth.edge : depth.fine,
-          transform: at(k) as never,
-        },
-      ]),
-      front: [styles.face, styles.hidden, { transform: at(FACE_DEPTH) as never }],
-      // rotateY(180) after the shift, so its normal points the other way.
-      back: [styles.face, styles.hidden, { transform: at(-FACE_DEPTH, [{ rotateY: '180deg' }]) as never }],
-    };
-  }, [faceTransform, depth, floatY]);
+  const layers = useCardLayers(rotX, rotY, floatY);
 
   const card = (
-    <Animated.View {...(IS_WEB ? panResponder.panHandlers : null)} style={layers.card}>
-        {/* Gold side — see SIDE_DEPTHS. Painted before the faces, so with
-            no real Z on native the faces still cover it face-on.
-            Do not add renderToHardwareTextureAndroid to fight grazing-angle
-            tearing: flattening into a bitmap layer broke Android's
-            backfaceVisibility culling, so the mirrored FRONT showed at rest. */}
-        {layers.sheets.map((sheetStyle, i) => (
-          <Animated.View key={SIDE_DEPTHS[i]} pointerEvents="none" style={sheetStyle} />
-        ))}
-
-        <Animated.View style={layers.front}>{front}</Animated.View>
-        <Animated.View style={layers.back}>{back}</Animated.View>
-    </Animated.View>
+    <CardStack layers={layers} front={front} back={back} {...(IS_WEB ? panResponder.panHandlers : null)} />
   );
 
   return (

@@ -40,6 +40,7 @@ import { useAuth } from '../utils/AuthContext';
 import { darkTokens as T } from '../theme/tokens';
 import PasscodeSetup from '../components/PasscodeSetup';
 import { getPasscodeInfo } from '../utils/passcode';
+import { useCardLayers, CardStack } from '../components/redesign/SpinCard';
 
 // --- shared -----------------------------------------------------------------
 
@@ -247,6 +248,7 @@ function ScreenTicker({ onStart, onLogin }: { onStart: () => void; onLogin: () =
 function SpinCard() {
   const spin = useRef(new Animated.Value(0)).current;
   const bob = useRef(new Animated.Value(0)).current;
+  const flat = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     const s = Animated.loop(Animated.timing(spin, { toValue: 1, duration: 9000, easing: Easing.linear, useNativeDriver: true }));
@@ -258,65 +260,48 @@ function SpinCard() {
     return () => { s.stop(); b.stop(); };
   }, [spin, bob]);
 
-  const rotateY = spin.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] });
-  const rotateYBack = spin.interpolate({ inputRange: [0, 1], outputRange: ['180deg', '540deg'] });
-  const translateY = bob.interpolate({ inputRange: [0, 1], outputRange: [0, -7] });
+  // Same faces + gold edge stack as the Pay in 4 card (SpinCard's
+  // useCardLayers), driven by the spin loop instead of a drag, so this card
+  // is as thick as the others rather than a single thin sheet.
+  const rotY = useMemo(() => Animated.multiply(spin, 360), [spin]);
+  const translateY = useMemo(() => bob.interpolate({ inputRange: [0, 1], outputRange: [0, -7] }), [bob]);
+  const layers = useCardLayers(flat, rotY, translateY);
 
-    // No `inset: 0` — React Native does not implement the shorthand, so it is
-  // dropped silently and the face never fills the card.
-  const face: any = { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, borderRadius: 20, overflow: 'hidden' };
-
-  // `backfaceVisibility: 'hidden'` has to sit on the SAME native view that
-  // carries the `rotateY` transform, not a child nested underneath it.
-  // Android's culling check reads that view's own local transform matrix —
-  // a child with no transform of its own, merely inheriting the rotation
-  // visually from an ancestor, has an identity matrix as far as that check
-  // is concerned, so it is never culled. Putting it one level up on the
-  // gradient/child instead "mostly" worked (the card visibly went edge-on)
-  // but still let the back face's own REAR show through as a mirrored
-  // double past 180° — because that view, too, had no transform of its
-  // own. The Animated.View that actually owns `transform: [...rotateY]`
-  // below is the one this has to live on.
-  const faceHidden: any = { ...face, backfaceVisibility: 'hidden' };
-
-  return (
-    <Animated.View style={{ width: 300, height: 188, transform: [{ translateY }] }}>
-      <Animated.View style={[faceHidden, { width: 300, height: 188, transform: [{ perspective: 1200 }, { rotateY }] }]}>
-        <LinearGradient colors={['#E7C77E', '#A87D2F']} style={StyleSheet.absoluteFillObject} />
-        <View style={{ position: 'absolute', top: 2, left: 2, right: 2, bottom: 2, borderRadius: 18, overflow: 'hidden' }}>
-          <LinearGradient colors={['#33303B', '#17151D', '#0B0A10']} locations={[0, 0.55, 1]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ flex: 1, borderRadius: 18, padding: 18 }}>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-              <LinearGradient colors={['#E7C77E', '#A87D2F']} style={{ width: 42, height: 31, borderRadius: 7 }} />
-              <Text style={{ fontSize: 14, fontFamily: UI_BOLD, letterSpacing: 2.5, color: T.gold }}>EZER</Text>
+  const front = (
+    <>
+      <LinearGradient colors={['#E7C77E', '#A87D2F']} style={StyleSheet.absoluteFillObject} />
+      <View style={{ position: 'absolute', top: 2, left: 2, right: 2, bottom: 2, borderRadius: 18, overflow: 'hidden' }}>
+        <LinearGradient colors={['#33303B', '#17151D', '#0B0A10']} locations={[0, 0.55, 1]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ flex: 1, borderRadius: 18, padding: 18 }}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+            <LinearGradient colors={['#E7C77E', '#A87D2F']} style={{ width: 42, height: 31, borderRadius: 7 }} />
+            <Text style={{ fontSize: 14, fontFamily: UI_BOLD, letterSpacing: 2.5, color: T.gold }}>EZER</Text>
+          </View>
+          <View style={{ flex: 1, justifyContent: 'flex-end' }}>
+            <Text style={{ fontSize: 17, letterSpacing: 2, color: 'rgba(255,255,255,0.92)' }}>••••  ••••  ••••  ••••</Text>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 11 }}>
+              <Text style={{ fontSize: 10, fontFamily: UI_BOLD, letterSpacing: 1, color: 'rgba(255,255,255,0.55)' }}>EZER MEMBER</Text>
+              <Text style={{ fontSize: 10, fontFamily: UI_BOLD, letterSpacing: 1, color: 'rgba(255,255,255,0.55)' }}>PAY IN 4</Text>
             </View>
-            <View style={{ flex: 1, justifyContent: 'flex-end' }}>
-              <Text style={{ fontSize: 17, letterSpacing: 2, color: 'rgba(255,255,255,0.92)' }}>••••  ••••  ••••  ••••</Text>
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 11 }}>
-                <Text style={{ fontSize: 10, fontFamily: UI_BOLD, letterSpacing: 1, color: 'rgba(255,255,255,0.55)' }}>EZER MEMBER</Text>
-                <Text style={{ fontSize: 10, fontFamily: UI_BOLD, letterSpacing: 1, color: 'rgba(255,255,255,0.55)' }}>PAY IN 4</Text>
-              </View>
-            </View>
-          </LinearGradient>
-        </View>
-      </Animated.View>
-
-      <Animated.View
-        style={[
-          faceHidden,
-          { position: 'absolute', width: 300, height: 188, backgroundColor: '#1E0B45', transform: [{ perspective: 1200 }, { rotateY: rotateYBack }] },
-        ]}
-      >
-        <LinearGradient colors={['#3B1580', '#1E0B45', '#0E0724']} locations={[0, 0.55, 1]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFillObject} />
-        <View style={{ position: 'absolute', top: 24, left: 0, right: 0, height: 40, backgroundColor: '#0B0812' }} />
-        <View style={{ position: 'absolute', top: 84, left: 22, right: 22, height: 32, borderRadius: 7, backgroundColor: 'rgba(255,255,255,0.9)', alignItems: 'flex-end', justifyContent: 'center', paddingHorizontal: 13 }}>
-          <Text style={{ fontSize: 14, letterSpacing: 2, color: '#241A38' }}>•••</Text>
-        </View>
-        <Text style={{ position: 'absolute', bottom: 17, left: 22, fontSize: 9, fontFamily: UI_BOLD, letterSpacing: 1, color: 'rgba(255,255,255,0.45)' }}>
-          SINGLE-USE VIRTUAL CARD
-        </Text>
-      </Animated.View>
-    </Animated.View>
+          </View>
+        </LinearGradient>
+      </View>
+    </>
   );
+
+  const back = (
+    <>
+      <LinearGradient colors={['#3B1580', '#1E0B45', '#0E0724']} locations={[0, 0.55, 1]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFillObject} />
+      <View style={{ position: 'absolute', top: 24, left: 0, right: 0, height: 40, backgroundColor: '#0B0812' }} />
+      <View style={{ position: 'absolute', top: 84, left: 22, right: 22, height: 32, borderRadius: 7, backgroundColor: 'rgba(255,255,255,0.9)', alignItems: 'flex-end', justifyContent: 'center', paddingHorizontal: 13 }}>
+        <Text style={{ fontSize: 14, letterSpacing: 2, color: '#241A38' }}>•••</Text>
+      </View>
+      <Text style={{ position: 'absolute', bottom: 17, left: 22, fontSize: 9, fontFamily: UI_BOLD, letterSpacing: 1, color: 'rgba(255,255,255,0.45)' }}>
+        SINGLE-USE VIRTUAL CARD
+      </Text>
+    </>
+  );
+
+  return <CardStack layers={layers} front={front} back={back} />;
 }
 
 // --- 03 · leak replay -------------------------------------------------------

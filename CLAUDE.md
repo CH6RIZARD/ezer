@@ -220,6 +220,12 @@ style problem.
   the whole screen on Android's UI thread right as the finger moved, giving
   an initial lag on every drag that the web dev page never showed.
   `onDragChange` + `scrollEnabled` remain for the web (PanResponder) path only.
+- **`useCardLayers(rotX, rotY, floatY)` + `CardStack`, exported from
+  `SpinCard.tsx`, are the card's faces-plus-gold-edge for ANY rotation
+  source.** SpinCard feeds them the drag; `app/onboarding.tsx`'s
+  self-spinning card feeds them its timing loop (rotY = spin·360). The
+  onboarding card used to be its own thin two-face copy and was reported as
+  "thin, not as thick as the rest" — don't give it a private card again.
 - **The Pay in 4 card's free-drag spin physics live in
   `components/redesign/SpinCard.tsx`**, not in `VirtualCard.tsx` — extracted
   so `PhysicalCardReview.tsx`'s finished-design preview gets the exact same
@@ -548,6 +554,15 @@ style problem.
   RNGH's web build doesn't cancel RN's own touch handling, so a swipe also
   fired the tile it started on; RNGH's web ScrollView claims the pointer at
   press-down; and every horizontal scroller on a tab has to out-race it.
+
+## Lock screen (`components/LockGate.tsx`)
+
+- **The sheet's opacity (`layer`) is put back to 1 inside `move()` whenever a
+  covering phase is chosen, never after `enter('open')`.** It used to be reset
+  in `lift`'s completion callback right after `setPhase('open')`; setValue is
+  immediate natively while setPhase is a React render, so with JS busy just
+  after launch the opaque wordmark sheet flashed back over Home for 100-200ms
+  (device capture). Any new path that covers the app must go through `move`.
 
 ## Secrets
 

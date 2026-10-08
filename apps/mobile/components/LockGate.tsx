@@ -92,6 +92,27 @@ export default function LockGate({ children }: { children: React.ReactNode }) {
   const infoRef = useRef(info);
   infoRef.current = info;
 
+  // The sheet's opacity. Lifted to 0 by `lift` below; back to 1 HERE, the
+  // moment any covering phase is chosen, never after an `open`. It used to
+  // be reset in lift's completion callback right after setPhase('open'):
+  // setValue is immediate on the native side, setPhase is a React render,
+  // and with the JS thread busy just after launch the render lagged 100-
+  // 200ms, so the fully opaque wordmark sheet flashed back over the home
+  // screen before it unmounted (device capture, Oct 2026).
+  const layer = useRef(new Animated.Value(1)).current;
+
+  // Write the ref WITH the state, so a second AppState event queued before
+  // the re-render reads the phase it just set.
+  const move = useCallback(
+    (next: Phase) => {
+      if (next !== 'open') layer.setValue(1);
+      phaseRef.current = next;
+      setPhase(next);
+    },
+    [layer]
+  );
+
+
   // --- cold start ---------------------------------------------------------------
   useEffect(() => {
     let cancelled = false;
@@ -135,7 +156,7 @@ export default function LockGate({ children }: { children: React.ReactNode }) {
       info === null &&
       phase === 'open'
     ) {
-      setPhase('setup');
+      move('setup'); // through move(): the layer may still be 0 from a lift
     }
   }, [auth.isLoading, auth.isAuthenticated, auth.hasCompletedOnboarding, info, phase]);
 
@@ -153,13 +174,6 @@ export default function LockGate({ children }: { children: React.ReactNode }) {
   // while the app was going to the background attaches to no window at all
   // (RCTKeyWindow() is nil then) and would never show the keypad.
   const [overlayKey, setOverlayKey] = useState(0);
-
-  // Write the ref WITH the state, so a second AppState event queued before
-  // the re-render reads the phase it just set.
-  const move = useCallback((next: Phase) => {
-    phaseRef.current = next;
-    setPhase(next);
-  }, []);
 
   const markLeft = useCallback(() => {
     if (leftAt.current === null) {
@@ -208,13 +222,12 @@ export default function LockGate({ children }: { children: React.ReactNode }) {
   }, [move, markLeft]);
 
   // --- lift the layer --------------------------------------------------------------
-  const layer = useRef(new Animated.Value(1)).current;
   const lift = useCallback(() => {
     const from = phaseRef.current;
     Animated.timing(layer, { toValue: 0, duration: 220, useNativeDriver: true }).start(() => {
-      // Only if nothing re-locked or covered the app during the fade.
+      // Only if nothing re-locked or covered the app during the fade (a
+      // re-cover went through move(), which already put the layer back).
       if (phaseRef.current === from) enter('open');
-      layer.setValue(1);
     });
   }, [layer, enter]);
 
