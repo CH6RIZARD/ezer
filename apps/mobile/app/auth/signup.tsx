@@ -10,10 +10,10 @@ import {
   Pressable,
   KeyboardAvoidingView,
   Platform,
-  Alert,
   ActivityIndicator,
   ScrollView,
 } from 'react-native';
+import { Alert } from '../../utils/appAlert';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -35,10 +35,24 @@ export default function SignupScreen() {
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [acceptedTerms, setAcceptedTerms] = useState(false);
+  // Age gate: EZER links banks and extends credit, so 18+. The server
+  // re-checks with its own clock; this only gives a clear message early.
+  const [dateOfBirth, setDateOfBirth] = useState('');
 
   const handleSignup = async () => {
-    if (!name || !email || !password || !confirmPassword) {
+    if (!name || !email || !password || !confirmPassword || !dateOfBirth) {
       Alert.alert('Error', 'Please fill in all fields');
+      return;
+    }
+
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateOfBirth) || Number.isNaN(new Date(dateOfBirth).getTime())) {
+      Alert.alert('Error', 'Enter your date of birth as YYYY-MM-DD');
+      return;
+    }
+    const eighteen = new Date(dateOfBirth);
+    eighteen.setFullYear(eighteen.getFullYear() + 18);
+    if (eighteen > new Date()) {
+      Alert.alert('Error', 'You must be 18 or older to use EZER');
       return;
     }
 
@@ -58,7 +72,7 @@ export default function SignupScreen() {
     }
 
     setIsLoading(true);
-    const result = await signup(email, password, name);
+    const result = await signup(email, password, name, dateOfBirth);
     setIsLoading(false);
 
     if (result.ok) {
@@ -130,6 +144,20 @@ export default function SignupScreen() {
               value={name}
               onChangeText={setName}
               autoCapitalize="words"
+            />
+          </View>
+
+          <View style={inputStyle}>
+            <Ionicons name="calendar-outline" size={20} color={colors.textSecondary} style={{ marginRight: 12 }} />
+            <TextInput
+              style={{ flex: 1, paddingVertical: 16, fontSize: 16, color: colors.text }}
+              placeholder="Date of birth (YYYY-MM-DD)"
+              placeholderTextColor={colors.textSecondary}
+              value={dateOfBirth}
+              onChangeText={setDateOfBirth}
+              keyboardType="numbers-and-punctuation"
+              autoComplete="birthdate-full"
+              maxLength={10}
             />
           </View>
 

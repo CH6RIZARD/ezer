@@ -35,7 +35,7 @@ interface AuthContextType {
   isAuthenticated: boolean;
   hasCompletedOnboarding: boolean;
   login: (email: string, password: string) => Promise<AuthResult>;
-  signup: (email: string, password: string, name: string) => Promise<AuthResult>;
+  signup: (email: string, password: string, name: string, dateOfBirth: string) => Promise<AuthResult>;
   loginWithProvider: (provider: 'google' | 'apple' | 'microsoft') => Promise<ProviderLoginResult>;
   logout: () => Promise<void>;
   updateUser: (updates: Partial<User>) => Promise<void>;
@@ -137,9 +137,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [persistUser]);
 
-  const signup = useCallback(async (email: string, password: string, name: string): Promise<AuthResult> => {
+  const signup = useCallback(async (email: string, password: string, name: string, dateOfBirth: string): Promise<AuthResult> => {
     try {
-      const res: any = await api.post('/auth/signup', { email, password, name });
+      const res: any = await api.post('/auth/signup', { email, password, name, dateOfBirth });
       await api.setToken(res.data.token);
       const u: User = {
         id: res.data.userId,

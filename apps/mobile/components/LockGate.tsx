@@ -37,11 +37,11 @@ import {
   AppState,
   BackHandler,
   Keyboard,
-  Alert,
   Modal,
   Platform,
   StyleSheet,
 } from 'react-native';
+import { Alert } from '../utils/appAlert';
 import { FullWindowOverlay } from 'react-native-screens';
 import { router } from 'expo-router';
 import { markLockWarm } from '../utils/lockWarm';
@@ -357,11 +357,6 @@ export default function LockGate({ children }: { children: React.ReactNode }) {
       router.replace('/onboarding');
     };
     const text = 'You will be signed out. Sign back in to set a new passcode.';
-    if (Platform.OS === 'web') {
-      // Alert.alert with buttons is a no-op in react-native-web.
-      if (window.confirm(text)) void signOut();
-      return;
-    }
     Alert.alert('Forgot your passcode?', text, [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Sign out', style: 'destructive', onPress: () => void signOut() },

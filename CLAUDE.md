@@ -586,6 +586,16 @@ style problem.
   after launch the opaque wordmark sheet flashed back over Home for 100-200ms
   (device capture). Any new path that covers the app must go through `move`.
 
+## Alerts are in-app, never the OS dialog
+
+- **`Alert` is imported from `utils/appAlert`, not `react-native`**, in every
+  file. `components/AppAlertHost.tsx` (mounted once in `app/_layout.tsx`)
+  renders it: a notice card at the top for 0–1 buttons, a bottom sheet (same
+  shape as "Cut it") for 2+, inside its own Modal so it sits above the
+  passcode lock. Same call signature, so a new call site only needs the
+  import. The owner asked for this after seeing Android's grey "Login failed"
+  dialog; don't import RN's Alert again.
+
 ## Secrets
 
 `env.ts` refuses to boot in production without `JWT_SECRET`, `ENCRYPTION_KEY`
@@ -606,3 +616,19 @@ Rules:
 - If graphify-out/wiki/index.md exists, use it for broad navigation instead of raw source browsing.
 - Read graphify-out/GRAPH_REPORT.md only for broad architecture review or when query/path/explain do not surface enough context.
 - After modifying code, run `graphify update .` to keep the graph current (AST-only, no API cost).
+
+## Rate limiting and the age gate (2026-10-08)
+
+- `trustProxy: 1` in `apps/api/src/index.ts` is load-bearing. Without it Railway's
+  proxy IP is `request.ip`, so the global 100/min limit throttled ALL users as one
+  client. `1` trusts exactly one hop; `true` would honour a client-supplied
+  x-forwarded-for and let an attacker pick a fresh "IP" per request.
+- `/plaid/create-link-token` and `/plaid/sync` are limited per USER (keyGenerator
+  on `userId`), because they cost money at Plaid. Keep that when adding routes
+  that call a metered API.
+- ponytail: `@fastify/rate-limit` counts in process memory. With more than one
+  Railway replica every limit is per replica. Add the Redis store before scaling out.
+- Signup requires `dateOfBirth` (18+, checked in `packages/shared` with the
+  SERVER's clock and stored on `User`). EZER links banks and extends credit, so
+  the floor is 18, not 13. Pre-gate accounts have `dateOfBirth = null`; do not
+  backfill a fake value.

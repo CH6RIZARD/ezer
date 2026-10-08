@@ -12,7 +12,8 @@
 // =============================================================================
 
 import React, { useCallback, useState } from 'react';
-import { View, Text, ScrollView, Pressable, Switch, Alert, StyleSheet, ActivityIndicator } from 'react-native';
+import { View, Text, ScrollView, Pressable, Switch, StyleSheet, ActivityIndicator } from 'react-native';
+import { Alert } from '../../utils/appAlert';
 import { router, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';

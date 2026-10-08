@@ -28,7 +28,8 @@
 // resolution as async and disable the button while it runs.
 // =============================================================================
 
-import { Linking, Alert, Platform } from 'react-native';
+import { Linking, Platform } from 'react-native';
+import { Alert } from './appAlert';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { MERCHANT_DOMAIN } from '../assets/merchants/brandLogos';
 

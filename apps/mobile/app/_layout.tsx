@@ -3,6 +3,7 @@ import { Stack } from 'expo-router';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import AppAlertHost from '../components/AppAlertHost';
 // Text was used by AppErrorBoundary below without being imported — the boundary
 // would itself throw a ReferenceError while rendering an error.
 import { View, Text } from 'react-native';
@@ -145,6 +146,7 @@ export default function RootLayout() {
               <SavingsGoalsProvider>
                 <AppErrorBoundary>
                   <RootLayoutNav />
+                  <AppAlertHost />
                 </AppErrorBoundary>
               </SavingsGoalsProvider>
             </DataProvider>

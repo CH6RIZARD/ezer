@@ -1,5 +1,6 @@
 import { useState, useCallback } from 'react';
-import { Alert, Platform } from 'react-native';
+import { Platform } from 'react-native';
+import { Alert } from './appAlert';
 import { api } from './api';
 import { beginInAppFlow, endInAppFlow } from './passcode';
 
