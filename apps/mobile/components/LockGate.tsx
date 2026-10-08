@@ -75,6 +75,12 @@ const FADE_MS = 900; // the index screen's breathing half-cycle
 /** False while the lock is up. Screens that navigate on their own (the
  *  premium gate) wait for it, or they would present above the lock. */
 export const LockOpenContext = React.createContext(true);
+/**
+ * True once the passcode is accepted (or there is none): the app may do its
+ * heavy work now. While the keypad is up it must not — on the S22 mounting
+ * all four tabs under the lock made the first digit take 3.9s to show.
+ */
+export const LockWarmContext = React.createContext(true);
 /** Bank linking and the photo picker leave the app on Android; give them longer. */
 const IN_APP_FLOW_GRACE_MS = 10 * 60_000;
 
@@ -412,7 +418,9 @@ export default function LockGate({ children }: { children: React.ReactNode }) {
         importantForAccessibility={locked ? 'no-hide-descendants' : 'auto'}
         accessibilityElementsHidden={locked}
       >
-        <LockOpenContext.Provider value={!locked}>{children}</LockOpenContext.Provider>
+        <LockWarmContext.Provider value={phase === 'open' || phase === 'loading'}>
+          <LockOpenContext.Provider value={!locked}>{children}</LockOpenContext.Provider>
+        </LockWarmContext.Provider>
       </View>
       {locked &&
         (Platform.OS === 'ios' ? (

@@ -11,13 +11,14 @@
 // tabs.
 // =============================================================================
 
-import React from 'react';
+import React, { useContext } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../../utils/ThemeContext';
 import { fontFamily, radius } from '../../theme/type';
+import { LockWarmContext } from '../../components/LockGate';
 
 const BAR_HEIGHT = 62;
 const EDGE_X = 12;
@@ -63,12 +64,27 @@ function TabItem({
 export default function TabLayout() {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
+  // Only Home exists while the passcode keypad is up; the other three mount
+  // the moment the code is accepted, during the splash breath, so they are
+  // built before the first tap can reach them and never compete with typing
+  // (S22: with all four mounting under the lock, the first digit took 3.9s
+  // to show).
+  const warm = useContext(LockWarmContext);
 
   return (
     <Tabs
+      // Inactive tabs stay ATTACHED to the native view hierarchy. Detached
+      // (the default), every tab switch re-attached that tab's whole view
+      // tree and re-ran measure/layout/draw on the UI thread: the DIAG
+      // timeline showed Home's JS render done 0.5s after the tap and the
+      // screen still showing Savings 3s later, and a drag on the Pay in 4
+      // card right after switching to it got 4 move events in 460ms (UI
+      // thread starved) against 11 in 200ms a few seconds later.
+      detachInactiveScreens={false}
       screenOptions={{
         headerShown: false,
-        // Every tab mounts at launch (lazy: false) and STAYS LIVE
+        // Every tab mounts once the lock is warm (lazy flips to false, and
+        // bottom-tabs renders every route on the next pass) and STAYS LIVE
         // (freezeOnBlur: false), so a tab tap is a native view swap and
         // nothing else. freezeOnBlur used to be true: a frozen tab is
         // re-rendered top to bottom on every focus, which the thread profile
@@ -79,7 +95,7 @@ export default function TabLayout() {
         // stalled. The reason freezing was added (blurred tabs' animation
         // listeners keeping the JS thread busy) was fixed at its source in
         // SpinCard (no addListener on native-driven values).
-        lazy: false,
+        lazy: !warm,
         freezeOnBlur: false,
         tabBarShowLabel: false,
         // The bar floats over content, so screens pad their own bottom by
