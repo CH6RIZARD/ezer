@@ -53,7 +53,14 @@ export function useCardFlowStatus() {
       }
 
       setHasCompletedFlow(!!design && !!outcome);
-      setAccess(outcome);
+      // Same outcome → same state object. This runs on EVERY focus of Home,
+      // and a fresh object each time re-rendered the whole Home tree
+      // (calendar included) on every tab switch back to it: the DIAG
+      // timeline showed that render 0.75s after the tap and the screen
+      // changing seconds later. Changing nothing must render nothing.
+      setAccess(prev =>
+        prev === outcome || (prev && outcome && JSON.stringify(prev) === JSON.stringify(outcome)) ? prev : outcome
+      );
     })();
     return () => {
       alive = false;

@@ -81,6 +81,9 @@ export default function TabLayout() {
       // card right after switching to it got 4 move events in 460ms (UI
       // thread starved) against 11 in 200ms a few seconds later.
       detachInactiveScreens={false}
+      screenListeners={{
+        tabPress: e => console.log('DIAG tabPress', e.target, Date.now()),
+      }}
       screenOptions={{
         headerShown: false,
         // Every tab mounts once the lock is warm (lazy flips to false, and
