@@ -76,6 +76,11 @@ export default function TabLayout() {
         // while it's off-screen and resumes it on focus; useFocusEffect
         // resyncs (e.g. Wallet's carousel position) still fire on return.
         freezeOnBlur: true,
+        // Build every tab once at launch (behind the passcode screen) instead
+        // of on its first tap: a first visit used to spend seconds mounting
+        // the whole tab on a slow phone while the bar sat unresponsive.
+        // freezeOnBlur still freezes each one right after that first render.
+        lazy: false,
         tabBarShowLabel: false,
         // The bar floats over content, so screens pad their own bottom by
         // layout.contentBottom (96) to clear it.

@@ -517,9 +517,9 @@ style problem.
   PulseRing's loop, SpinCard's idle float).
 - **Reanimated 4.1 + worklets 0.5.1 are installed** (SDK 54's pinned
   versions; `babel-preset-expo` adds the worklets plugin by itself; clear the
-  Metro cache, `--clear`, after touching either). On it so far: PressScale,
-  ScreenBody, PulseRing, the Settings theme pill's flex (`FlexKey`; flex is
-  layout, which core Animated could only drive from JS), and Card Studio's
+  Metro cache, `--clear`, after touching either). On it: the Settings theme
+  pill's flex (`FlexKey`; flex is layout, which core Animated could only
+  drive from JS) and Card Studio's
   drawing canvas: the live stroke is built in a worklet and painted through
   an animated `Path`, so drawing runs no React render per touch sample, and
   the parent gets the stroke once on release. Card Studio's ScrollView is
@@ -528,6 +528,16 @@ style problem.
   and its layer stack was tuned against that driver; don't port it casually.
   The colour/line-weight sliders still use PanResponder (setState per move
   is their whole job, since the ink colour is React state).
+- **PressScale, ScreenBody and PulseRing are deliberately back on core
+  Animated (native driver)**, after a day on Reanimated. They were already
+  UI-thread animations, so Reanimated bought nothing, and a `useAnimatedStyle`
+  per pressable made mounting a tab (dozens of tiles) measurably heavier: the
+  owner reported first tab switches going from instant to seconds. Don't move
+  per-element primitives to Reanimated; use it only where a worklet earns it.
+- **Tabs mount eagerly (`lazy: false` in `app/(tabs)/_layout.tsx`)**, behind
+  the passcode screen, and `freezeOnBlur` freezes each right after its first
+  render. A lazy first visit mounted the whole tab on tap, seconds on a slow
+  phone with the tab bar unresponsive. Don't set it back to lazy.
 
 ## No swipe between tabs
 

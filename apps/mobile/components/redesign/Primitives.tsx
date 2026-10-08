@@ -8,26 +8,20 @@
 // Source of truth: "Handoff: Ezer Redesign — Full Light + Dark Patch".
 // =============================================================================
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   AccessibilityInfo,
+  Easing,
   View,
   Text,
   Pressable,
+  Animated,
   StyleSheet,
   type ViewStyle,
   type TextStyle,
   type StyleProp,
 } from 'react-native';
 import { useTheme } from '../../utils/ThemeContext';
-import Animated, {
-  Easing,
-  cancelAnimation,
-  useAnimatedStyle,
-  useSharedValue,
-  withRepeat,
-  withTiming,
-} from 'react-native-reanimated';
 import { typeScale, radius, motion, layout } from '../../theme/type';
 
 const EASE_OUT = Easing.bezier(...motion.easeOut);
@@ -143,7 +137,7 @@ export function Surface({
 
 /**
  * Pressable that scales on press (.93–.98 over 150ms per the handoff).
- * Runs on the UI thread (Reanimated) so the feedback stays smooth during list scrolling.
+ * Uses the native driver so the feedback stays smooth during list scrolling.
  */
 export function PressScale({
   children,
@@ -160,11 +154,15 @@ export function PressScale({
   disabled?: boolean;
   hitSlop?: number;
 }) {
-  // Reanimated: the scale runs on the UI thread, so press feedback stays
-  // immediate even while JS is busy rendering the tap's result.
-  const scale = useSharedValue(1);
-  const scaleStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.get() }] }));
-  const to = (v: number) => scale.set(withTiming(v, { duration: motion.press, easing: EASE_OUT }));
+  const scale = useRef(new Animated.Value(1)).current;
+
+  const to = (v: number) =>
+    Animated.timing(scale, {
+      toValue: v,
+      duration: motion.press,
+      easing: EASE_OUT,
+      useNativeDriver: true,
+    }).start();
 
   // The layout style MUST land on the Pressable, not the inner Animated.View.
   // Putting `width: '48%'` on the inner view sized it against a Pressable that
@@ -183,7 +181,7 @@ export function PressScale({
           main axis (height). Without flexGrow a tile whose Pressable has a
           minHeight renders shorter than its neighbour, which is why the
           bottom-right grid box came out smaller than the bottom-left one. */}
-      <Animated.View style={[{ alignSelf: 'stretch', flexGrow: 1 }, scaleStyle]}>
+      <Animated.View style={{ transform: [{ scale }], alignSelf: 'stretch', flexGrow: 1 }}>
         {children}
       </Animated.View>
     </Pressable>
@@ -240,29 +238,30 @@ export function Chip({
 
 /**
  * Gold pulse ring — a 0→9px shadow that fades on a 2–2.6s loop.
- * shadowRadius is not cheap to animate, so this
+ * React Native cannot animate shadowRadius on the native driver, so this
  * renders an absolutely-positioned ring whose opacity and scale animate
- * instead. Visually equivalent, and it stays on the UI thread.
+ * instead. Visually equivalent, and it stays on the native driver.
  */
 export function PulseRing({ radius: r = radius.card }: { radius?: number }) {
   const { colors } = useTheme();
-  const pulse = useSharedValue(0);
+  const pulse = useRef(new Animated.Value(0)).current;
   const reduced = useReduceMotion();
 
   useEffect(() => {
     if (reduced) return; // a static ring at full strength still marks it
-    // Constant motion: linear, restarting from 0 each cycle.
-    pulse.set(withRepeat(withTiming(1, { duration: motion.pulse, easing: Easing.linear }), -1, false));
+    const loop = Animated.loop(
+      Animated.timing(pulse, {
+        toValue: 1,
+        duration: motion.pulse,
+        useNativeDriver: true,
+      })
+    );
+    loop.start();
     return () => {
-      cancelAnimation(pulse);
-      pulse.set(0);
+      loop.stop();
+      pulse.setValue(0);
     };
   }, [pulse, reduced]);
-
-  const ringStyle = useAnimatedStyle(() => {
-    const t = pulse.get();
-    return { opacity: 0.55 * (1 - t), transform: [{ scale: 1 + 0.06 * t }] };
-  });
 
   return (
     <Animated.View
@@ -273,8 +272,11 @@ export function PulseRing({ radius: r = radius.card }: { radius?: number }) {
           borderRadius: r,
           borderWidth: 2,
           borderColor: colors.goldLine,
+          opacity: pulse.interpolate({ inputRange: [0, 1], outputRange: [0.55, 0] }),
+          transform: [
+            { scale: pulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1.06] }) },
+          ],
         },
-        ringStyle,
       ]}
     />
   );
@@ -288,21 +290,29 @@ export function ScreenBody({
   children: React.ReactNode;
   style?: StyleProp<ViewStyle>;
 }) {
-  const anim = useSharedValue(0);
+  const anim = useRef(new Animated.Value(0)).current;
   const reduced = useReduceMotion();
 
   useEffect(() => {
-    anim.set(withTiming(1, { duration: motion.screenIn, easing: EASE_OUT }));
+    Animated.timing(anim, {
+      toValue: 1,
+      duration: motion.screenIn,
+      easing: EASE_OUT,
+      useNativeDriver: true,
+    }).start();
   }, [anim]);
-
-  const enterStyle = useAnimatedStyle(() => ({
-    opacity: anim.get(),
-    transform: [{ translateY: (reduced ? 0 : 14) * (1 - anim.get()) }],
-  }));
 
   return (
     <Animated.View
-      style={[enterStyle, style]}
+      style={[
+        {
+          opacity: anim,
+          transform: [
+            { translateY: anim.interpolate({ inputRange: [0, 1], outputRange: [reduced ? 0 : 14, 0] }) },
+          ],
+        },
+        style,
+      ]}
     >
       {children}
     </Animated.View>
