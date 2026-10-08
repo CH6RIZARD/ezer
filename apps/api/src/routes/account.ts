@@ -84,7 +84,7 @@ export async function accountRoutes(server: FastifyInstance) {
   // DEV_UNLOCK_CODE must be set on Railway; it is never present in the
   // mobile bundle, unlike a hardcoded client-side bypass would be — anyone
   // who decompiled the APK would find nothing to extract.
-  const DEV_UNLOCK_EXPIRES_AT = new Date('2026-10-06T23:59:59Z');
+  const DEV_UNLOCK_EXPIRES_AT = new Date('2026-12-31T23:59:59Z');
 
   server.post<{ Body: { code?: string } }>(
     '/dev-unlock',
