@@ -87,7 +87,11 @@ export function PremiumProvider({ children }: { children: ReactNode }) {
     const syncUser = async () => {
       try {
         if (user?.id) {
-          await Purchases.logIn(user.id);
+          const { customerInfo } = await Purchases.logIn(user.id);
+          // Re-check with a session: the launch-time check ran before login
+          // (dev-status 401s then), so a server-side developer unlock was
+          // only honoured until the next reinstall or sign-out.
+          await loadTrialState(customerInfo);
         } else {
           await Purchases.logOut();
         }
