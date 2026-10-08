@@ -173,10 +173,11 @@ style problem.
   are written where THIS code sets the values (`applyMove`, the release snap),
   and `freezeFloat` reads the float through `stopAnimation`'s callback. If you
   need the current value of one of these, use `stopAnimation(cb)`, not a
-  listener. (`app/(tabs)/_layout.tsx` once set `freezeOnBlur: true` on top
-  of this; that is now OFF — see "Tabs" below — because the fix at the
-  source made it unnecessary and the freeze itself cost a full re-render on
-  every tab focus.)
+  listener. Related: `app/(tabs)/_layout.tsx` sets `freezeOnBlur: true` so a
+  blurred tab's subtree stops rendering at all — don't remove it to "fix" a
+  stale-looking tab; use `useFocusEffect` on that screen instead (Wallet
+  already does, for its carousel position). (Turning it off was tried Oct 8
+  2026 and reverted — see "Tabs" under Motion.)
 - **SpinCard's gold side is the design the owner approved on the dev page
   (commit 90687a9, re-confirmed Oct 4 2026): seven FULL-SIZE gold sheets
   (`SIDE_DEPTHS`) between faces at ±3 (`FACE_DEPTH`), all faded in together
@@ -540,21 +541,23 @@ style problem.
   phone and the Reanimated one had clearly faster Wallet date-range chips,
   while tab switching was slow on BOTH (that was lazy mounting, below). Judge
   this on the phone, not by reasoning about setup cost.
-- **Tabs are expo-router/ui HEADLESS tabs (`app/(tabs)/_layout.tsx`), not
-  the bottom-tabs navigator, and every tab stays mounted AND laid out while
-  hidden (opacity 0, untouchable, `pointerEvents: none`).** Both ways
-  bottom-tabs hides an inactive tab — detaching its native view (default)
-  or `display: none` (`detachInactiveScreens={false}`) — made switching back
-  re-layout/re-mount that tab's whole view tree: S22 frame timeline (Oct 8
-  2026, `dumpsys gfxinfo framestats`): after a Home tap two tab-bar frames,
-  then NOTHING drawn for 2.3s, then Home; Savings 0.03s, Pay in 4 1.3s,
-  Wallet 1.7s, Home 3.1s — cost ∝ tree size, no JS render of Home involved
-  (the DIAG render log was silent). `freezeOnBlur` is gone with it (a frozen
-  tab re-rendered top to bottom on focus). The bar is a custom `TabList`;
-  `saved`/`alerts` have hidden triggers so `router.push('/(tabs)/saved')`
-  still works. Only Home mounts under the passcode keypad (`renderTab`
-  returns null for unloaded tabs until `LockWarmContext`); the other three
-  mount during the splash breath after the code is accepted.
+- **The tab navigator is the plain bottom-tabs setup with `freezeOnBlur: true`
+  and default lazy/detach — the state from before Oct 7 2026, restored at the
+  owner's request ("the nav bar was working perfectly until yesterday's
+  patches").** Oct 7–8 tried, in order: `freezeOnBlur: false`, `lazy: false`,
+  `detachInactiveScreens={false}`, and expo-router/ui headless tabs with
+  opacity-hidden tabs; the owner judged each worse on the phone, and the
+  headless bar did not render at all on Android (fine on web). Don't retry
+  those as a batch. What the measurements DID establish, for whoever next
+  works on tab speed: on the S22 a switch BACK to a large tab costs seconds
+  of native re-layout/re-mount with nothing drawn (framestats: two tab-bar
+  frames, then nothing for 2.3s), proportional to the tab's view-tree size
+  (Savings 0.03s, Pay in 4 1.3s, Wallet 1.7s, Home 3.1s), and no JS render of
+  the tab is involved. The real fix is smaller tabs (Home's calendar is the
+  bulk), tested on a development build on the phone, not another navigator
+  setting. Only Home mounts under the passcode keypad with lazy tabs, which is
+  what keeps the keypad responsive (`LockWarmContext` is still exported for
+  anything that wants to wait for the unlock).
 - **`useCardFlowStatus` must not set a fresh object on every focus.** It
   refreshes on every focus of Home; a new `access` object each time
   re-rendered the whole Home tree on every switch back. It keeps the previous

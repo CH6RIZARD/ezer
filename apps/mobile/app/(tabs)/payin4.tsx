@@ -122,7 +122,6 @@ function useInstallments(plan?: IssuedPlan) {
 }
 
 export default function PayInFourScreen() {
-  console.log('DIAG render PayInFourScreen', Date.now());
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
   // While the card is being turned the page must not scroll — otherwise a

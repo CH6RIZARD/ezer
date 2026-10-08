@@ -212,7 +212,6 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
   const refresh = useCallback(async () => {
     const seq = ++refreshSeq.current;
-    console.log('DIAG refresh start', seq, Date.now());
     // No session means nothing to fetch. `isEmpty` drives the "connect an
     // account" state rather than any placeholder figures.
     if (!isAuthenticated) {
@@ -239,7 +238,6 @@ export function DataProvider({ children }: { children: ReactNode }) {
     ]);
 
     // A newer refresh (or a logout) owns the state now — drop this snapshot.
-    console.log('DIAG refresh fetched', seq, Date.now());
     if (seq !== refreshSeq.current) return;
 
     const valueOf = <T,>(r: PromiseSettledResult<any>, empty: T, kept: T): T =>
@@ -431,9 +429,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
         // 404s harmlessly when nothing is linked yet — a normal state, not a
         // failure worth surfacing.
-        console.log('DIAG plaid sync start', Date.now());
         await api.post('/plaid/sync');
-        console.log('DIAG plaid sync done', Date.now());
         if (!cancelled) await refresh();
       } catch {
         // Next app open past the throttle window retries.

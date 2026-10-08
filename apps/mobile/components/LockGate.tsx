@@ -112,7 +112,6 @@ export default function LockGate({ children }: { children: React.ReactNode }) {
   // the re-render reads the phase it just set.
   const move = useCallback(
     (next: Phase) => {
-      console.log('DIAG phase', next, Date.now());
       if (next === 'open' || next === 'loading') markLockWarm();
       if (next !== 'open') layer.setValue(1);
       phaseRef.current = next;
