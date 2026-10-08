@@ -41,7 +41,6 @@ import { useTheme } from '../../utils/ThemeContext';
 import { gradients } from '../../theme/tokens';
 import { fontFamily, motion, radius } from '../../theme/type';
 import { useReduceMotion } from './Primitives';
-import { holdTabSwipe } from '../TabSwipe';
 
 const CARD_W = 308;
 const CARD_H = 190;
@@ -360,7 +359,6 @@ export function SpinCard({ front, back, style, onTap, onDragChange, hint = 'Drag
         },
 
         onPanResponderMove: (_evt, g) => {
-          holdTabSwipe(); // web: a card turn is not a tab swipe (TabSwipe)
           scheduleMove({ dx: g.dx, dy: g.dy });
         },
 
