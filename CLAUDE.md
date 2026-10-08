@@ -173,10 +173,10 @@ style problem.
   are written where THIS code sets the values (`applyMove`, the release snap),
   and `freezeFloat` reads the float through `stopAnimation`'s callback. If you
   need the current value of one of these, use `stopAnimation(cb)`, not a
-  listener. Related: `app/(tabs)/_layout.tsx` sets `freezeOnBlur: true` so a
-  blurred tab's subtree stops rendering at all — don't remove it to "fix" a
-  stale-looking tab; use `useFocusEffect` on that screen instead (Wallet
-  already does, for its carousel position).
+  listener. (`app/(tabs)/_layout.tsx` once set `freezeOnBlur: true` on top
+  of this; that is now OFF — see "Tabs" below — because the fix at the
+  source made it unnecessary and the freeze itself cost a full re-render on
+  every tab focus.)
 - **SpinCard's gold side is the design the owner approved on the dev page
   (commit 90687a9, re-confirmed Oct 4 2026): seven FULL-SIZE gold sheets
   (`SIDE_DEPTHS`) between faces at ±3 (`FACE_DEPTH`), all faded in together
@@ -540,10 +540,17 @@ style problem.
   phone and the Reanimated one had clearly faster Wallet date-range chips,
   while tab switching was slow on BOTH (that was lazy mounting, below). Judge
   this on the phone, not by reasoning about setup cost.
-- **Tabs mount eagerly (`lazy: false` in `app/(tabs)/_layout.tsx`)**, behind
-  the passcode screen, and `freezeOnBlur` freezes each right after its first
-  render. A lazy first visit mounted the whole tab on tap, seconds on a slow
-  phone with the tab bar unresponsive. Don't set it back to lazy.
+- **Tabs: `lazy: false` AND `freezeOnBlur: false` (`app/(tabs)/_layout.tsx`).**
+  Every tab mounts at launch behind the passcode screen and stays live, so
+  a tab tap is only a native view swap. The thread profile on the S22 (Oct 8
+  2026, `top -H` on mqt_v_js) showed the JS thread idle after launch except
+  a ~0.5s burst on every tab tap — the frozen tab re-rendering top to
+  bottom on focus — which is what "tab switching is catastrophically slow"
+  was (seconds on the k62). That same focus re-render rebuilt SpinCard's
+  native animation graph right before the first drag after a switch, so
+  the first ~100ms of that drag was lost ("first frame skips", frame-by-frame
+  capture). Don't turn either back on; a stale-looking tab gets a
+  `useFocusEffect` (Wallet's carousel already has one).
 
 ## No swipe between tabs
 

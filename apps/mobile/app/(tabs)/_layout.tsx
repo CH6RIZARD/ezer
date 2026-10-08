@@ -68,19 +68,19 @@ export default function TabLayout() {
     <Tabs
       screenOptions={{
         headerShown: false,
-        // Expo Router keeps every tab mounted. Without this, a blurred tab's
-        // whole subtree keeps rendering and its effects keep running — the
-        // Pay in 4 card's idle-float loop, Home's rotating-tile interval —
-        // competing with whichever tab the user is actually touching.
-        // freezeOnBlur (react-native-screens) suspends a tab's React tree
-        // while it's off-screen and resumes it on focus; useFocusEffect
-        // resyncs (e.g. Wallet's carousel position) still fire on return.
-        freezeOnBlur: true,
-        // Build every tab once at launch (behind the passcode screen) instead
-        // of on its first tap: a first visit used to spend seconds mounting
-        // the whole tab on a slow phone while the bar sat unresponsive.
-        // freezeOnBlur still freezes each one right after that first render.
+        // Every tab mounts at launch (lazy: false) and STAYS LIVE
+        // (freezeOnBlur: false), so a tab tap is a native view swap and
+        // nothing else. freezeOnBlur used to be true: a frozen tab is
+        // re-rendered top to bottom on every focus, which the thread profile
+        // on the S22 showed as a ~0.5s JS burst per tab tap (seconds on the
+        // k62) — the slow tab switching — and that focus re-render also
+        // rebuilt the Pay in 4 card's native animation graph right before
+        // its first drag, which is why the first drag after a tab switch
+        // stalled. The reason freezing was added (blurred tabs' animation
+        // listeners keeping the JS thread busy) was fixed at its source in
+        // SpinCard (no addListener on native-driven values).
         lazy: false,
+        freezeOnBlur: false,
         tabBarShowLabel: false,
         // The bar floats over content, so screens pad their own bottom by
         // layout.contentBottom (96) to clear it.
