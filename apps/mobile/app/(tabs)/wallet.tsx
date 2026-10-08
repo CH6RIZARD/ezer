@@ -13,17 +13,10 @@
 // =============================================================================
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import {
-  View,
-  Text,
-  ScrollView,
-  Dimensions,
-  Platform,
-  Pressable,
-  StyleSheet,
-  type NativeSyntheticEvent,
-  type NativeScrollEvent,
-} from 'react-native';
+import { View, Text, Dimensions, Platform, Pressable, StyleSheet, type NativeSyntheticEvent, type NativeScrollEvent } from 'react-native';
+// RNGH's ScrollView on native: the carousel and chip row must beat the tab
+// swipe (TabSwipe). RN's on web (see TabScrollView).
+import { TabScrollView as ScrollView } from '../../components/TabSwipe';
 import { router, useFocusEffect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -519,8 +512,8 @@ export default function WalletScreen() {
         )}`
       : 'Custom';
 
-  const carouselRef = useRef<ScrollView>(null);
-  const pageRef = useRef<ScrollView>(null);
+  const carouselRef = useRef<import('react-native').ScrollView>(null);
+  const pageRef = useRef<import('react-native').ScrollView>(null);
   const rafRef = useRef<number | null>(null);
 
   /** Inverse of cardOffset(): undo the leading offset before dividing. */

@@ -29,6 +29,7 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import { typeScale, radius, motion, layout } from '../../theme/type';
+import { swipedRecently } from '../TabSwipe';
 
 const EASE_OUT = Easing.bezier(...motion.easeOut);
 
@@ -172,7 +173,8 @@ export function PressScale({
   // dashboard stat tiles and calendar cells into one-letter-per-line columns.
   return (
     <Pressable
-      onPress={onPress}
+      // A tab swipe that started on this tile is not a tap on it (TabSwipe).
+      onPress={onPress && (() => !swipedRecently() && onPress())}
       disabled={disabled}
       hitSlop={hitSlop}
       onPressIn={() => to(scaleTo)}

@@ -529,6 +529,30 @@ style problem.
   The colour/line-weight sliders still use PanResponder (setState per move
   is their whole job, since the ink colour is React state).
 
+## Swiping between tabs (`components/TabSwipe.tsx`)
+
+- **A horizontal swipe on Home / Pay in 4 / Wallet / Savings moves to the
+  neighbouring tab** (asked for directly; it overrides the animate-expo
+  skill's "tabs never slide" — the page only follows the finger a little,
+  then the tab changes with no slide). Wired through the Tabs navigator's
+  `screenLayout` in `app/(tabs)/_layout.tsx`.
+- **Conflicts are settled by gesture-handler on native**: the card's pan
+  (2px) and Wallet's carousel/chip row (RNGH ScrollViews, platform slop) all
+  activate before the swipe's 30px and cancel it. A NEW horizontal scroller
+  on a tab must use `TabScrollView`, or both it and the swipe will fire.
+- **`TabScrollView` is RN's ScrollView on web, RNGH's on native**: RNGH's web
+  ScrollView claims the pointer at press-down, so no swipe could start on
+  Pay in 4 or Wallet on the dev page.
+- **Three web-only patches, all because RNGH's web build doesn't cancel
+  RN's own touch handling**: only the focused tab's swipe is enabled (hidden
+  tabs stay in the DOM under the pointer: a swipe on Home was caught by
+  Wallet's); `PressScale` ignores a press that ends a swipe
+  (`swipedRecently`; a swipe from Home's Savings tile opened Savings); and
+  SpinCard's web PanResponder calls `holdTabSwipe` so turning the card isn't
+  a tab change. `router.navigate('/payin4')` is used, not
+  `navigation.navigate`. Known web gap: a MOUSE drag on Wallet's carousel
+  switches tabs (a mouse can't drag-scroll it anyway).
+
 ## Secrets
 
 `env.ts` refuses to boot in production without `JWT_SECRET`, `ENCRYPTION_KEY`

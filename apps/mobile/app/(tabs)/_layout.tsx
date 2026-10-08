@@ -13,11 +13,12 @@
 
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
-import { Tabs } from 'expo-router';
+import { Tabs, router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../../utils/ThemeContext';
 import { fontFamily, radius } from '../../theme/type';
+import { TabSwipe, tabSwipeHeld } from '../../components/TabSwipe';
 
 const BAR_HEIGHT = 62;
 const EDGE_X = 12;
@@ -66,6 +67,12 @@ export default function TabLayout() {
 
   return (
     <Tabs
+      // Swipe left/right on a main tab to move to its neighbour (TabSwipe).
+      screenLayout={({ route, children }) => (
+        <TabSwipe routeName={route.name} onSwipeTo={name => !tabSwipeHeld() && router.navigate(`/${name}` as never)}>
+          {children}
+        </TabSwipe>
+      )}
       screenOptions={{
         headerShown: false,
         // Expo Router keeps every tab mounted. Without this, a blurred tab's
