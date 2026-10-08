@@ -177,6 +177,7 @@ const BANK_CARD_SKINS = [
  */
 
 export default function WalletScreen() {
+  console.log('DIAG render WalletScreen', Date.now());
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
   const { status: premiumStatus } = usePremium();

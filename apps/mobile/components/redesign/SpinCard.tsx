@@ -300,8 +300,17 @@ export function SpinCard({ front, back, style, onTap, onDragChange, hint = 'Drag
   const ty = useRef(new Animated.Value(0)).current;
   const rotX = useMemo(() => Animated.add(rx, Animated.multiply(ty, -motion.cardRotatePerPx)), [rx, ty]);
   const rotY = useMemo(() => Animated.add(ry, Animated.multiply(tx, motion.cardRotatePerPx)), [ry, tx]);
+  // DIAG (temporary): count the native move events JS also hears about.
+  const evCount = useRef(0);
   const onGestureEvent = useMemo(
-    () => Animated.event([{ nativeEvent: { translationX: tx, translationY: ty } }], { useNativeDriver: true }),
+    () =>
+      Animated.event([{ nativeEvent: { translationX: tx, translationY: ty } }], {
+        useNativeDriver: true,
+        listener: () => {
+          evCount.current += 1;
+          if (evCount.current === 1 || evCount.current % 10 === 0) console.log('DIAG panev', evCount.current, Date.now());
+        },
+      }),
     [tx, ty]
   );
 
@@ -518,11 +527,15 @@ export function SpinCard({ front, back, style, onTap, onDragChange, hint = 'Drag
       // parent state at touch-down, and that whole-screen re-render landed on
       // Android's UI thread exactly as the finger started moving: the
       // "initial lag" on every drag that the web dev page never had.
-      if (state === State.BEGAN) {
-        freezeFloat();
-        return;
-      }
+      console.log('DIAG pan', state, Date.now(), Math.round(translationX), Math.round(translationY), evCount.current);
+      // Touch-down runs NO JS at all. The idle float is frozen when the first
+      // drag ENDS instead (it bobs ±7px during that one drag, which is not
+      // noticeable under a rotation): the first drag after opening the tab
+      // did not rotate until release, then jumped — frame capture, Oct 2026
+      // — and the float freeze was the only JS that ran only on that drag.
       if (state !== State.END && state !== State.CANCELLED && state !== State.FAILED) return;
+      evCount.current = 0;
+      freezeFloat();
       // Fold the drag into the base in one batch, so base + translation is
       // unchanged on screen: no jump between the gesture and the settle.
       ryVal.current += translationX * motion.cardRotatePerPx;

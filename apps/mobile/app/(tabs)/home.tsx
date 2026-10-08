@@ -54,6 +54,7 @@ function greeting() {
 }
 
 export default function HomeScreen() {
+  console.log('DIAG render HomeScreen', Date.now());
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
   const premium = usePremium();

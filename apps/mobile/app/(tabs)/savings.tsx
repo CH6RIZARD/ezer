@@ -52,6 +52,7 @@ const shortDate = (d: Date) =>
   d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
 
 export default function SavingsScreen() {
+  console.log('DIAG render SavingsScreen', Date.now());
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
   const {
