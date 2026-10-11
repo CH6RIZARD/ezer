@@ -579,6 +579,19 @@ style problem.
   measured width because Instrument Serif's figures are proportional; don't
   replace that with a fixed column width. Reuse it for other changing totals.
 
+- **Idle loops must stop when their screen is hidden** (`useIsFocused` in
+  SpinCard's float and `PulseRing`). The tabs stay mounted while hidden, and
+  a native-driven loop keeps the UI and render threads drawing every frame
+  even at opacity 0. On the k62 the hidden Pay in 4 card cost ~50% of a core
+  with the app idle on Wallet. Any new looping animation needs the same gate.
+- **Plaid's merchant `website` is only trusted when its domain matches the
+  merchant's name** (`utils/merchantDomain.ts`, used by MerchantMark and
+  `utils/cancellation.ts`). A Merchant row is shared by all users and keeps
+  the first website any transaction carried, and one Cancel button opened
+  TikTok. The cancel probe also rejects redirects to another site. Add
+  curated domains to `MERCHANT_DOMAIN` when the `{name}.com` guess is wrong
+  (ascent.com 404s; Ascent is ascentfunding.com).
+
 ## No swipe between tabs
 
 - **Swiping left/right between the main tabs was built (da85fc0,
