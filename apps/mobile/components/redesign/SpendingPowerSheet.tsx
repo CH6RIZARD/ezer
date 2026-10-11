@@ -234,14 +234,30 @@ export default function SpendingPowerSheet({
     setPhase('assessing');
     setStepIndex(0);
     setAssessmentError(false);
-    for (let i = 0; i < CHECK_STEPS.length; i++) {
-      await wait(STEP_MS);
+    // The real request starts NOW and the checklist ticks alongside it. It
+    // used to play all the steps first and only then send the request, so
+    // the user watched ~2.5s of finished-looking theatre and then waited
+    // again with every step already ticked. The last step keeps its spinner
+    // until the answer arrives; a fast answer ends the checklist early.
+    const request = api
+      .post<AccessResponse>('/cards/access-list', { mode: 'plaid', designId: null })
+      .then(res => ({ ok: true as const, res }), () => ({ ok: false as const, res: null }));
+    let answered = false;
+    void request.then(() => {
+      answered = true;
+    });
+    for (let i = 0; i < CHECK_STEPS.length - 1 && !answered; i++) {
+      await Promise.race([wait(STEP_MS), request]);
       if (!alive.current) return;
-      setStepIndex(i + 1);
+      if (!answered) setStepIndex(i + 1);
     }
+    const result = await request;
+    if (!alive.current) return;
+    setStepIndex(CHECK_STEPS.length);
 
     try {
-      const res = await api.post<AccessResponse>('/cards/access-list', { mode: 'plaid', designId: null });
+      if (!result.ok) throw new Error('assessment failed');
+      const res = result.res;
       const payload = res?.data ?? res;
       const cents = typeof payload?.limitCents === 'number' ? payload.limitCents : 0;
       const status = mapServerStatus(payload?.status) ?? 'approved';
