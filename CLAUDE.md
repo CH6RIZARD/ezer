@@ -122,7 +122,8 @@ style problem.
   `20260930030000_add_linked_banks_model` (`User.payIn4InstrumentId`,
   `PlaidItem.readForSubscriptions`, `FundingInstrument.subtype`/`itemId`) HAS
   been applied. `20261005000000_add_highnote_card_id` (`User.highnoteCardId`)
-  HAS been applied. Apply each one with `railway run --service ezer-api npx
+  HAS been applied. `20261008000000_add_date_of_birth` (`User.dateOfBirth`)
+  HAS been applied (2026-10-11). Apply each one with `railway run --service ezer-api npx
   prisma db execute --schema prisma\schema.prisma --file <migration.sql>` from
   `packages/db`. NEVER `migrate deploy`: this DB was never baselined, so it
   replays `0_init` and fails on "type already exists".
