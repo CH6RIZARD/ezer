@@ -19,6 +19,7 @@ import {
   type TextStyle,
   type StyleProp,
 } from 'react-native';
+import { useIsFocused } from '@react-navigation/native';
 import { useTheme } from '../../utils/ThemeContext';
 import Animated, {
   Easing,
@@ -248,16 +249,19 @@ export function PulseRing({ radius: r = radius.card }: { radius?: number }) {
   const { colors } = useTheme();
   const pulse = useSharedValue(0);
   const reduced = useReduceMotion();
+  // Hidden tabs stay mounted; don't pulse on one nobody can see (see the
+  // float note in SpinCard).
+  const focused = useIsFocused();
 
   useEffect(() => {
-    if (reduced) return; // a static ring at full strength still marks it
+    if (reduced || !focused) return; // a static ring at full strength still marks it
     // Constant motion: linear, restarting from 0 each cycle.
     pulse.set(withRepeat(withTiming(1, { duration: motion.pulse, easing: Easing.linear }), -1, false));
     return () => {
       cancelAnimation(pulse);
       pulse.set(0);
     };
-  }, [pulse, reduced]);
+  }, [pulse, reduced, focused]);
 
   const ringStyle = useAnimatedStyle(() => {
     const t = pulse.get();

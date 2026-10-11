@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useCallback, useEffect, use
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { api } from '../utils/api';
 import { prettyMerchantName } from '../utils/merchantName';
+import { rememberMerchantWebsites } from '../utils/merchantDomain';
 import { useAuth } from '../utils/AuthContext';
 import { parseLocalDay } from '../utils/calendarEvents';
 import { lockWarm } from '../utils/lockWarm';
@@ -290,6 +291,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       instruments: valueOf<FundingInstrument[]>(instrumentsRes, [], last.instruments),
       subscriptions: pretty(valueOf<Subscription[]>(subsRes, [], last.subscriptions)),
     };
+    rememberMerchantWebsites(data.subscriptions);
 
     setState({
       ...data,
@@ -392,6 +394,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         instruments: snap.instruments ?? [],
         subscriptions: snap.subscriptions ?? [],
       };
+      rememberMerchantWebsites(data.subscriptions);
       const hydrated = { ...EMPTY_STATE, ...data, isLoading: true, isEmpty: !hasData(data), isReady: true };
       // Set the mirror too: refresh() below runs before the re-render.
       stateRef.current = hydrated;

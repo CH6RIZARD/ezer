@@ -40,6 +40,7 @@ import { PanGestureHandler, State, type PanGestureHandlerStateChangeEvent } from
 import { useTheme } from '../../utils/ThemeContext';
 import { gradients } from '../../theme/tokens';
 import { fontFamily, motion, radius } from '../../theme/type';
+import { useIsFocused } from '@react-navigation/native';
 import { useReduceMotion } from './Primitives';
 
 const CARD_W = 308;
@@ -390,9 +391,14 @@ export function SpinCard({ front, back, style, onTap, onDragChange, hint = 'Drag
   // Reduce Motion: the idle float is decoration, so it simply doesn't run.
   // Drag and settle are the user's own motion and stay as they are.
   const reduced = useReduceMotion();
+  // Tabs stay mounted while hidden (headless tabs), and a native-driven loop
+  // keeps the UI and render threads drawing every frame even at opacity 0:
+  // k62, Oct 11 2026, the hidden Pay in 4 card made the app burn ~50% of a
+  // core sitting idle on Wallet. Float only while this screen is on show.
+  const focused = useIsFocused();
 
   useEffect(() => {
-    if (interacted.current || reduced) return;
+    if (interacted.current || reduced || !focused) return;
     const loop = Animated.loop(
       Animated.sequence([
         Animated.timing(float, {
@@ -416,7 +422,7 @@ export function SpinCard({ front, back, style, onTap, onDragChange, hint = 'Drag
       // Turning Reduce Motion on mid-loop parks the card at rest, not mid-bob.
       if (!interacted.current) float.setValue(0);
     };
-  }, [float, reduced]);
+  }, [float, reduced, focused]);
 
   /** Freeze the float at whatever frame it is on — no snap back to 0. */
   const freezeFloat = useCallback(() => {

@@ -194,6 +194,12 @@ export const MERCHANT_DOMAIN: Record<string, string> = {
   // else's parked/unrelated domain, not Self Financial's credit-builder
   // product. Their real site is self.inc.
   self: 'self.inc',
+  // Guessed `{name}.com` is wrong for these: ascent.com 404s (grey tile),
+  // cleo.com is an unrelated company.
+  ascent: 'ascentfunding.com',
+  'ascent funding': 'ascentfunding.com',
+  kikoff: 'kikoff.com',
+  cleo: 'meetcleo.com',
 };
 
 /** Fallback tile colours for merchants with neither a bundled mark nor a logo. */

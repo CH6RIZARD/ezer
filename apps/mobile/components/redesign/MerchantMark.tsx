@@ -35,6 +35,7 @@ import {
   MERCHANT_DOMAIN,
   FALLBACK_BRAND_COLOR,
 } from '../../assets/merchants/brandLogos';
+import { trustedWebsiteDomain, websiteForMerchant } from '../../utils/merchantDomain';
 
 /**
  * Reduce a display name / merchant id to a lookup key: lowercased, trimmed,
@@ -193,7 +194,10 @@ export function MerchantMark({
 
   // ---- 2. Plaid logo, then 3. remote CDN --------------------------------
   const plaid = normaliseLogoUrl(logoUrl);
-  const domain = resolveDomain(name, merchantId);
+  // Plaid's real website first (when it matches the name), then curated /
+  // guessed. A wrong guess like ascent.com (Ascent is ascentfunding.com) is
+  // what left a grey initial where a logo should be.
+  const domain = trustedWebsiteDomain(websiteForMerchant(merchantId), name) ?? resolveDomain(name, merchantId);
   const remote = plaid ?? (domain ? cdnUrl(domain) : undefined);
 
   if (remote !== undefined && failedUri !== remote) {
@@ -229,7 +233,13 @@ export function MerchantMark({
             opacity: isLoaded ? 1 : 0,
           }}
           resizeMode="contain"
-          onLoad={() => setLoadedUri(remote)}
+          onLoad={e => {
+            // The favicon service answers an unknown domain with a 16px grey
+            // globe. Treat that as a miss so the branded initial shows instead.
+            const w = e.nativeEvent?.source?.width ?? 0;
+            if (!plaid && w > 0 && w <= 16) setFailedUri(remote);
+            else setLoadedUri(remote);
+          }}
           onError={() => setFailedUri(remote)}
         />
       </View>

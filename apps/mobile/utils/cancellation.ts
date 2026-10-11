@@ -32,8 +32,10 @@ import { Linking, Platform } from 'react-native';
 import { Alert } from './appAlert';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { MERCHANT_DOMAIN } from '../assets/merchants/brandLogos';
+import { domainFromWebsite, trustedWebsiteDomain } from './merchantDomain';
 
-const CACHE_KEY = '@ezer_cancel_urls';
+// v2: v1 could hold a URL whose probe had been redirected off-site.
+const CACHE_KEY = '@ezer_cancel_urls_v2';
 /** Per-request budget. Probing must never make a Cancel button feel hung. */
 const PROBE_TIMEOUT_MS = 2500;
 /** Whole-discovery budget across all candidate paths. */
@@ -177,19 +179,7 @@ async function writeCache(domain: string, url: string): Promise<void> {
 
 // --- discovery ---------------------------------------------------------------
 
-/** Strip a Plaid `website` ("https://www.netflix.com/") down to a bare host. */
-export function domainFromWebsite(website?: string): string | undefined {
-  const raw = (website ?? '').trim();
-  if (!raw) return undefined;
-  const host = raw
-    .replace(/^https?:\/\//i, '')
-    .replace(/^www\./i, '')
-    .split('/')[0]
-    .split('?')[0]
-    .trim()
-    .toLowerCase();
-  return host.includes('.') ? host : undefined;
-}
+export { domainFromWebsite };
 
 async function probe(url: string): Promise<boolean> {
   // AbortController is available in RN's fetch polyfill.
@@ -200,6 +190,11 @@ async function probe(url: string): Promise<boolean> {
     // "this path exists". Anything below 400, plus 401/403 (auth-walled
     // account pages, which is exactly what we are looking for), is a hit.
     const res = await fetch(url, { method: 'HEAD', signal: controller.signal });
+    // fetch follows redirects. A path that bounces to ANOTHER site (a parked
+    // domain, a link-in-bio page, TikTok) is not this merchant's cancel page.
+    const want = domainFromWebsite(url) ?? '';
+    const got = domainFromWebsite(res.url) ?? want;
+    if (got !== want && !got.endsWith('.' + want) && !want.endsWith('.' + got)) return false;
     return res.status < 400 || res.status === 401 || res.status === 403 || res.status === 405;
   } catch {
     return false;
@@ -276,8 +271,9 @@ export async function resolveCancellationUrl(
   const idKey = normalise(merchantId);
   const nameKey = normalise(merchantName);
   const nameHead = nameKey.split(' ')[0];
+  // Plaid's website only when it matches the merchant (see merchantDomain).
   const domain =
-    domainFromWebsite(website) ??
+    trustedWebsiteDomain(website, merchantName) ??
     KNOWN_DOMAIN[idKey] ??
     KNOWN_DOMAIN[nameKey] ??
     KNOWN_DOMAIN[nameHead] ??
