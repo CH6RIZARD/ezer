@@ -466,7 +466,7 @@ export default function DrainReviewScreen() {
               {/* Rolls up and down, digit by digit, as subs are marked or cut. */}
               <View style={styles.freedRow}>
                 <RollingNumber value={formatCents(freed)} style={[typeScale.totalValue, { color: colors.red }]} />
-                <Text style={[typeScale.totalValue, { color: colors.red, fontSize: 14 }]}>/mo</Text>
+                <Text style={[typeScale.totalValue, styles.freedUnit, { color: colors.red, fontSize: 14 }]}>/mo</Text>
               </View>
             </View>
             <Text style={[styles.countText, { color: colors.mut }]}>
@@ -619,7 +619,10 @@ export default function DrainReviewScreen() {
 }
 
 const styles = StyleSheet.create({
-  freedRow: { flexDirection: 'row', alignItems: 'baseline', marginTop: 4 },
+  // 'baseline' doesn't reach into RollingNumber's columns (it put /mo at the
+  // top), so bottom-align and lift /mo onto the big digits' baseline.
+  freedRow: { flexDirection: 'row', alignItems: 'flex-end', marginTop: 4 },
+  freedUnit: { marginBottom: 8 },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
