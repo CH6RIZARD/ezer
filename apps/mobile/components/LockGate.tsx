@@ -112,6 +112,7 @@ export default function LockGate({ children }: { children: React.ReactNode }) {
   // the re-render reads the phase it just set.
   const move = useCallback(
     (next: Phase) => {
+      console.log('TIMING phase', next, Date.now());
       if (next === 'open' || next === 'loading') markLockWarm();
       if (next !== 'open') layer.setValue(1);
       phaseRef.current = next;
@@ -364,6 +365,7 @@ export default function LockGate({ children }: { children: React.ReactNode }) {
   };
 
   const locked = phase !== 'open';
+  const warm = phase === 'open' || phase === 'loading';
   const showMark = phase === 'cover' || phase === 'intro' || phase === 'loading';
 
   const sheet = (
@@ -415,7 +417,11 @@ export default function LockGate({ children }: { children: React.ReactNode }) {
         importantForAccessibility={locked ? 'no-hide-descendants' : 'auto'}
         accessibilityElementsHidden={locked}
       >
-        <LockWarmContext.Provider value={phase === 'open' || phase === 'loading'}>
+        <LockWarmContext.Provider value={warm}>
+          {/* The Stack stays mounted under the lock (mounting it late
+              remounted every provider above — timeline on the k62); what
+              stays OUT until the code is accepted is the tabs' content, see
+              app/(tabs)/_layout.tsx's LockWarmContext placeholder. */}
           <LockOpenContext.Provider value={!locked}>{children}</LockOpenContext.Provider>
         </LockWarmContext.Provider>
       </View>

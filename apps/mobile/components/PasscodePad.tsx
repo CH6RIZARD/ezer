@@ -78,6 +78,7 @@ export function PasscodePad({
   }, [code, max]);
 
   const press = (k: (typeof KEYS)[number]) => {
+    console.log('TIMING key', k, Date.now());
     if (locked || k === '') return;
     tap();
     if (k === 'del') setCode(c => c.slice(0, -1));

@@ -67,9 +67,11 @@ export function PremiumProvider({ children }: { children: ReactNode }) {
     const configure = async () => {
       try {
         if (__DEV__) Purchases.setLogLevel(LOG_LEVEL.VERBOSE);
+        console.log('TIMING rc configure', Date.now());
         Purchases.configure({ apiKey: REVENUECAT_API_KEY });
         setRcConfigured(true);
         const customerInfo = await Purchases.getCustomerInfo();
+        console.log('TIMING rc customerInfo', Date.now());
         loadTrialState(customerInfo);
       } catch (error) {
         console.log('[Premium] RevenueCat init error, falling back to local:', error);

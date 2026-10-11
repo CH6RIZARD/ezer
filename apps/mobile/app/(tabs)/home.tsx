@@ -10,7 +10,7 @@
 // screens.
 // =============================================================================
 
-import React, { useMemo, useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect, useCallback } from 'react';
 import { View, Text, ScrollView, Pressable, StyleSheet } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -36,6 +36,7 @@ import {
 import MerchantMark from '../../components/redesign/MerchantMark';
 import DayPopover, { type DayEvent } from '../../components/redesign/DayPopover';
 import RotatingTile from '../../components/redesign/RotatingTile';
+import { DayCell, type DayMark } from '../../components/redesign/DayCell';
 import { useSavingsGoals } from '../../utils/SavingsGoalsContext';
 import { projectMonthEvents, groupEventsByDay, parseLocalDay } from '../../utils/calendarEvents';
 import { useConnectBank } from '../../utils/useConnectBank';
@@ -53,7 +54,15 @@ function greeting() {
   return 'Good Evening ✳';
 }
 
+// TIMING experiment switches (dev client): which sections render.
+const HOME_PARTS = { calendar: true };
+const EMPTY_MARKS: DayMark[] = [];
+
 export default function HomeScreen() {
+  console.log('TIMING home render', Date.now());
+  useEffect(() => {
+    console.log('TIMING home commit', Date.now());
+  });
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
   const premium = usePremium();
@@ -135,6 +144,33 @@ export default function HomeScreen() {
     d.getDate() === today.getDate();
 
   const popEvents = eventsFor(popDate);
+  const cellColors = useMemo(
+    () => ({ cellHl: colors.cellHl, cellBg: colors.cellBg, accent: colors.accent, ink: colors.ink, red: colors.red }),
+    [colors.cellHl, colors.cellBg, colors.accent, colors.ink, colors.red]
+  );
+  // Per-cell props built once per month/data change, so the memoised cells
+  // skip re-rendering on the frequent Home renders that change nothing here.
+  const todayKey = `${today.getFullYear()}-${today.getMonth()}-${today.getDate()}`;
+  const cellData = useMemo(
+    () =>
+      cells.map(d => {
+        const evts = eventsFor(d);
+        return {
+          day: d ? d.getDate() : 0,
+          isToday: !!d && `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}` === todayKey,
+          totalCents: evts.reduce((s, e) => s + e.amountCents, 0),
+          marks: evts.length
+            ? evts.map(e => ({ id: e.id, merchantName: e.merchantName, merchantId: e.merchantId, logo: e.logo }))
+            : EMPTY_MARKS,
+        };
+      }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [cells, byDay, todayKey]
+  );
+  const openDay = useCallback(
+    (day: number) => setPopDate(new Date(month.getFullYear(), month.getMonth(), day)),
+    [month]
+  );
 
   const openSub = (subscriptionId: string) => {
     setPopDate(null);
@@ -559,7 +595,7 @@ export default function HomeScreen() {
             })}
           </View>
 
-          {view === 'calendar' ? (
+          {!HOME_PARTS.calendar ? null : view === 'calendar' ? (
             <Surface radius={radius.hero} style={styles.calendar}>
               <View style={styles.monthRow}>
                 <PressScale onPress={() => setMonthOffset(m => m - 1)} scaleTo={0.9}>
@@ -586,74 +622,9 @@ export default function HomeScreen() {
               </View>
 
               <View style={styles.daysWrap}>
-                {cells.map((d, i) => {
-                  const evts = eventsFor(d);
-                  const has = evts.length > 0;
-                  const dayTotal = evts.reduce((s, e) => s + e.amountCents, 0);
-
-                  return (
-                    <PressScale
-                      key={i}
-                      scaleTo={motion.pressScaleStrong}
-                      disabled={!has}
-                      onPress={() => d && has && setPopDate(d)}
-                      style={styles.dayCellWrap}
-                    >
-                      <View
-                        style={[
-                          styles.dayCell,
-                          {
-                            backgroundColor: d
-                              ? has
-                                ? colors.cellHl
-                                : colors.cellBg
-                              : 'transparent',
-                          },
-                        ]}
-                      >
-                        {d && (
-                          <>
-                            {isToday(d) ? (
-                              <View style={[styles.todayPill, { backgroundColor: colors.accent }]}>
-                                <Text style={styles.todayText}>{d.getDate()}</Text>
-                              </View>
-                            ) : (
-                              <Text style={[styles.dayNum, { color: colors.ink }]}>
-                                {d.getDate()}
-                              </Text>
-                            )}
-
-                            {has && (
-                              <>
-                                <View style={styles.badgeRow}>
-                                  {evts.slice(0, 3).map(e => (
-                                    <MerchantMark
-                                      key={e.id}
-                                      name={e.merchantName}
-                                      merchantId={e.merchantId}
-                                      logoUrl={e.logo}
-                                      size={15}
-                                    />
-                                  ))}
-                                </View>
-                                <Text
-                                  style={[styles.dayTotal, { color: colors.red }]}
-                                  numberOfLines={1}
-                                  adjustsFontSizeToFit
-                                  minimumFontScale={0.7}
-                                >
-                                  {/* Compact ("-$326", "-$1.3k"): "-$325.64" wrapped onto
-                                      two lines. The day popover shows exact amounts. */}
-                                  -{formatCompactCents(dayTotal)}
-                                </Text>
-                              </>
-                            )}
-                          </>
-                        )}
-                      </View>
-                    </PressScale>
-                  );
-                })}
+                {cellData.map((c, i) => (
+                  <DayCell key={i} {...c} colors={cellColors} onPress={openDay} />
+                ))}
               </View>
 
               <View style={styles.legend}>
