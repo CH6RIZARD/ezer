@@ -33,6 +33,7 @@ import { usePremiumGate } from '../../utils/usePremiumGate';
 import { usePremium } from '../../utils/PremiumContext';
 import { useData, type PredictedCharge } from '../../contexts/DataContext';
 import { formatCents } from '../../utils/calculations';
+import RollingNumber from '../../components/redesign/RollingNumber';
 import { gradients } from '../../theme/tokens';
 import { fontFamily, typeScale, radius, layout } from '../../theme/type';
 import {
@@ -824,9 +825,10 @@ export default function WalletScreen() {
             {!breakdownError && (
             <Surface style={styles.totalCard}>
               <Label>Total drained</Label>
-              <Text style={[typeScale.totalValue, { color: colors.red, marginTop: 4 }]}>
-                {formatCents(drained)}
-              </Text>
+              {/* Rolls digit by digit when the range changes, not a jump. */}
+              <View style={{ marginTop: 4 }}>
+                <RollingNumber value={formatCents(drained)} style={[typeScale.totalValue, { color: colors.red }]} />
+              </View>
               {/* "0 active subscriptions" directly above a "$450.12
                   predicted" pill read as contradictory — the card obviously
                   HAS subscriptions, none have charged yet in this range.
