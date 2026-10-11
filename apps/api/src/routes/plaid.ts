@@ -81,8 +81,15 @@ function toCandidate(tx: Transaction) {
 export async function plaidRoutes(server: FastifyInstance) {
   server.addHook('preHandler', authMiddleware);
 
+  // Both routes below hit Plaid's metered API. The global limiter is per IP;
+  // these are per USER, so one leaked token (or a retry loop in the app)
+  // cannot run up the Plaid bill from many addresses.
+  const perUserLimit = (max: number) => ({
+    config: { rateLimit: { max, timeWindow: '1 minute', keyGenerator: (r: any) => r.userId || r.ip } },
+  });
+
   // POST /plaid/create-link-token
-  server.post('/create-link-token', async (request, reply) => {
+  server.post('/create-link-token', perUserLimit(10), async (request, reply) => {
     const userId = (request as any).userId;
 
     if (!process.env.PLAID_CLIENT_ID || !process.env.PLAID_SECRET) {
@@ -299,7 +306,7 @@ export async function plaidRoutes(server: FastifyInstance) {
   );
 
   // POST /plaid/sync — re-sync all items for user
-  server.post('/sync', async (request, reply) => {
+  server.post('/sync', perUserLimit(6), async (request, reply) => {
     const userId = (request as any).userId;
 
     const allItems = await prisma.plaidItem.findMany({ where: { userId } });

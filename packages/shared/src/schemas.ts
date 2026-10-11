@@ -161,10 +161,30 @@ export const microsoftCompleteSchema = z.object({
   idToken: z.string().min(1),
 });
 
+/** Years between an ISO date (YYYY-MM-DD) and today, by the server's clock. */
+export function ageFromDateOfBirth(dob: string, now = new Date()): number {
+  const d = new Date(dob + 'T00:00:00Z');
+  let age = now.getUTCFullYear() - d.getUTCFullYear();
+  const beforeBirthday =
+    now.getUTCMonth() < d.getUTCMonth() ||
+    (now.getUTCMonth() === d.getUTCMonth() && now.getUTCDate() < d.getUTCDate());
+  if (beforeBirthday) age -= 1;
+  return age;
+}
+
 export const emailSignupSchema = z.object({
   email: z.string().email(),
   password: z.string().min(8),
   name: z.string().min(1).max(120),
+  // Age gate. EZER links bank accounts and extends Pay-in-4 credit, so the
+  // floor is 18, not COPPA's 13. Checked server-side: the client's field is
+  // a courtesy, the server's clock is the rule.
+  dateOfBirth: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, 'Date of birth must be YYYY-MM-DD')
+    .refine(d => !Number.isNaN(new Date(d).getTime()), 'Date of birth is not a real date')
+    .refine(d => ageFromDateOfBirth(d) >= 18, 'You must be 18 or older to use EZER')
+    .refine(d => ageFromDateOfBirth(d) <= 120, 'Date of birth is not a real date'),
 });
 
 export const emailLoginSchema = z.object({

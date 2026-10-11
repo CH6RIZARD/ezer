@@ -38,7 +38,7 @@ const credentialRateLimit = {
 
 export async function authRoutes(server: FastifyInstance) {
   // POST /auth/signup
-  server.post<{ Body: { email: string; password: string; name: string } }>(
+  server.post<{ Body: { email: string; password: string; name: string; dateOfBirth: string } }>(
     '/signup',
     { config: credentialRateLimit },
     async (request, reply) => {
@@ -46,7 +46,7 @@ export async function authRoutes(server: FastifyInstance) {
       if (!parsed.success) {
         return reply.status(400).send({ success: false, error: formatZodError(parsed.error) });
       }
-      const { email, password, name } = parsed.data;
+      const { email, password, name, dateOfBirth } = parsed.data;
 
       // Normalised, because the unique index is case-SENSITIVE: signing up as
       // "Daniel@x.com" then logging in as "daniel@x.com" created one account
@@ -69,6 +69,9 @@ export async function authRoutes(server: FastifyInstance) {
           email: normalisedEmail,
           name: name.trim(),
           passwordHash,
+          // Schema already proved >= 18 by the server's clock; stored so the
+          // gate is evidence, not just a check that happened once.
+          dateOfBirth: new Date(dateOfBirth + 'T00:00:00Z'),
           consentedAt: new Date(),
           consentVersion: CONSENT_VERSION,
         },

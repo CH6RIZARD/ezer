@@ -19,6 +19,10 @@ model User {
   email        String   @unique
   name         String?
   passwordHash String?
+  /// Age gate (18+; EZER links banks and extends credit). Nullable because
+  /// accounts created before the gate existed have no record — same reason
+  /// consentedAt is nullable. Date only: time-of-day would be fabricated.
+  dateOfBirth  DateTime? @db.Date
   /// When this user accepted the Terms and Privacy Policy, and which version.
   /// Nullable because accounts created before consent was recorded genuinely
   /// have no record — writing a default would fabricate evidence of consent.

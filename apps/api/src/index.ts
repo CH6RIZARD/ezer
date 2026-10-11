@@ -34,6 +34,11 @@ const PORT = parseInt(process.env.PORT || process.env.API_PORT || '3001', 10);
 const HOST = process.env.API_HOST || '0.0.0.0';
 
 const server = Fastify({
+  // Railway terminates TLS and forwards; without this request.ip is the
+  // proxy's address, so the per-IP rate limit below put EVERY user in one
+  // 100/min bucket. 1 = trust exactly one hop: the client-supplied leftmost
+  // x-forwarded-for entry is ignored, only the hop Railway appended counts.
+  trustProxy: 1,
   logger: {
     level: process.env.NODE_ENV === 'development' ? 'info' : 'error',
   },
