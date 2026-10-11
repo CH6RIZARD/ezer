@@ -255,12 +255,12 @@ export function PulseRing({ radius: r = radius.card }: { radius?: number }) {
 
   useEffect(() => {
     if (reduced || !focused) return; // a static ring at full strength still marks it
-    // Constant motion: linear, restarting from 0 each cycle.
-    pulse.set(withRepeat(withTiming(1, { duration: motion.pulse, easing: Easing.linear }), -1, false));
-    return () => {
-      cancelAnimation(pulse);
-      pulse.set(0);
-    };
+    // Three pulses each time the screen comes into view, then it rests at
+    // t=1 (ring faded out). An endless loop kept the k62 redrawing Home at
+    // ~50 frames a second with nothing else moving.
+    pulse.set(0);
+    pulse.set(withRepeat(withTiming(1, { duration: motion.pulse, easing: Easing.linear }), 3, false));
+    return () => cancelAnimation(pulse);
   }, [pulse, reduced, focused]);
 
   const ringStyle = useAnimatedStyle(() => {

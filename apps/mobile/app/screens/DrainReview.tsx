@@ -38,6 +38,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../../utils/ThemeContext';
 import { formatCents } from '../../utils/calculations';
+import RollingNumber from '../../components/redesign/RollingNumber';
 import { fontFamily, typeScale, radius, layout } from '../../theme/type';
 import { Body, Label, Surface, PressScale, ScreenBody } from '../../components/redesign/Primitives';
 import MerchantMark from '../../components/redesign/MerchantMark';
@@ -462,10 +463,11 @@ export default function DrainReviewScreen() {
           <Surface style={[styles.totalCard, { borderColor: colors.goldLine }]}>
             <View style={{ flex: 1 }}>
               <Label color={colors.gold}>You could free up</Label>
-              <Text style={[typeScale.totalValue, { color: colors.red, marginTop: 4 }]}>
-                {formatCents(freed)}
-                <Text style={{ fontSize: 14 }}>/mo</Text>
-              </Text>
+              {/* Rolls up and down, digit by digit, as subs are marked or cut. */}
+              <View style={styles.freedRow}>
+                <RollingNumber value={formatCents(freed)} style={[typeScale.totalValue, { color: colors.red }]} />
+                <Text style={[typeScale.totalValue, { color: colors.red, fontSize: 14 }]}>/mo</Text>
+              </View>
             </View>
             <Text style={[styles.countText, { color: colors.mut }]}>
               {counted.length} of {allRows.length}{'\n'}marked
@@ -617,6 +619,7 @@ export default function DrainReviewScreen() {
 }
 
 const styles = StyleSheet.create({
+  freedRow: { flexDirection: 'row', alignItems: 'baseline', marginTop: 4 },
   header: {
     flexDirection: 'row',
     alignItems: 'center',

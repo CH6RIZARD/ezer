@@ -574,8 +574,10 @@ style problem.
   short accent pill (`TabIndicator` in `app/(tabs)/_layout.tsx`) slides to
   the tapped tab. Don't bring back the `accSoft` square or filled icons.
 - **`components/redesign/RollingNumber.tsx` is the odometer number** (each
-  digit a 0-9 strip on Reanimated). Wallet's "Total drained" uses it so a
-  range change rolls instead of jumping. Columns size to each digit's
+  digit a 0-9 strip on Reanimated). Wallet's "Total drained" and Top tickets'
+  "You could free up" (`DrainReview.tsx`) use it, so the number rolls
+  instead of jumping. NOT the Home Top ticket tile: the owner meant the
+  Top tickets screen. Columns size to each digit's
   measured width because Instrument Serif's figures are proportional; don't
   replace that with a fixed column width. Reuse it for other changing totals.
 

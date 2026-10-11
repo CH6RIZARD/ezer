@@ -36,7 +36,6 @@ import {
 import MerchantMark from '../../components/redesign/MerchantMark';
 import DayPopover, { type DayEvent } from '../../components/redesign/DayPopover';
 import RotatingTile from '../../components/redesign/RotatingTile';
-import RollingNumber from '../../components/redesign/RollingNumber';
 import { DayCell, type DayMark } from '../../components/redesign/DayCell';
 import { useSavingsGoals } from '../../utils/SavingsGoalsContext';
 import { projectMonthEvents, groupEventsByDay, parseLocalDay } from '../../utils/calendarEvents';
@@ -493,7 +492,7 @@ export default function HomeScreen() {
                   key: 'top-ticket',
                   onPress: () => router.push('/screens/DrainReview'),
                   render: () => (
-                    <View key="topTicket" style={styles.slide}>
+                    <View style={styles.slide}>
                       <View style={styles.topTicketRow}>
                         {topTicket.map(t => (
                           <MerchantMark
@@ -508,14 +507,14 @@ export default function HomeScreen() {
                       <Label numberOfLines={1} adjustsFontSizeToFit style={styles.slideLabel}>
                         Top ticket
                       </Label>
-                      {/* Counts up each time this slide rotates in (same
-                          odometer as Wallet's total). */}
-                      <RollingNumber
-                        rollIn
-                        value={`${formatCents(topTicketCents)}/mo`}
+                      <Text
                         style={[styles.slideCta, { color: colors.red }]}
-                        containerStyle={{ alignSelf: 'center' }}
-                      />
+                        numberOfLines={1}
+                        adjustsFontSizeToFit
+                        minimumFontScale={0.7}
+                      >
+                        {`${formatCents(topTicketCents)}/mo`}
+                      </Text>
                     </View>
                   ),
                 },
