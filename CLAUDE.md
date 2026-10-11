@@ -568,6 +568,17 @@ style problem.
   mounted screen, which under the keypad was the difference between the first
   digit showing in 0.4s and 1.9s.
 
+- **Tab bar look (Oct 11 2026, owner's request): no filled/square pill
+  behind the active tab.** Icons are always the OUTLINE glyphs; the active
+  one's stroke and label cross-fade to `accInk` with a small lift, and a
+  short accent pill (`TabIndicator` in `app/(tabs)/_layout.tsx`) slides to
+  the tapped tab. Don't bring back the `accSoft` square or filled icons.
+- **`components/redesign/RollingNumber.tsx` is the odometer number** (each
+  digit a 0-9 strip on Reanimated). Wallet's "Total drained" uses it so a
+  range change rolls instead of jumping. Columns size to each digit's
+  measured width because Instrument Serif's figures are proportional; don't
+  replace that with a fixed column width. Reuse it for other changing totals.
+
 ## No swipe between tabs
 
 - **Swiping left/right between the main tabs was built (da85fc0,
