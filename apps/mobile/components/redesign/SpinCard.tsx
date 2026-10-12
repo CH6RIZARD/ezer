@@ -254,8 +254,9 @@ export function CardStack({
       {layers.sheets.map((sheetStyle, i) => (
         <Animated.View key={SIDE_DEPTHS[i]} pointerEvents="none" style={sheetStyle} />
       ))}
-      <Animated.View style={layers.front}>{front}</Animated.View>
-      <Animated.View style={layers.back}>{back}</Animated.View>
+      {/* DEBUG ONLY (claude/spindbg): faces drawn empty, to size their RenderThread cost. */}
+      <Animated.View style={layers.front}>{null}</Animated.View>
+      <Animated.View style={layers.back}>{null}</Animated.View>
     </Animated.View>
   );
 }
