@@ -426,11 +426,17 @@ export default function PhysicalCardScreen() {
                   : 'The front is all yours — details live on the back.'}
               </Body>
             </View>
+            {/* Floats OUTSIDE the layout. As a flex sibling it took width from
+                the title, so the first stroke (label appears) and every
+                Autosaved/Saved swap (width changes) re-wrapped "Design your
+                card" and shoved the canvas up or down mid-drawing. */}
             {strokes.length > 0 ? (
               <Text
+                pointerEvents="none"
                 style={[
                   typeScale.labelSm,
-                  { color: justSaved ? colors.success : colors.mut2, marginLeft: 8 },
+                  styles.autosave,
+                  { color: justSaved ? colors.success : colors.mut2 },
                 ]}
               >
                 {justSaved ? 'Saved' : 'Autosaved'}
@@ -712,6 +718,7 @@ export default function PhysicalCardScreen() {
 }
 
 const styles = StyleSheet.create({
+  autosave: { position: 'absolute', right: 0, top: -16 },
   header: {
     flexDirection: 'row',
     alignItems: 'flex-start',
