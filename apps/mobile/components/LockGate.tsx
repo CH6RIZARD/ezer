@@ -40,6 +40,7 @@ import {
   Modal,
   Platform,
   StyleSheet,
+  useWindowDimensions,
 } from 'react-native';
 import { Alert } from '../utils/appAlert';
 import { FullWindowOverlay } from 'react-native-screens';
@@ -49,7 +50,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../utils/ThemeContext';
 import { useAuth } from '../utils/AuthContext';
 import { useData } from '../contexts/DataContext';
-import { Wordmark } from './redesign/Primitives';
+import { DoveFlight, DoveMark } from './DoveReveal';
 import PasscodePad from './PasscodePad';
 import PasscodeSetup from './PasscodeSetup';
 import { fontFamily } from '../theme/type';
@@ -71,6 +72,7 @@ type Phase =
   | 'setup'
   | 'open';
 
+const SMALL_MARK = 96; // header wordmark width, dp
 const FADE_MS = 900; // the index screen's breathing half-cycle
 
 /** False while the lock is up. Screens that navigate on their own (the
@@ -88,6 +90,7 @@ const IN_APP_FLOW_GRACE_MS = 10 * 60_000;
 export default function LockGate({ children }: { children: React.ReactNode }) {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
+  const { width: winW } = useWindowDimensions();
   const auth = useAuth();
   const { isReady: dataReady } = useData();
 
@@ -368,6 +371,14 @@ export default function LockGate({ children }: { children: React.ReactNode }) {
   const warm = phase === 'open' || phase === 'loading';
   const showMark = phase === 'cover' || phase === 'intro' || phase === 'loading';
 
+  // The approved render's proportions: the word is 0.517 of the screen width.
+  const bigMark = Math.round(winW * 0.517);
+  const smallMarkEl = (
+    <View style={styles.smallMark}>
+      <DoveMark width={SMALL_MARK} />
+    </View>
+  );
+
   const sheet = (
     <Animated.View
       style={[StyleSheet.absoluteFill, { backgroundColor: colors.bg, opacity: layer }]}
@@ -376,22 +387,28 @@ export default function LockGate({ children }: { children: React.ReactNode }) {
       {showMark ? (
         // Same box as app/index.tsx, so the hand-off from that screen is seamless.
         <View style={[styles.center, { paddingTop: insets.top }]}>
-          <Animated.View style={{ opacity: mark }}>
-            <Wordmark style={styles.bigMark} />
-          </Animated.View>
+          {/* Intro: only the word fades; the dove flies in at full strength
+              and lands on the R as the fade ends. Covering/loading: the
+              whole mark, dove included, breathes. */}
+          <View>
+            <Animated.View style={{ opacity: mark }}>
+              <DoveMark width={bigMark} perched={phase !== 'intro'} />
+            </Animated.View>
+            {phase === 'intro' && <DoveFlight width={bigMark} duration={FADE_MS} />}
+          </View>
         </View>
       ) : (
         <Animated.View style={{ flex: 1, opacity: pad }}>
           {phase === 'setup' ? (
             <PasscodeSetup
               palette={colors}
-              header={<Wordmark style={styles.smallMark} />}
+              header={smallMarkEl}
               onDone={lift}
             />
           ) : (
             <PasscodePad
               palette={colors}
-              header={<Wordmark style={styles.smallMark} />}
+              header={smallMarkEl}
               title="Enter your passcode"
               length={info?.len ?? 4}
               onSubmit={unlock}
@@ -443,7 +460,7 @@ const styles = StyleSheet.create({
   fill: { flex: 1 },
   web: { zIndex: 1000 },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  bigMark: { fontSize: 34, letterSpacing: 5 },
-  smallMark: { fontSize: 15, letterSpacing: 3, marginBottom: 18 },
+  // The perched dove rises 0.36 of the word's width above it.
+  smallMark: { marginTop: Math.ceil(SMALL_MARK * 0.36), marginBottom: 18 },
   forgot: { fontFamily: fontFamily.semibold, fontSize: 14 },
 });
