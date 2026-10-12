@@ -274,8 +274,26 @@ export default function LockGate({ children }: { children: React.ReactNode }) {
 
   // --- wordmark ------------------------------------------------------------------------
   const mark = useRef(new Animated.Value(0.3)).current;
+  // The intro waits for its two images, the word and the flight's sprite
+  // sheet: on a cold start (above all the first after an install) decoding
+  // them took longer than the fade, so the fade ran on an empty screen and
+  // the dove first appeared already landing. Held at most 1.5s, so a failed
+  // load never keeps the keypad back.
+  const [introLoaded, setIntroLoaded] = useState({ word: false, dove: false });
+  const introReady = introLoaded.word && introLoaded.dove;
+  const wordLoaded = useCallback(() => setIntroLoaded(l => (l.word ? l : { ...l, word: true })), []);
+  const doveLoaded = useCallback(() => setIntroLoaded(l => (l.dove ? l : { ...l, dove: true })), []);
+  useEffect(() => {
+    if (phase !== 'intro' || introReady) return;
+    const t = setTimeout(() => setIntroLoaded({ word: true, dove: true }), 1500);
+    return () => clearTimeout(t);
+  }, [phase, introReady]);
   useEffect(() => {
     if (phase === 'intro') {
+      if (!introReady) {
+        mark.setValue(0);
+        return;
+      }
       mark.setValue(0.3);
       const fade = Animated.timing(mark, {
         toValue: 1,
@@ -300,7 +318,7 @@ export default function LockGate({ children }: { children: React.ReactNode }) {
       loop.start();
       return () => loop.stop();
     }
-  }, [phase, mark]);
+  }, [phase, mark, introReady]);
 
   // --- keypad -----------------------------------------------------------------------
   const pad = useRef(new Animated.Value(0)).current;
@@ -391,9 +409,11 @@ export default function LockGate({ children }: { children: React.ReactNode }) {
               whole mark, dove included, breathes. */}
           <View>
             <Animated.View style={{ opacity: mark }}>
-              <DoveMark width={bigMark} perched={phase !== 'intro'} />
+              <DoveMark width={bigMark} perched={phase !== 'intro'} onLoad={wordLoaded} />
             </Animated.View>
-            {phase === 'intro' && <DoveFlight width={bigMark} duration={FADE_MS} />}
+            {phase === 'intro' && (
+              <DoveFlight width={bigMark} duration={FADE_MS} play={introReady} onLoad={doveLoaded} />
+            )}
           </View>
         </View>
       ) : (

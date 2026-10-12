@@ -34,7 +34,7 @@ function useEdge(): string | null {
   return mode === 'light' ? colors.gold : null;
 }
 
-function Perched({ k }: { k: number }) {
+function Perched({ k, onLoad }: { k: number; onLoad?: () => void }) {
   const edge = useEdge();
   const box = { position: 'absolute' as const, left: PERCH.x * k, top: PERCH.y * k, width: PERCH.w * k, height: PERCH.h * k };
   return (
@@ -47,19 +47,19 @@ function Perched({ k }: { k: number }) {
             style={[box, { tintColor: edge, opacity: EDGE_OPACITY, transform: [{ translateX: dx * EDGE_DP }, { translateY: dy * EDGE_DP }] }]}
           />
         ))}
-      <Image source={PERCHED} style={box} />
+      <Image source={PERCHED} style={box} onLoad={onLoad} />
     </>
   );
 }
 
 /** The wordmark with the dove on the R. `width` is the wordmark's width in dp;
  *  the dove sits above that box (0.36 of the width), outside its layout. */
-export function DoveMark({ width, perched = true }: { width: number; perched?: boolean }) {
+export function DoveMark({ width, perched = true, onLoad }: { width: number; perched?: boolean; onLoad?: () => void }) {
   const { colors } = useTheme();
   const k = width / WORD.w;
   return (
     <View style={{ width, height: WORD.h * k }} accessible accessibilityRole="image" accessibilityLabel="EZER">
-      <Image source={WORDMARK} style={{ width, height: WORD.h * k, tintColor: colors.ink }} />
+      <Image source={WORDMARK} style={{ width, height: WORD.h * k, tintColor: colors.ink }} onLoad={onLoad} />
       {perched && <Perched k={k} />}
     </View>
   );
@@ -79,18 +79,30 @@ export function HeaderDoveMark({ width = 56, roomAbove = false }: { width?: numb
 }
 
 /**
- * The flight. Plays once on mount over `duration` ms, ending on the same pose
- * DoveMark draws, so swapping to DoveMark afterwards doesn't move the dove.
+ * The flight. Plays once over `duration` ms when `play` turns true, ending on
+ * the same pose DoveMark draws, so swapping to DoveMark afterwards doesn't
+ * move the dove. Hidden until then; `onLoad` reports the sprite sheet decoded,
+ * so the caller can hold the start until there is something to see.
  * The wordmark's own opacity is the caller's (LockGate's existing fade).
  */
-export function DoveFlight({ width, duration }: { width: number; duration: number }) {
+export function DoveFlight({
+  width,
+  duration,
+  play,
+  onLoad,
+}: {
+  width: number;
+  duration: number;
+  play: boolean;
+  onLoad?: () => void;
+}) {
   const reduced = useReducedMotion();
   const edge = useEdge();
   const k = width / WORD.w;
   const f = useSharedValue(0);
   useEffect(() => {
-    f.value = withTiming(LAST, { duration, easing: Easing.linear });
-  }, [f, duration]);
+    if (play) f.value = withTiming(LAST, { duration, easing: Easing.linear });
+  }, [f, duration, play]);
 
   // The cell window moves along the path; the sheet slides inside it.
   const box = useAnimatedStyle(() => {
@@ -104,14 +116,14 @@ export function DoveFlight({ width, duration }: { width: number; duration: numbe
 
   // Reduced motion: no travel, the dove is simply there.
   if (reduced) {
-    return <Perched k={k} />;
+    return <Perched k={k} onLoad={onLoad} />;
   }
   const size = { width: CELL.w * CELL.cols * k, height: CELL.h * CELL.rows * k };
   // Cells carry a 2px transparent margin, so the edge copies stay inside them.
   return (
     <Animated.View
       pointerEvents="none"
-      style={[{ position: 'absolute', left: 0, top: 0, width: CELL.w * k, height: CELL.h * k, overflow: 'hidden' }, box]}
+      style={[{ position: 'absolute', left: 0, top: 0, width: CELL.w * k, height: CELL.h * k, overflow: 'hidden', opacity: play ? 1 : 0 }, box]}
     >
       {edge &&
         EDGE.map(([dx, dy], i) => (
@@ -119,7 +131,7 @@ export function DoveFlight({ width, duration }: { width: number; duration: numbe
             <Animated.Image source={SHEET} style={[size, { tintColor: edge }, sheet]} />
           </Animated.View>
         ))}
-      <Animated.Image source={SHEET} style={[size, sheet]} />
+      <Animated.Image source={SHEET} style={[size, sheet]} onLoad={onLoad} />
     </Animated.View>
   );
 }
