@@ -37,6 +37,15 @@ jobs:
       - name: Install eas-cli
         run: npm install -g eas-cli
 
+      # Prebuild writes org.gradle.jvmargs=-Xmx2048m into the project's
+      # gradle.properties; D8 ran out of heap with it (Oct 2026, and two
+      # earlier ':app:packageRelease' failures). The user-home file wins over
+      # the project's, and the runner has 16 GB.
+      - name: Give Gradle more heap
+        run: |
+          mkdir -p ~/.gradle
+          echo "org.gradle.jvmargs=-Xmx6g -XX:MaxMetaspaceSize=1g -Dfile.encoding=UTF-8" >> ~/.gradle/gradle.properties
+
       - name: Build (eas build --local)
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
