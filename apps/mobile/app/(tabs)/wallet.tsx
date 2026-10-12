@@ -914,7 +914,8 @@ export default function WalletScreen() {
 const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
-    alignItems: 'center',
+    // EZER's floor on the title's baseline (see Wordmark).
+    alignItems: 'baseline',
   },
   dots: {
     flexDirection: 'row',

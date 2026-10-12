@@ -20,7 +20,7 @@ import {
   type StyleProp,
 } from 'react-native';
 import { useIsFocused } from '@react-navigation/native';
-import { HeaderDoveMark } from '../DoveReveal';
+import { HeaderDoveMark, markWidthForTitle } from '../DoveReveal';
 import { useTheme } from '../../utils/ThemeContext';
 import Animated, {
   Easing,
@@ -105,9 +105,10 @@ export function Body({ children, style, color, ...rest }: TextProps) {
   );
 }
 
-/** The tab headers' EZER, the lock screen's Cinzel mark with the perched dove. */
-export function Wordmark({ roomAbove }: { roomAbove?: boolean }) {
-  return <HeaderDoveMark roomAbove={roomAbove} />;
+/** The tab headers' EZER, the lock screen's Cinzel mark with the perched dove,
+ *  as tall as a capital of the screen title (`titleSize`) it sits beside. */
+export function Wordmark({ roomAbove, titleSize = 26 }: { roomAbove?: boolean; titleSize?: number }) {
+  return <HeaderDoveMark width={markWidthForTitle(titleSize)} roomAbove={roomAbove} />;
 }
 
 // -----------------------------------------------------------------------------

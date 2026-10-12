@@ -368,7 +368,7 @@ export default function HomeScreen() {
                 View: PressScale's flexGrow inside an auto-height column made
                 Yoga (RN's errata) stretch the header to the page height,
                 which pushed all of Home off screen. */}
-            <PressScale onPress={() => router.push('/settings')} scaleTo={0.9} style={{ marginRight: 30 }}>
+            <PressScale onPress={() => router.push('/settings')} scaleTo={0.9} style={{ marginRight: 30, alignSelf: 'center' }}>
               <View style={[styles.gear, { backgroundColor: colors.card, borderColor: colors.line }]}>
                 <Ionicons name="settings-outline" size={18} color={colors.ink} />
               </View>
@@ -377,10 +377,10 @@ export default function HomeScreen() {
             {/* The centre block must be allowed to shrink, and both side slots
                 must reserve equal width — otherwise the 24px title and the
                 2.5px-tracked wordmark collide on narrow screens. */}
+            {/* column-reverse with the title FIRST: Yoga takes a box's baseline
+                from its first child, so the header row's baseline alignment
+                puts EZER's floor on "Your Dashboard", not on the greeting. */}
             <View style={styles.headerCenter}>
-              <Text style={[typeScale.greeting, { color: colors.mut }]} numberOfLines={1}>
-                {greeting()}
-              </Text>
               <Text
                 style={[typeScale.dashTitle, { color: colors.ink }]}
                 numberOfLines={1}
@@ -389,10 +389,13 @@ export default function HomeScreen() {
               >
                 Your Dashboard
               </Text>
+              <Text style={[typeScale.greeting, { color: colors.mut }]} numberOfLines={1}>
+                {greeting()}
+              </Text>
             </View>
 
             <View style={styles.headerSide}>
-              <Wordmark />
+              <Wordmark titleSize={typeScale.dashTitle.fontSize} />
             </View>
           </View>
 
@@ -711,9 +714,10 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'baseline',
   },
   headerCenter: {
+    flexDirection: 'column-reverse',
     flex: 1,
     alignItems: 'center',
     // Without this the centre block refuses to shrink below its content width

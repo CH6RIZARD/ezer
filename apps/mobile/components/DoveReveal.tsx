@@ -65,11 +65,20 @@ export function DoveMark({ width, perched = true, onLoad }: { width: number; per
   );
 }
 
-/** The tab headers' mark. Only the word takes layout space, so it centres on a
- *  title beside it and sits flush with the content's right edge; the dove
- *  overhangs into the screen padding. Reserving the dove's room as margins
- *  pushed the word below a title's centre line. `roomAbove` keeps its height
- *  for a mark that starts the screen, so the dove clears the status bar. */
+/** Space Grotesk's capital height as a share of the font size (measured on
+ *  the k62: 'Wallet' at 26 spans 36px at 2x). */
+const CAP = 0.69;
+
+/** The mark width at which the dove's top to the word's baseline is exactly as
+ *  tall as a capital of a `fontSize` title: the owner wants the bird's top on
+ *  the title's roof and EZER's floor on its floor. */
+export const markWidthForTitle = (fontSize: number) => Math.round((fontSize * CAP * WORD.w) / (WORD.h - PERCH.y));
+
+/** The tab headers' mark. Only the word takes layout space (the dove overhangs
+ *  into the padding), so a row with `alignItems: 'baseline'` puts EZER's floor
+ *  on the title's baseline: Yoga reads this box's baseline as the word image's
+ *  bottom. `roomAbove` keeps the dove's height for a mark that starts the
+ *  screen, so the dove clears the status bar. */
 export function HeaderDoveMark({ width = 56, roomAbove = false }: { width?: number; roomAbove?: boolean }) {
   return (
     <View style={roomAbove ? { paddingTop: Math.ceil((-PERCH.y * width) / WORD.w) } : null}>
