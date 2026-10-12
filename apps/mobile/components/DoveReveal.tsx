@@ -65,11 +65,14 @@ export function DoveMark({ width, perched = true }: { width: number; perched?: b
   );
 }
 
-/** The tab headers' mark: DoveMark plus room for the dove above and to the right of the word. */
-export function HeaderDoveMark({ width = 56 }: { width?: number }) {
-  const k = width / WORD.w;
+/** The tab headers' mark. Only the word takes layout space, so it centres on a
+ *  title beside it and sits flush with the content's right edge; the dove
+ *  overhangs into the screen padding. Reserving the dove's room as margins
+ *  pushed the word below a title's centre line. `roomAbove` keeps its height
+ *  for a mark that starts the screen, so the dove clears the status bar. */
+export function HeaderDoveMark({ width = 56, roomAbove = false }: { width?: number; roomAbove?: boolean }) {
   return (
-    <View style={{ marginTop: Math.ceil(-PERCH.y * k), marginRight: Math.ceil((PERCH.x + PERCH.w - WORD.w) * k) }}>
+    <View style={roomAbove ? { paddingTop: Math.ceil((-PERCH.y * width) / WORD.w) } : null}>
       <DoveMark width={width} />
     </View>
   );

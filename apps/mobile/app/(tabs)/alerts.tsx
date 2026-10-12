@@ -110,7 +110,7 @@ export default function AlertsScreen() {
         <ScreenBody>
           <View style={styles.header}>
             <View style={{ flex: 1 }} />
-            <Wordmark />
+            <Wordmark roomAbove />
           </View>
 
           <Text style={[typeScale.screenTitle, { color: colors.ink, marginTop: 4 }]}>Alerts</Text>

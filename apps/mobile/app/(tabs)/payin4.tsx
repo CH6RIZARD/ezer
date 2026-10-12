@@ -208,7 +208,7 @@ export default function PayInFourScreen() {
           {/* --- header ------------------------------------------------------ */}
           <View style={styles.headerRow}>
             <View style={{ flex: 1 }} />
-            <Wordmark />
+            <Wordmark roomAbove />
           </View>
 
           <Text style={[typeScale.screenTitle, { color: colors.ink, marginTop: 6 }]}>

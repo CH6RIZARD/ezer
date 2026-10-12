@@ -105,10 +105,9 @@ export function Body({ children, style, color, ...rest }: TextProps) {
   );
 }
 
-/** EZER wordmark — 15px/700, 2.5 tracking, gold. */
-/** The tab headers' EZER: the lock screen's Cinzel mark with the perched dove. */
-export function Wordmark() {
-  return <HeaderDoveMark />;
+/** The tab headers' EZER, the lock screen's Cinzel mark with the perched dove. */
+export function Wordmark({ roomAbove }: { roomAbove?: boolean }) {
+  return <HeaderDoveMark roomAbove={roomAbove} />;
 }
 
 // -----------------------------------------------------------------------------
