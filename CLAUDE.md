@@ -657,6 +657,11 @@ style problem.
   Only the word takes layout space there, so it centres on a title beside it
   and sits flush right; the dove overhangs into the padding. `roomAbove`
   reserves the dove's height where the mark starts the screen (status bar).
+  The intro's fade and flight wait for the word and the sprite sheet to load
+  (`introReady` in LockGate, max 1.5s): started at once, they ran on an empty
+  screen on a cold start. The splash, `android.backgroundColor` (the window
+  behind the first frame) and the adaptive icon background are black on
+  purpose; cream then white flashed before the app's own black.
   On cream (light mode only) the white dove gets a faint `colors.gold` edge,
   its own silhouette tinted and drawn at 8 offsets behind it, asked for because
   white on cream washed out. Don't drop it as "extra draws"; dark themes skip it.
