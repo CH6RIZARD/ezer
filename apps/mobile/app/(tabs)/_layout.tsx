@@ -78,7 +78,16 @@ function TabButton({
     transform: [{ translateY: -1.5 * on.value }, { scale: 1 + 0.08 * on.value }],
   }));
   return (
-    <Pressable {...press} style={styles.slot} accessibilityRole="tab" accessibilityState={{ selected: focused }}>
+    <Pressable
+      {...press}
+      onPressIn={e => { console.log('TABDBG pressIn', label, Date.now()); press.onPressIn?.(e); }}
+      onPressOut={e => { console.log('TABDBG pressOut', label, Date.now()); press.onPressOut?.(e); }}
+      onPress={e => { console.log('TABDBG press', label, 'focused', focused, Date.now()); press.onPress?.(e); }}
+      onResponderTerminate={() => console.log('TABDBG terminate', label, Date.now())}
+      style={styles.slot}
+      accessibilityRole="tab"
+      accessibilityState={{ selected: focused }}
+    >
       <View style={styles.item}>
         <Animated.View style={lift}>
           <Ionicons name={icon} size={21} color={colors.mut2} />
@@ -129,6 +138,7 @@ export default function TabLayout() {
   const reduce = useReduceMotion();
   const pathname = usePathname();
   const activeIndex = TABS.findIndex(t => pathname === t.href || pathname.startsWith(t.href + '/'));
+  console.log('TABDBG layout', pathname, Date.now());
   const [barWidth, setBarWidth] = useState(0);
   const warm = useContext(LockWarmContext);
   const open = useContext(LockOpenContext);
@@ -162,6 +172,7 @@ export default function TabLayout() {
 
   const renderTab = useCallback(
     (descriptor: TabsDescriptor, { isFocused, loaded }: TabsSlotRenderOptions) => {
+      console.log('TABDBG renderTab', descriptor.route.name, 'focused', isFocused, 'loaded', loaded, Date.now());
       if (!isFocused && !loaded && !prewarmed.includes(descriptor.route.name)) return null;
       let cached = elements.current.get(descriptor.route.key);
       if (!cached || cached.route !== descriptor.route) {
