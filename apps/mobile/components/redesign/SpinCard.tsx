@@ -34,7 +34,7 @@
 // the standard fix for that class of bug.
 // =============================================================================
 
-import React, { useCallback, useEffect, useMemo, useRef } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, Animated, PanResponder, Platform, StyleSheet, Easing, type StyleProp, type ViewStyle } from 'react-native';
 import { PanGestureHandler, State, type PanGestureHandlerStateChangeEvent } from 'react-native-gesture-handler';
 import { useTheme } from '../../utils/ThemeContext';
@@ -42,6 +42,9 @@ import { gradients } from '../../theme/tokens';
 import { fontFamily, motion, radius } from '../../theme/type';
 import { useIsFocused } from '@react-navigation/native';
 import { useReduceMotion } from './Primitives';
+import { LinearGradient } from 'expo-linear-gradient';
+import CardChip from './CardChip';
+import { lockWarm } from '../../utils/lockWarm';
 
 const CARD_W = 308;
 const CARD_H = 190;
@@ -254,6 +257,66 @@ export function CardStack({
       <Animated.View style={layers.front}>{front}</Animated.View>
       <Animated.View style={layers.back}>{back}</Animated.View>
     </Animated.View>
+  );
+}
+
+/**
+ * Pays the card's one-time costs before anyone touches a card.
+ *
+ * The owner's report: the FIRST drag after installing lags, and never again
+ * until the next reinstall. That is a per-install cache, not the drag code:
+ * Android wipes the app's GPU shader cache and its compiled Java (the native
+ * animated driver, the transform maths) on every install, so the first frames
+ * that ever draw a 3D-tilted, semi-transparent, rounded, gradient card
+ * compile shaders and run interpreted code mid-drag.
+ *
+ * This draws a real CardStack (same layers, gradient face, chip, text) and
+ * sweeps it through face-on, tilted and edge-on angles on the native driver,
+ * once, right after the passcode is accepted (the EZER fade that follows is
+ * idle time anyway; under the keypad it would slow the digits). Mounted as
+ * the FIRST child of the root view, so every screen paints over it: never
+ * visible. Not opacity 0 or off-screen, both of which the GPU skips.
+ */
+export function CardWarmup() {
+  const [phase, setPhase] = useState<'wait' | 'run' | 'done'>('wait');
+  const rx = useRef(new Animated.Value(0)).current;
+  const ry = useRef(new Animated.Value(0)).current;
+  const still = useRef(new Animated.Value(0)).current;
+  const layers = useCardLayers(rx, ry, still);
+
+  useEffect(() => {
+    let alive = true;
+    void lockWarm.then(() => alive && setPhase('run'));
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (phase !== 'run') return;
+    const sweep = (v: Animated.Value, to: number) =>
+      Animated.timing(v, { toValue: to, duration: 900, easing: Easing.linear, useNativeDriver: true });
+    const a = Animated.parallel([sweep(ry, 200), sweep(rx, 110)]);
+    a.start(() => setPhase('done'));
+    return () => a.stop();
+  }, [phase, rx, ry]);
+
+  if (phase !== 'run') return null;
+  const face = (
+    <LinearGradient
+      colors={gradients.cardBack as unknown as readonly [string, string, ...string[]]}
+      start={{ x: 0, y: 0 }}
+      end={{ x: 1, y: 1 }}
+      style={styles.warmFace}
+    >
+      <CardChip />
+      <Text style={styles.warmText}>{'••••  0000'}</Text>
+    </LinearGradient>
+  );
+  return (
+    <View pointerEvents="none" style={styles.warmup} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+      <CardStack layers={layers} front={face} back={face} />
+    </View>
   );
 }
 
@@ -607,6 +670,17 @@ const styles = StyleSheet.create({
     height: CARD_H,
     borderRadius: radius.virtualCard,
   },
+  warmup: {
+    position: 'absolute',
+    top: 120,
+    left: 0,
+    right: 0,
+    height: CONTAINER_H,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  warmFace: { flex: 1, padding: 18, justifyContent: 'space-between' },
+  warmText: { fontFamily: fontFamily.medium, fontSize: 18, color: '#fff' },
   hint: {
     marginTop: 14,
     fontFamily: fontFamily.regular,

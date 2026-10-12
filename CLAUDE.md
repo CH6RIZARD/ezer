@@ -222,6 +222,15 @@ style problem.
   the whole screen on Android's UI thread right as the finger moved, giving
   an initial lag on every drag that the web dev page never showed.
   `onDragChange` + `scrollEnabled` remain for the web (PanResponder) path only.
+- **`CardWarmup` (in `SpinCard.tsx`, mounted first in `app/_layout.tsx`)
+  is the fix for "the first drag after installing lags, never again until
+  reinstall".** That symptom is Android's per-install caches (GPU shaders,
+  compiled Java for the native driver), not the drag code, and no drag-code
+  change can fix it. The warm-up sweeps a hidden real CardStack through its
+  angles once, on the native driver, right after the passcode is accepted.
+  It must stay ON-screen and opaque but painted UNDER everything: the GPU
+  skips opacity-0 and off-screen views, so either "optimisation" makes it
+  warm nothing. Don't move it under the keypad (slows the digits).
 - **`useCardLayers(rotX, rotY, floatY)` + `CardStack`, exported from
   `SpinCard.tsx`, are the card's faces-plus-gold-edge for ANY rotation
   source.** SpinCard feeds them the drag; `app/onboarding.tsx`'s

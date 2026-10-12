@@ -21,6 +21,7 @@ import { ThemeProvider, useTheme } from '../utils/ThemeContext';
 import { DataProvider } from '../contexts/DataContext';
 import { SavingsGoalsProvider } from '../utils/SavingsGoalsContext';
 import LockGate from '../components/LockGate';
+import { CardWarmup } from '../components/redesign/SpinCard';
 
 class AppErrorBoundary extends React.Component<{ children: React.ReactNode }, { error: Error | null }> {
   state = { error: null as Error | null };
@@ -75,6 +76,9 @@ function RootLayoutNav() {
         translucent={false}
       />
       <View style={{ flex: 1, backgroundColor: colors.background }}>
+        {/* First child, so everything paints over it: warms the card's GPU
+            shaders and native code once per launch (see CardWarmup). */}
+        <CardWarmup />
         {/* Wraps the Stack and draws the lock above it, so locking never
             touches navigation. */}
         <LockGate>
