@@ -364,13 +364,15 @@ export default function HomeScreen() {
         <ScreenBody>
           {/* --- header ------------------------------------------------------ */}
           <View style={styles.header}>
-            <View style={[styles.headerSide, { alignItems: 'flex-start' }]}>
-              <PressScale onPress={() => router.push('/settings')} scaleTo={0.9}>
-                <View style={[styles.gear, { backgroundColor: colors.card, borderColor: colors.line }]}>
-                  <Ionicons name="settings-outline" size={18} color={colors.ink} />
-                </View>
-              </PressScale>
-            </View>
+            {/* The margin pads the 42px gear to headerSide's 72. Not a wrapping
+                View: PressScale's flexGrow inside an auto-height column made
+                Yoga (RN's errata) stretch the header to the page height,
+                which pushed all of Home off screen. */}
+            <PressScale onPress={() => router.push('/settings')} scaleTo={0.9} style={{ marginRight: 30 }}>
+              <View style={[styles.gear, { backgroundColor: colors.card, borderColor: colors.line }]}>
+                <Ionicons name="settings-outline" size={18} color={colors.ink} />
+              </View>
+            </PressScale>
 
             {/* The centre block must be allowed to shrink, and both side slots
                 must reserve equal width — otherwise the 24px title and the

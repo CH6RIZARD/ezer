@@ -222,6 +222,16 @@ style problem.
   the whole screen on Android's UI thread right as the finger moved, giving
   an initial lag on every drag that the web dev page never showed.
   `onDragChange` + `scrollEnabled` remain for the web (PanResponder) path only.
+- **SpinCard's release settle is started with `isLooping = true`**
+  (`run.start(cb, true)`, RN's untyped second argument). Without it, the end or
+  stop of a native animation runs `update()` on every AnimatedProps under
+  rx/ry, which on Fabric re-renders all 27 layers 900ms after each release,
+  in the middle of the next drag. A drag that ACTIVATES while a settle is
+  still running stops it (`stopAnimation`, read back into rxVal/ryVal) and
+  folds from that point; left running, the settle drove all 25 layers a
+  second time each frame. A tap during a settle leaves it alone: never
+  `setValue` over a running native animation, because the stop callback
+  rewinds the JS value afterwards. Re-check `Animation.js` on an RN upgrade.
 - **`CardWarmup` (in `SpinCard.tsx`, mounted first in `app/_layout.tsx`)
   is the fix for "the first drag after installing lags, never again until
   reinstall".** That symptom is Android's per-install caches (GPU shaders,
@@ -551,6 +561,11 @@ style problem.
   phone and the Reanimated one had clearly faster Wallet date-range chips,
   while tab switching was slow on BOTH (that was lazy mounting, below). Judge
   this on the phone, not by reasoning about setup cost.
+- **Don't wrap a `PressScale` in a plain auto-height View inside a row.**
+  Its inner view has `flexGrow: 1`, and under RN's Yoga errata the wrapper
+  passes its whole available height down: Home's header grew to the page
+  height and pushed all of Home off screen (Oct 12 2026 APK, blank Home).
+  Put the layout on PressScale's own `style` (it lands on the Pressable).
 - **The tab navigator is the plain bottom-tabs setup with `freezeOnBlur: true`
   and default lazy/detach — the state from before Oct 7 2026, restored at the
   owner's request ("the nav bar was working perfectly until yesterday's
