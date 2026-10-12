@@ -54,7 +54,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     (async () => {
-      console.log('TIMING auth restore start', Date.now());
       try {
         const [savedUser, onboarding, token] = await Promise.all([
           AsyncStorage.getItem(USER_KEY),

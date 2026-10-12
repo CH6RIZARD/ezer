@@ -10,7 +10,7 @@
 // screens.
 // =============================================================================
 
-import React, { useMemo, useState, useEffect, useCallback } from 'react';
+import React, { useMemo, useState, useCallback } from 'react';
 import { View, Text, ScrollView, Pressable, StyleSheet } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -54,15 +54,9 @@ function greeting() {
   return 'Good Evening ✳';
 }
 
-// TIMING experiment switches (dev client): which sections render.
-const HOME_PARTS = { calendar: true };
 const EMPTY_MARKS: DayMark[] = [];
 
 export default function HomeScreen() {
-  console.log('TIMING home render', Date.now());
-  useEffect(() => {
-    console.log('TIMING home commit', Date.now());
-  });
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
   const premium = usePremium();
@@ -597,7 +591,7 @@ export default function HomeScreen() {
             })}
           </View>
 
-          {!HOME_PARTS.calendar ? null : view === 'calendar' ? (
+          {view === 'calendar' ? (
             <Surface radius={radius.hero} style={styles.calendar}>
               <View style={styles.monthRow}>
                 <PressScale onPress={() => setMonthOffset(m => m - 1)} scaleTo={0.9}>

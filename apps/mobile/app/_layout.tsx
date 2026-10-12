@@ -133,8 +133,6 @@ function ThemedRoot({ children }: { children: React.ReactNode }) {
   return <View style={{ flex: 1, backgroundColor: colors.bg }}>{children}</View>;
 }
 
-console.log('TIMING bundle start', Date.now());
-
 export default function RootLayout() {
   return (
     // ThemedRoot is the OUTERMOST view on purpose. It used to sit inside

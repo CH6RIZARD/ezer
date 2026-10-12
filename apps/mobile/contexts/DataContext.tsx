@@ -206,16 +206,13 @@ export function DataProvider({ children }: { children: ReactNode }) {
   if (!snapReady.current) {
     snapReady.current = AsyncStorage.getItem(SNAPSHOT_KEY)
       .then(raw => {
-        const t = Date.now();
         snapRef.current = raw ? JSON.parse(raw) : null;
-        console.log('TIMING snapshot parsed', Date.now(), 'bytes', raw?.length ?? 0, 'ms', Date.now() - t);
       })
       .catch(() => {});
   }
 
   const refresh = useCallback(async () => {
     const seq = ++refreshSeq.current;
-    console.log('TIMING refresh start', Date.now());
     // No session means nothing to fetch. `isEmpty` drives the "connect an
     // account" state rather than any placeholder figures.
     if (!isAuthenticated) {
@@ -242,7 +239,6 @@ export function DataProvider({ children }: { children: ReactNode }) {
     ]);
 
     // A newer refresh (or a logout) owns the state now — drop this snapshot.
-    console.log('TIMING refresh fetched', Date.now());
     if (seq !== refreshSeq.current) return;
 
     const valueOf = <T,>(r: PromiseSettledResult<any>, empty: T, kept: T): T =>
