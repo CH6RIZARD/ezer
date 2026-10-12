@@ -577,6 +577,13 @@ style problem.
   mounted screen, which under the keypad was the difference between the first
   digit showing in 0.4s and 1.9s.
 
+- **`app/(tabs)/_layout.tsx` caches each tab's rendered element** (the
+  `elements` ref in `renderTab`). Headless tabs re-run `renderTab` on every
+  switch, and `descriptor.render()` returns a new element each time, so
+  without the cache every switch re-rendered all four tabs (no memo in
+  react-navigation's SceneView or expo-router). Don't "simplify" it back to
+  `descriptor.render()`. Check with the `TIMING home render` log: a tab
+  switch must not print it.
 - **Tab bar look (Oct 11 2026, owner's request): no filled/square pill
   behind the active tab.** Icons are always the OUTLINE glyphs; the active
   one's stroke and label cross-fade to `accInk` with a small lift, and a

@@ -19,7 +19,7 @@
 // untouchable, so a tab tap changes two style props and nothing else.
 // =============================================================================
 
-import React, { useCallback, useContext, useEffect, useState } from 'react';
+import React, { useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { View, Text, Pressable, StyleSheet, InteractionManager, type PressableProps } from 'react-native';
 import { Tabs, TabList, TabTrigger, TabSlot, type TabsDescriptor, type TabsSlotRenderOptions } from 'expo-router/ui';
 import { usePathname } from 'expo-router';
@@ -151,9 +151,23 @@ export default function TabLayout() {
     return () => timers.forEach(clearTimeout);
   }, [open]);
 
+  // Every tab switch re-renders this slot, and descriptor.render() returns a
+  // NEW element each time; neither react-navigation's SceneView nor
+  // expo-router memoises screens. So each switch re-rendered ALL FOUR tabs
+  // (Home alone is up to 0.6s on the k62). Handing React the SAME element
+  // makes it skip the subtree: screens still update from their own state and
+  // contexts, and focus effects still fire (they are navigation events, not
+  // props). Re-created only when the route object changes (new params).
+  const elements = useRef(new Map<string, { route: unknown; el: React.ReactNode }>());
+
   const renderTab = useCallback(
     (descriptor: TabsDescriptor, { isFocused, loaded }: TabsSlotRenderOptions) => {
       if (!isFocused && !loaded && !prewarmed.includes(descriptor.route.name)) return null;
+      let cached = elements.current.get(descriptor.route.key);
+      if (!cached || cached.route !== descriptor.route) {
+        cached = { route: descriptor.route, el: descriptor.render() };
+        elements.current.set(descriptor.route.key, cached);
+      }
       return (
         <View
           key={descriptor.route.key}
@@ -163,7 +177,7 @@ export default function TabLayout() {
           accessibilityElementsHidden={!isFocused}
           importantForAccessibility={isFocused ? 'auto' : 'no-hide-descendants'}
         >
-          {descriptor.render()}
+          {cached.el}
         </View>
       );
     },
