@@ -147,10 +147,14 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
   const isDark = mode !== 'light';
   const colors = colorsFor(mode);
-  // Before storage loads, use system theme so first paint matches device (avoids light flash on dark-mode iPhone)
-  const resolvedColors = isLoaded ? colors : (systemColorScheme === 'dark' ? darkColors : lightColors);
-  const resolvedDark = isLoaded ? isDark : (systemColorScheme === 'dark');
-  const resolvedMode: ThemeMode = isLoaded ? mode : (systemColorScheme === 'dark' ? 'dark' : 'light');
+  // Before storage loads: on native, black, the colour of the splash and the
+  // window behind the first frame (app.json), so a cold start shows no cream
+  // frame before the stored theme arrives (k62 recording). On web, the system
+  // theme, which public/index.html paints before hydration.
+  const preMode: ThemeMode = Platform.OS !== 'web' ? 'black' : systemColorScheme === 'dark' ? 'dark' : 'light';
+  const resolvedMode: ThemeMode = isLoaded ? mode : preMode;
+  const resolvedColors = isLoaded ? colors : colorsFor(preMode);
+  const resolvedDark = resolvedMode !== 'light';
 
   // ---------------------------------------------------------------------------
   // WEB: keep the DOCUMENT's colours on the app's theme, not the OS's.
