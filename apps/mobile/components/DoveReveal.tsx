@@ -10,15 +10,25 @@
 // re-render rather than nudging numbers here.
 // =============================================================================
 
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Image, View } from 'react-native';
-import Animated, { Easing, useAnimatedStyle, useReducedMotion, useSharedValue, withTiming } from 'react-native-reanimated';
+import Animated, {
+  cancelAnimation,
+  Easing,
+  useAnimatedStyle,
+  useReducedMotion,
+  useSharedValue,
+  withRepeat,
+  withTiming,
+} from 'react-native-reanimated';
 import { useTheme } from '../utils/ThemeContext';
 import { CELL, PERCH, WORD, XY } from './doveFrames';
+import { HOVER } from './doveHoverFrames';
 
 const SHEET = require('../assets/dove/dove-sheet.png');
 const PERCHED = require('../assets/dove/dove-perch.png');
 const WORDMARK = require('../assets/dove/wordmark-cinzel.png');
+const HOVER_SHEET = require('../assets/dove/dove-hover.webp');
 const LAST = XY.length - 1;
 
 // On cream the white dove washes out, so light mode rings it with a faint
@@ -142,5 +152,49 @@ export function DoveFlight({
         ))}
       <Animated.Image source={SHEET} style={[size, sheet]} onLoad={onLoad} />
     </Animated.View>
+  );
+}
+
+/**
+ * The wait after the passcode: the dove lifts off the R and flaps in place
+ * above it (the "hover" loader render, E:\ezer-dove\work\export_hover.py),
+ * instead of the still perched mark. Loops while mounted; LockGate mounts it
+ * only for that phase. The perched dove shows until the sheet has decoded, so
+ * the R is never bare.
+ */
+export function DoveHover({ width }: { width: number }) {
+  const reduced = useReducedMotion();
+  const edge = useEdge();
+  const k = width / WORD.w;
+  const [loaded, setLoaded] = useState(false);
+  const f = useSharedValue(0);
+  useEffect(() => {
+    if (reduced || !loaded) return;
+    f.value = withRepeat(withTiming(HOVER.n, { duration: (HOVER.n / HOVER.fps) * 1000, easing: Easing.linear }), -1);
+    return () => cancelAnimation(f);
+  }, [f, reduced, loaded]);
+  const sheet = useAnimatedStyle(() => {
+    const i = Math.floor(f.value) % HOVER.n;
+    return { transform: [{ translateX: -(i % HOVER.cols) * HOVER.w * k }, { translateY: -Math.floor(i / HOVER.cols) * HOVER.h * k }] };
+  });
+
+  if (reduced) return <Perched k={k} />;
+  const size = { width: HOVER.w * HOVER.cols * k, height: HOVER.h * HOVER.rows * k };
+  return (
+    <>
+      {!loaded && <Perched k={k} />}
+      <View
+        pointerEvents="none"
+        style={{ position: 'absolute', left: HOVER.x * k, top: HOVER.y * k, width: HOVER.w * k, height: HOVER.h * k, overflow: 'hidden', opacity: loaded ? 1 : 0 }}
+      >
+        {edge &&
+          EDGE.map(([dx, dy], i) => (
+            <View key={i} style={{ position: 'absolute', left: dx * EDGE_DP, top: dy * EDGE_DP, opacity: EDGE_OPACITY }}>
+              <Animated.Image source={HOVER_SHEET} style={[size, { tintColor: edge }, sheet]} />
+            </View>
+          ))}
+        <Animated.Image source={HOVER_SHEET} style={[size, sheet]} onLoad={() => setLoaded(true)} />
+      </View>
+    </>
   );
 }

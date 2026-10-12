@@ -50,7 +50,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../utils/ThemeContext';
 import { useAuth } from '../utils/AuthContext';
 import { useData } from '../contexts/DataContext';
-import { DoveFlight, DoveMark } from './DoveReveal';
+import { DoveFlight, DoveHover, DoveMark } from './DoveReveal';
 import PasscodePad from './PasscodePad';
 import PasscodeSetup from './PasscodeSetup';
 import { fontFamily } from '../theme/type';
@@ -405,12 +405,14 @@ export default function LockGate({ children }: { children: React.ReactNode }) {
         // Same box as app/index.tsx, so the hand-off from that screen is seamless.
         <View style={[styles.center, { paddingTop: insets.top }]}>
           {/* Intro: only the word fades; the dove flies in at full strength
-              and lands on the R as the fade ends. Covering/loading: the
-              whole mark, dove included, breathes. */}
+              and lands on the R as the fade ends. Loading (after the
+              passcode): the word breathes and the dove flaps above the R.
+              Covering: the whole mark, dove included, breathes. */}
           <View>
             <Animated.View style={{ opacity: mark }}>
-              <DoveMark width={bigMark} perched={phase !== 'intro'} onLoad={wordLoaded} />
+              <DoveMark width={bigMark} perched={phase === 'cover'} onLoad={wordLoaded} />
             </Animated.View>
+            {phase === 'loading' && <DoveHover width={bigMark} />}
             {phase === 'intro' && (
               <DoveFlight width={bigMark} duration={FADE_MS} play={introReady} onLoad={doveLoaded} />
             )}

@@ -665,6 +665,11 @@ style problem.
   screen on a cold start. The splash, `android.backgroundColor` (the window
   behind the first frame) and the adaptive icon background are black on
   purpose; cream then white flashed before the app's own black.
+  After the passcode (`loading`) the dove is NOT the still perched image: it
+  flaps above the R (`DoveHover`, the "hover" loader render, exported by
+  `E:\ezer-dove\work\export_hover.py`) while the word breathes. Asked for by
+  the owner. Before the stored theme loads, native uses the black palette
+  (ThemeContext `preMode`) so no cream frame shows.
   On cream (light mode only) the white dove gets a faint `colors.gold` edge,
   its own silhouette tinted and drawn at 8 offsets behind it, asked for because
   white on cream washed out. Don't drop it as "extra draws"; dark themes skip it.
