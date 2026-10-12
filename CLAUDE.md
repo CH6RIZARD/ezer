@@ -232,6 +232,13 @@ style problem.
   second time each frame. A tap during a settle leaves it alone: never
   `setValue` over a running native animation, because the stop callback
   rewinds the JS value afterwards. Re-check `Animation.js` on an RN upgrade.
+  It did NOT change drag smoothness on the k62 (Oct 12 2026, gfxinfo, old and
+  new APKs measured back to back: both p50 ~25ms, p90 ~57ms, ~98% of frames
+  over budget, rapid re-grabs no worse than spaced ones). Framestats put the
+  cost on the RenderThread (IssueDrawCommands p50 12ms, p90 27ms; UI thread
+  5-12ms), so per-frame work in the animated graph, including the hidden fine
+  sheets, is not the lever: HWUI already skips alpha-0 views. Measure faces vs
+  gold sheets next (`claude/spindbg` draws empty faces).
 - **`CardWarmup` (in `SpinCard.tsx`, mounted first in `app/_layout.tsx`)
   is the fix for "the first drag after installing lags, never again until
   reinstall".** That symptom is Android's per-install caches (GPU shaders,
