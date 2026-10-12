@@ -20,6 +20,7 @@ import {
   type StyleProp,
 } from 'react-native';
 import { useIsFocused } from '@react-navigation/native';
+import { HeaderDoveMark } from '../DoveReveal';
 import { useTheme } from '../../utils/ThemeContext';
 import Animated, {
   Easing,
@@ -105,9 +106,9 @@ export function Body({ children, style, color, ...rest }: TextProps) {
 }
 
 /** EZER wordmark — 15px/700, 2.5 tracking, gold. */
-export function Wordmark({ style }: { style?: StyleProp<TextStyle> }) {
-  const { colors } = useTheme();
-  return <Text style={[typeScale.wordmark, { color: colors.gold }, style]}>EZER</Text>;
+/** The tab headers' EZER: the lock screen's Cinzel mark with the perched dove. */
+export function Wordmark() {
+  return <HeaderDoveMark />;
 }
 
 // -----------------------------------------------------------------------------

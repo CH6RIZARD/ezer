@@ -370,11 +370,13 @@ export default function HomeScreen() {
         <ScreenBody>
           {/* --- header ------------------------------------------------------ */}
           <View style={styles.header}>
-            <PressScale onPress={() => router.push('/settings')} scaleTo={0.9}>
-              <View style={[styles.gear, { backgroundColor: colors.card, borderColor: colors.line }]}>
-                <Ionicons name="settings-outline" size={18} color={colors.ink} />
-              </View>
-            </PressScale>
+            <View style={[styles.headerSide, { alignItems: 'flex-start' }]}>
+              <PressScale onPress={() => router.push('/settings')} scaleTo={0.9}>
+                <View style={[styles.gear, { backgroundColor: colors.card, borderColor: colors.line }]}>
+                  <Ionicons name="settings-outline" size={18} color={colors.ink} />
+                </View>
+              </PressScale>
+            </View>
 
             {/* The centre block must be allowed to shrink, and both side slots
                 must reserve equal width — otherwise the 24px title and the
@@ -394,7 +396,7 @@ export default function HomeScreen() {
             </View>
 
             <View style={styles.headerSide}>
-              <Wordmark style={{ textAlign: 'right' }} />
+              <Wordmark />
             </View>
           </View>
 
@@ -723,9 +725,9 @@ const styles = StyleSheet.create({
     minWidth: 0,
     paddingHorizontal: 8,
   },
-  // Mirrors the 42px gear button so the centre block is genuinely centred.
+  // Wide enough for the dove mark; both sides share it, so the centre stays centred.
   headerSide: {
-    width: 52,
+    width: 72,
     alignItems: 'flex-end',
   },
   gear: {

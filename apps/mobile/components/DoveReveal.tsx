@@ -12,15 +12,45 @@
 
 import React, { useEffect } from 'react';
 import { Image, View } from 'react-native';
-import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
+import Animated, { Easing, useAnimatedStyle, useReducedMotion, useSharedValue, withTiming } from 'react-native-reanimated';
 import { useTheme } from '../utils/ThemeContext';
-import { useReduceMotion } from './redesign/Primitives';
 import { CELL, PERCH, WORD, XY } from './doveFrames';
 
 const SHEET = require('../assets/dove/dove-sheet.png');
 const PERCHED = require('../assets/dove/dove-perch.png');
 const WORDMARK = require('../assets/dove/wordmark-cinzel.png');
 const LAST = XY.length - 1;
+
+// On cream the white dove washes out, so light mode rings it with a faint
+// brand-gold edge: the dove's own silhouette tinted and drawn at 8 small
+// offsets behind it. Offsets are in dp, so the edge is the same at any size.
+const EDGE = [[1, 0], [-1, 0], [0, 1], [0, -1], [0.7, 0.7], [-0.7, 0.7], [0.7, -0.7], [-0.7, -0.7]] as const;
+const EDGE_DP = 0.9;
+const EDGE_OPACITY = 0.6;
+
+/** The dove's edge colour for the current theme, or null for none. */
+function useEdge(): string | null {
+  const { mode, colors } = useTheme();
+  return mode === 'light' ? colors.gold : null;
+}
+
+function Perched({ k }: { k: number }) {
+  const edge = useEdge();
+  const box = { position: 'absolute' as const, left: PERCH.x * k, top: PERCH.y * k, width: PERCH.w * k, height: PERCH.h * k };
+  return (
+    <>
+      {edge &&
+        EDGE.map(([dx, dy], i) => (
+          <Image
+            key={i}
+            source={PERCHED}
+            style={[box, { tintColor: edge, opacity: EDGE_OPACITY, transform: [{ translateX: dx * EDGE_DP }, { translateY: dy * EDGE_DP }] }]}
+          />
+        ))}
+      <Image source={PERCHED} style={box} />
+    </>
+  );
+}
 
 /** The wordmark with the dove on the R. `width` is the wordmark's width in dp;
  *  the dove sits above that box (0.36 of the width), outside its layout. */
@@ -30,12 +60,17 @@ export function DoveMark({ width, perched = true }: { width: number; perched?: b
   return (
     <View style={{ width, height: WORD.h * k }} accessible accessibilityRole="image" accessibilityLabel="EZER">
       <Image source={WORDMARK} style={{ width, height: WORD.h * k, tintColor: colors.ink }} />
-      {perched && (
-        <Image
-          source={PERCHED}
-          style={{ position: 'absolute', left: PERCH.x * k, top: PERCH.y * k, width: PERCH.w * k, height: PERCH.h * k }}
-        />
-      )}
+      {perched && <Perched k={k} />}
+    </View>
+  );
+}
+
+/** The tab headers' mark: DoveMark plus room for the dove above and to the right of the word. */
+export function HeaderDoveMark({ width = 56 }: { width?: number }) {
+  const k = width / WORD.w;
+  return (
+    <View style={{ marginTop: Math.ceil(-PERCH.y * k), marginRight: Math.ceil((PERCH.x + PERCH.w - WORD.w) * k) }}>
+      <DoveMark width={width} />
     </View>
   );
 }
@@ -46,7 +81,8 @@ export function DoveMark({ width, perched = true }: { width: number; perched?: b
  * The wordmark's own opacity is the caller's (LockGate's existing fade).
  */
 export function DoveFlight({ width, duration }: { width: number; duration: number }) {
-  const reduced = useReduceMotion();
+  const reduced = useReducedMotion();
+  const edge = useEdge();
   const k = width / WORD.w;
   const f = useSharedValue(0);
   useEffect(() => {
@@ -65,22 +101,22 @@ export function DoveFlight({ width, duration }: { width: number; duration: numbe
 
   // Reduced motion: no travel, the dove is simply there.
   if (reduced) {
-    return (
-      <Image
-        source={PERCHED}
-        style={{ position: 'absolute', left: PERCH.x * k, top: PERCH.y * k, width: PERCH.w * k, height: PERCH.h * k }}
-      />
-    );
+    return <Perched k={k} />;
   }
+  const size = { width: CELL.w * CELL.cols * k, height: CELL.h * CELL.rows * k };
+  // Cells carry a 2px transparent margin, so the edge copies stay inside them.
   return (
     <Animated.View
       pointerEvents="none"
       style={[{ position: 'absolute', left: 0, top: 0, width: CELL.w * k, height: CELL.h * k, overflow: 'hidden' }, box]}
     >
-      <Animated.Image
-        source={SHEET}
-        style={[{ width: CELL.w * CELL.cols * k, height: CELL.h * CELL.rows * k }, sheet]}
-      />
+      {edge &&
+        EDGE.map(([dx, dy], i) => (
+          <Animated.View key={i} style={{ position: 'absolute', left: dx * EDGE_DP, top: dy * EDGE_DP, opacity: EDGE_OPACITY }}>
+            <Animated.Image source={SHEET} style={[size, { tintColor: edge }, sheet]} />
+          </Animated.View>
+        ))}
+      <Animated.Image source={SHEET} style={[size, sheet]} />
     </Animated.View>
   );
 }
