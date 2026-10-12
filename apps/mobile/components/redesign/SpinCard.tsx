@@ -502,12 +502,17 @@ export function SpinCard({ front, back, style, onTap, onDragChange, hint = 'Drag
   // target is written into rxVal/ryVal up front: once the settle finishes that
   // IS the value, and the gesture handlers are the only other writers — so the
   // mirrors stay exact with no per-frame listener.
+  // `settling` is true while that settle runs; a drag that grabs the card
+  // mid-settle stops it (see onHandlerStateChange) and `stopped` resolves once
+  // the stop point has been read back into rxVal/ryVal.
+  const settling = useRef(false);
+  const stopped = useRef<Promise<void> | null>(null);
   const settle = useCallback(() => {
     const snap = (v: number) => Math.round(v / 180) * 180;
     const [c0, c1, c2, c3] = motion.cardSettleBezier;
     ryVal.current = snap(ryVal.current);
     rxVal.current = snap(rxVal.current);
-    Animated.parallel([
+    const run = Animated.parallel([
       Animated.timing(ry, {
         toValue: ryVal.current,
         duration: motion.cardSettle,
@@ -520,7 +525,18 @@ export function SpinCard({ front, back, style, onTap, onDragChange, hint = 'Drag
         easing: Easing.bezier(c0, c1, c2, c3),
         useNativeDriver: true,
       }),
-    ]).start();
+    ]) as unknown as { start(cb: Animated.EndCallback, isLooping: boolean): void };
+    // isLooping=true (RN's own, untyped second argument; re-check
+    // Animation.js on an RN upgrade): without it, the end or stop of a native
+    // animation runs update() on every AnimatedProps under rx/ry, which on
+    // Fabric re-renders all 27 layers through React 900ms after each release,
+    // landing in the middle of the next drag. The JS values still sync.
+    // The flag is set AFTER start(): start() stops a previous run, whose end
+    // callback (synchronous) clears it.
+    run.start(() => {
+      settling.current = false;
+    }, true);
+    settling.current = true;
   }, [rx, ry]);
 
   const panResponder = useMemo(
@@ -592,21 +608,55 @@ export function SpinCard({ front, back, style, onTap, onDragChange, hint = 'Drag
       // noticeable under a rotation): the first drag after opening the tab
       // did not rotate until release, then jumped — frame capture, Oct 2026
       // — and the float freeze was the only JS that ran only on that drag.
+      // ACTIVE makes two native-module calls, and only when a settle is still
+      // running: left alone, the settle kept driving all 25 layers alongside
+      // the finger, two full passes a frame, which halved the frame rate of
+      // any drag that grabbed the card within 900ms of the last release.
+      if (state === State.ACTIVE) {
+        if (!settling.current) return;
+        settling.current = false;
+        stopped.current = new Promise<void>(done => {
+          let left = 2;
+          const keep = (m: { current: number }) => (v: number) => {
+            m.current = v;
+            if (--left === 0) done();
+          };
+          ry.stopAnimation(keep(ryVal));
+          rx.stopAnimation(keep(rxVal));
+        });
+        return;
+      }
       if (state !== State.END && state !== State.CANCELLED && state !== State.FAILED) return;
-      freezeFloat();
-      // Fold the drag into the base in one batch, so base + translation is
-      // unchanged on screen: no jump between the gesture and the settle.
-      ryVal.current += translationX * motion.cardRotatePerPx;
-      rxVal.current -= translationY * motion.cardRotatePerPx;
-      ry.setValue(ryVal.current);
-      rx.setValue(rxVal.current);
-      tx.setValue(0);
-      ty.setValue(0);
-      if (state !== State.CANCELLED && Math.hypot(translationX, translationY) < motion.cardTapSlop) {
+      const tap = state !== State.CANCELLED && Math.hypot(translationX, translationY) < motion.cardTapSlop;
+      // A tap during a settle leaves it running: setValue over a running
+      // native animation is rewound to the stop point when the stop callback
+      // arrives, and onTap's re-render would then mount that stale pose.
+      if (tap && settling.current) {
+        freezeFloat();
         onTap?.();
         return;
       }
-      settle();
+      const release = () => {
+        freezeFloat();
+        // Fold the drag into the base in one batch, so base + translation is
+        // unchanged on screen: no jump between the gesture and the settle.
+        ryVal.current += translationX * motion.cardRotatePerPx;
+        rxVal.current -= translationY * motion.cardRotatePerPx;
+        ry.setValue(ryVal.current);
+        rx.setValue(rxVal.current);
+        tx.setValue(0);
+        ty.setValue(0);
+        if (tap) {
+          onTap?.();
+          return;
+        }
+        settle();
+      };
+      // A drag that stopped a settle folds from the read-back stop point.
+      const pending = stopped.current;
+      stopped.current = null;
+      if (pending) void pending.then(release);
+      else release();
     },
     [freezeFloat, onTap, rx, ry, tx, ty, settle]
   );
