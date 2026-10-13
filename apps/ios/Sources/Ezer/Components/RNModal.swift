@@ -88,10 +88,7 @@ private struct ModalPresenter: UIViewControllerRepresentable {
                 host.modalTransitionStyle = animationType == .fade ? .crossDissolve : .coverVertical
                 coord.host = host
                 let animated = animationType != .none
-                onNextRunLoop {
-                    guard coord.host === host, let top = Self.topController(from: anchor) else { return }
-                    top.present(host, animated: animated)
-                }
+                onNextRunLoop { Self.present(host, coord: coord, anchor: anchor, animated: animated, tries: 0) }
             }
         } else if let host = coord.host {
             coord.host = nil
@@ -109,8 +106,41 @@ private struct ModalPresenter: UIViewControllerRepresentable {
         }
     }
 
+    /// Presents `host` once UIKit can take it. A bare `present` is silently dropped (one console
+    /// line, no callback) while the top controller is mid-transition: re-opening the Wallet's
+    /// range picker right after closing it found the old sheet still being dismissed, the new
+    /// one never appeared, `isPresented` stayed true, and every further tap on Custom was a no-op
+    /// (Oct 2026, "takes multiple clicks"). So: wait out a transition, then verify, and retry
+    /// (every 50 ms, up to ~2 s) until the host is really up or no longer wanted.
+    private static func present(_ host: OverlayHostingController<AnyView>, coord: Coordinator,
+                                anchor: UIViewController, animated: Bool, tries: Int) {
+        guard coord.host === host, host.presentingViewController == nil else { return }
+        let retry = {
+            guard tries < 40 else { return }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                MainActor.assumeIsolated {
+                    present(host, coord: coord, anchor: anchor, animated: animated, tries: tries + 1)
+                }
+            }
+        }
+        guard let top = topController(from: anchor),
+              top.presentedViewController == nil, // one still being dismissed
+              !top.isBeingPresented, !top.isBeingDismissed, top.transitionCoordinator == nil
+        else { return retry() }
+        top.present(host, animated: animated)
+        // Dropped without a word if UIKit refused it: check, and go again.
+        onNextRunLoop {
+            if coord.host === host, host.presentingViewController == nil { retry() }
+        }
+    }
+
     private static func topController(from anchor: UIViewController) -> UIViewController? {
-        var top = anchor.view.window?.rootViewController
+        // The anchor's window, or (a frozen/hidden tab can be detached) the app's main window.
+        let window = anchor.view.window ?? UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .flatMap(\.windows)
+            .first { $0.windowLevel == .normal && !$0.isHidden && $0.rootViewController != nil }
+        var top = window?.rootViewController
         while let p = top?.presentedViewController, !p.isBeingDismissed { top = p }
         return top
     }

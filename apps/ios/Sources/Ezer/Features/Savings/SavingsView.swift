@@ -48,12 +48,14 @@ struct SavingsView: View {
             .padding(.horizontal, Layout.screenX)
             .padding(.bottom, insets.bottom + Layout.tabBottom)
             .tabMark()
+            // RN: an invisible RefreshControl (refreshing={false}, transparent tint). The pull only
+            // starts the refresh; the camera dove below is what shows the wait. `.refreshable` drew
+            // the system spinner circle instead, which the owner reported (Oct 13 2026).
+            .pullToRefresh { Task { await savings.refresh() } }
         }
         .scrollIndicators(.hidden)
-        // RefreshControl refreshing={isLoading} onRefresh={refresh} tintColor={colors.mut}.
-        // TODO(native): SwiftUI's refresh spinner can't take a tint or be shown for a refresh the
-        // user didn't pull (RN shows it whenever isLoading is true).
-        .refreshable { await savings.refresh() }
+        // The one loader: any savings refresh (pulled or not) flies the camera dove.
+        .cameraDove(savings.isLoading)
         .rnScreen()
         .background(c.bg.ignoresSafeArea())
         .background {

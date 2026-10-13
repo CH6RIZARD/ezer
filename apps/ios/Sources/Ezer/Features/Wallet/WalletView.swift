@@ -431,6 +431,16 @@ struct WalletView: View {
         return hit.map { sum($0.b) }
     }
 
+    /// The Custom chip. The picker is a full-screen modal, so while it is really on screen the chip
+    /// cannot be tapped: a tap that finds `pickOpen` already true means the presentation never
+    /// showed (or was torn down without onClose). Re-present instead of the old no-op
+    /// `pickOpen = true`, which left every further tap dead.
+    private func openPicker() {
+        guard pickOpen else { pickOpen = true; return }
+        pickOpen = false
+        onNextRunLoop { pickOpen = true }
+    }
+
     /// Picker closed. Only a complete range changes anything — one update, after the sheet has
     /// already left the screen.
     private func onPickClose(_ r: (start: Date, end: Date)?) {
@@ -567,7 +577,7 @@ struct WalletView: View {
                         // Custom only OPENS the picker. The preset (and so the numbers) change
                         // when a complete range is applied — never to a half-picked one, which
                         // used to fall back to "This month" and swap the totals mid-pick.
-                        if key == .custom { pickOpen = true } else { preset = key }
+                        if key == .custom { openPicker() } else { preset = key }
                     }) {
                         Text(label)
                             .font(.custom(FontFamily.bold, size: 11))
@@ -588,6 +598,10 @@ struct WalletView: View {
             .padding(.horizontal, Layout.screenX)
         }
         .scrollIndicators(.hidden)
+        // A horizontal ScrollView bounces even when its content fits, so a tap that drifted a few
+        // points became a pan and cancelled the chip's Button: Custom "taking multiple clicks"
+        // (Oct 13 2026). Only scroll when the chips actually overflow.
+        .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
         .padding(.top, 20)
         // Bleed to the screen edges so a scrolled row runs under the page padding instead of
         // being clipped at it; the content pads itself back.

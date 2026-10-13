@@ -65,6 +65,12 @@ private struct CoverImage: View {
     let width: CGFloat
     let height: CGFloat
     var tint: Color?
+    /// RN resizeMode 'stretch': the image fills the box exactly. Sprite sheets need it: a sheet's
+    /// pixel cell and its point cell differ in aspect by up to 0.5% (P1's loop: 204x175 px vs
+    /// 370x319 word units), and 'cover' then crops the sheet centrally, shifting the outer columns'
+    /// cells by up to ~5% of a cell, enough for a neighbouring frame's wing to show at the window's
+    /// edge.
+    var stretch = false
 
     var body: some View {
         if let image {
@@ -75,7 +81,8 @@ private struct CoverImage: View {
                     Image(uiImage: image).renderingMode(.original).resizable()
                 }
             }
-            .aspectRatio(contentMode: .fill)
+            // An explicit ratio equal to the box's makes the image fill it exactly (stretch).
+            .aspectRatio(stretch && height > 0 ? width / height : nil, contentMode: .fill)
             .frame(width: width, height: height)
             .clipped()
         } else {
@@ -137,13 +144,13 @@ struct SpriteCell: View {
         ZStack(alignment: .topLeading) {
             if let edge {
                 ForEach(0..<EDGE.count, id: \.self) { e in
-                    CoverImage(image: image, width: sheetW, height: sheetH, tint: edge)
+                    CoverImage(image: image, width: sheetW, height: sheetH, tint: edge, stretch: true)
                         .offset(x: sx, y: sy)
                         .offset(x: EDGE[e].0 * EDGE_DP, y: EDGE[e].1 * EDGE_DP)
                         .opacity(EDGE_OPACITY)
                 }
             }
-            CoverImage(image: image, width: sheetW, height: sheetH)
+            CoverImage(image: image, width: sheetW, height: sheetH, stretch: true)
                 .offset(x: sx, y: sy)
         }
         .frame(width: cellW, height: cellH, alignment: .topLeading)

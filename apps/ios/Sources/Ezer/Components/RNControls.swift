@@ -8,7 +8,9 @@
 //   RNSwitch(isOn: $on, trackColorFalse: c.line2, trackColorTrue: c.accInk, thumbColor: nil)
 //       RN Switch: a UISwitch (onTintColor = trackColor.true, tintColor = trackColor.false; the off
 //       track is painted only by `iosBackgroundColor:` = RN ios_backgroundColor).
-//   RNActivityIndicator(color: c.gold)  /  RNActivityIndicator(color: c.gold, large: true)
+//   scrollContent.pullToRefresh { Task { await store.refresh() } }
+//       RN RefreshControl with refreshing={false} and transparent tint: the pull only triggers the
+//       refresh; the camera dove is the loader (there are no spinners, CLAUDE.md "The one loader").
 
 import SwiftUI
 import UIKit
@@ -106,15 +108,56 @@ struct RNSwitch: UIViewRepresentable {
     }
 }
 
-/// RN `<ActivityIndicator color size>`: 'small' (default) / 'large'.
-struct RNActivityIndicator: View {
-    var color: Color
-    var large = false
+/// Pull-to-refresh with NO visible spinner. SwiftUI's `.refreshable` always draws the system
+/// UIRefreshControl circle (the owner saw "only circles" on Savings, Oct 13 2026) and holds the
+/// content down until the refresh returns. This installs our own UIRefreshControl on the enclosing
+/// UIScrollView, tinted clear, that ends at once (RN refreshing={false}) and calls `action`; the
+/// screen registers the camera dove for the wait itself (`.cameraDove(store.isLoading)`).
+/// Put it on the ScrollView's CONTENT, so its probe view is inside the UIScrollView.
+private struct InvisibleRefresh: UIViewRepresentable {
+    let action: () -> Void
 
-    var body: some View {
-        ProgressView()
-            .progressViewStyle(.circular)
-            .tint(color)
-            .controlSize(large ? .large : .regular)
+    final class Coordinator: NSObject {
+        var action: () -> Void = {}
+        weak var control: UIRefreshControl?
+        @objc func changed(_ c: UIRefreshControl) {
+            c.endRefreshing()
+            action()
+        }
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    func makeUIView(context: Context) -> UIView {
+        let v = UIView(frame: .zero)
+        v.isUserInteractionEnabled = false
+        v.isHidden = true
+        return v
+    }
+
+    func updateUIView(_ v: UIView, context: Context) {
+        let coord = context.coordinator
+        coord.action = action
+        guard coord.control == nil else { return }
+        // Not in the hierarchy yet on the first update: attach on the next run loop.
+        DispatchQueue.main.async {
+            guard coord.control == nil else { return }
+            var s = v.superview
+            while let cur = s, !(cur is UIScrollView) { s = cur.superview }
+            guard let scroll = s as? UIScrollView else { return }
+            let rc = UIRefreshControl()
+            rc.tintColor = .clear
+            rc.backgroundColor = .clear
+            rc.addTarget(coord, action: #selector(Coordinator.changed(_:)), for: .valueChanged)
+            scroll.refreshControl = rc
+            coord.control = rc
+        }
+    }
+}
+
+extension View {
+    /// Invisible pull-to-refresh (see InvisibleRefresh). Apply to the ScrollView's content.
+    func pullToRefresh(_ action: @escaping () -> Void) -> some View {
+        background(InvisibleRefresh(action: action).frame(width: 0, height: 0))
     }
 }

@@ -143,9 +143,14 @@ private let TAB_MARK_TOP: CGFloat = 10 + 26 * 984 / 1000 - TAB_MARK_W * DoveFram
  *  with it). */
 struct TabMark: View {
     @Environment(\.safeInsets) private var insets
+    @Environment(\.lockOpen) private var lockOpen
 
     var body: some View {
-        DoveMark(width: TAB_MARK_W)
+        // No perched dove while the lock is up: P1 flies into the camera WHILE the lock lifts and
+        // this tab shows through, and the owner saw two doves at once (Oct 13 2026). Exactly one
+        // dove on screen: this one lands (fades in) once P1 is in the camera and the lock is open.
+        DoveMark(width: TAB_MARK_W, perched: lockOpen)
+            .animation(.rn(.easeOut, 200), value: lockOpen)
             .padding(.top, insets.top + TAB_MARK_TOP)
             .padding(.trailing, Layout.screenX)
             .allowsHitTesting(false)

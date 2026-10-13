@@ -99,6 +99,15 @@ final class CameraDoveCenter {
     func setLockOpen(_ open: Bool) {
         guard open != lockOpen else { return }
         lockOpen = open
+        // The lock just opened (P1 has gone into the camera) with something
+        // still loading: come straight back out, no 300 ms wait, so it reads as
+        // the same bird ducking in and out.
+        if open, want, run == nil {
+            timer?.cancel()
+            timer = nil
+            start()
+            return
+        }
         update()
     }
 
