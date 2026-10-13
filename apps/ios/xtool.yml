@@ -1,0 +1,13 @@
+version: 1
+# Keep this bundle ID: it is the one xtool generated, and a free Apple ID can only
+# register 10 app IDs a week. On the phone it is installed as XTL-<id>.com.example.Ezer.
+bundleID: com.example.Ezer
+# Merged over xtool's generated Info.plist (display name, orientation, file sharing...).
+infoPath: Info.plist
+# Copied to the .app root; xtool sets CFBundleIconFile=AppIcon from it.
+iconPath: AppIcon/AppIcon.png
+# Copied as-is to the .app root (Bundle.main). The 60x60 files back the
+# CFBundleIcons entry in Info.plist, the way pre-asset-catalog apps shipped icons.
+resources:
+- AppIcon/AppIcon60x60@2x.png
+- AppIcon/AppIcon60x60@3x.png
