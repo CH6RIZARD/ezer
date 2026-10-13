@@ -147,6 +147,33 @@ style problem.
   `drained` (that is the previous range's figure). Don't move the picker
   back into the page or lift its picking state into `WalletScreen`. The
   SwiftUI port (`Features/Wallet/`) follows the same rule.
+- **The Custom chip opens the picker with `calRef.current?.open()`, and the
+  sheet animates with core Animated (native driver), not Reanimated.**
+  "Takes like 10 taps to open" (Oct 12 2026): the sheet's Reanimated styles
+  inside the freshly mounted Modal kept their first-render value (p=0: scrim
+  transparent, sheet below the screen) because the entrance was started in
+  an effect before the Modal's views were attached; on web this reproduces
+  every time, on a phone it was a race. The result was an invisible
+  full-screen Modal whose scrim ate the next tap. Also: a second tap during
+  the open landed on the new scrim and closed it (reproduced on web with the
+  old code), and a tap during the exit was a no-op `setPickOpen(true)`. Now
+  the entrance starts from the sheet's own `onLayout`, the scrim ignores taps
+  for `IN_MS` after the entrance starts, and opening renders only the
+  picker, not the whole Wallet. Don't go back to an `open` prop, a Reanimated
+  entrance, or starting it from an effect. Swift: the same scrim guard
+  (`shownAt` in `RangeCalendar.swift`).
+- **Wallet card switches must be cache hits** (Oct 12 2026, "4 secs to show
+  the numbers"). Measured on web against a mock API that answers one request
+  at a time: a swipe made before the prefetch finished took 3.7s, because the
+  active card's request was a DUPLICATE of a prefetch still running and was
+  queued behind all nine. Now `fetchBreakdown` shares one in-flight request
+  per (card, days) key, the prefetch sends the range ON SCREEN for every card
+  first (a custom range too, re-run whenever the range changes) and the other
+  presets after that, and the index commits when the scroll crosses the
+  midpoint between cards (`handleScroll`, both platforms), not after the
+  glide ends. Result: 90-240ms. "Where it goes" rows are memoized
+  (`MerchantRow`; Swift `WalletMerchantRow`.equatable()). Don't drop the
+  in-flight sharing, and don't put the prefetch back in card × preset order.
 - **The build needs devDependencies** (prisma CLI, typescript). Railway's
   `NODE_ENV=production` makes `pnpm install` skip them, which shows up as
   "spawn prisma EACCES". That's why `railway.json`'s buildCommand installs

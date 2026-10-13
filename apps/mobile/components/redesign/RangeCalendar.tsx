@@ -20,17 +20,27 @@
 //  - The footer total comes from `quote` (which warms the Wallet's breakdown
 //    cache), never from the Wallet's on-screen total: that was the PREVIOUS
 //    range's figure sitting next to the new dates.
+//  - "Takes like 10 taps to open" (owner, Oct 12 2026). The scrim and sheet
+//    were Reanimated animated styles inside this freshly mounted Modal, and
+//    their entrance was started in an effect before the Modal's views were
+//    up. Those views kept the style they were FIRST rendered with (p=0: scrim
+//    opacity 0, sheet one height below the screen) and never received an
+//    update; on web this reproduces every time, on a phone it is a race with
+//    how fast the Modal window mounts. Result: a mounted, INVISIBLE,
+//    full-screen Modal whose scrim ate the next tap (closing it), then the
+//    next tap reopened it, invisible again unless the race went the other
+//    way. Now: core Animated with the native driver (the AppAlertHost
+//    pattern, reliable in a Modal), the entrance starts from the sheet's own
+//    onLayout (its views provably exist), open() is imperative (`ref.open()`)
+//    so a tap re-renders only this component and a tap during the exit
+//    re-opens instead of being a no-op on a `pickOpen` still true, and the
+//    scrim ignores taps for IN_MS after the entrance starts so an impatient
+//    second tap can't close what the first just opened. Don't move this back
+//    to Reanimated, start the entrance from an effect, or add an `open` prop.
 // =============================================================================
 
-import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { View, Text, Pressable, Modal, StyleSheet, type LayoutChangeEvent } from 'react-native';
-import Animated, {
-  Easing,
-  useAnimatedStyle,
-  useSharedValue,
-  withTiming,
-} from 'react-native-reanimated';
-import { scheduleOnRN } from 'react-native-worklets';
+import React, { memo, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
+import { View, Text, Pressable, Modal, StyleSheet, Animated, Easing, type LayoutChangeEvent } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../utils/ThemeContext';
@@ -97,14 +107,16 @@ const DayCell = memo(function DayCell({
   );
 });
 
+export type RangeCalendarHandle = { open: () => void };
+
 export function RangeCalendar({
-  open,
+  ref,
   initialStart,
   initialEnd,
   quote,
   onClose,
 }: {
-  open: boolean;
+  ref?: React.Ref<RangeCalendarHandle>;
   /** The range already applied, if any; the picker starts from it. */
   initialStart: Date | null;
   initialEnd: Date | null;
@@ -119,29 +131,52 @@ export function RangeCalendar({
   const insets = useSafeAreaInsets();
   const reduce = useReduceMotion();
 
-  const [mounted, setMounted] = useState(open);
+  const [mounted, setMounted] = useState(false);
   const [start, setStart] = useState<Date | null>(null);
   const [end, setEnd] = useState<Date | null>(null);
   const [offset, setOffset] = useState(0);
   const [quoted, setQuoted] = useState<{ key: string; cents: number } | null>(null);
 
-  const p = useSharedValue(0);
-  const sheetH = useSharedValue(600);
+  // Core Animated + native driver, NOT Reanimated: see the header.
+  const p = useRef(new Animated.Value(0)).current;
+  const sheetH = useRef(new Animated.Value(600)).current;
+  const sheetY = useRef(Animated.multiply(Animated.subtract(1, p), sheetH)).current;
   const closing = useRef(false);
+  /** When the entrance last started; the scrim ignores taps for IN_MS after. */
+  const shownAt = useRef(0);
+  /** Up (mounted) right now, and an entrance waiting for the sheet's layout. */
+  const up = useRef(false);
+  const wantIn = useRef(false);
+  const slideIn = () => {
+    wantIn.current = false;
+    shownAt.current = Date.now();
+    // From the CURRENT p: a re-open mid-exit turns around instead of jumping.
+    Animated.timing(p, { toValue: 1, duration: IN_MS, easing: EASE_SHEET, useNativeDriver: true }).start();
+  };
+  const initial = useRef({ s: initialStart, e: initialEnd });
+  initial.current = { s: initialStart, e: initialEnd };
 
-  // Open: seed from the applied range and slide in.
-  useEffect(() => {
-    if (!open) return;
-    closing.current = false;
-    setStart(initialStart);
-    setEnd(initialEnd);
-    setOffset(initialEnd ? monthOffset(initialEnd) : 0);
-    setMounted(true);
-    p.set(0);
-    p.set(withTiming(1, { duration: IN_MS, easing: EASE_SHEET }));
-    // Seed only on the open edge, not when the parent re-renders.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open]);
+  // Open: seed from the applied range. Every call opens, including one made
+  // while the exit is still running (that exit is cancelled, see finish).
+  useImperativeHandle(
+    ref,
+    () => ({
+      open: () => {
+        closing.current = false;
+        const { s, e } = initial.current;
+        setStart(s);
+        setEnd(e);
+        setOffset(e ? monthOffset(e) : 0);
+        if (up.current) slideIn(); // still on screen (exiting): turn around now
+        else {
+          up.current = true;
+          wantIn.current = true; // onSheetLayout starts it
+          setMounted(true);
+        }
+      },
+    }),
+    []
+  );
 
   // Footer total for a complete range. Keyed so a late answer for an older
   // pick can never land next to newer dates.
@@ -186,6 +221,9 @@ export function RangeCalendar({
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
   const finish = useCallback(() => {
+    // Re-opened during the exit: stay up, change nothing.
+    if (!closing.current) return;
+    up.current = false;
     setMounted(false);
     onCloseRef.current(pending.current);
   }, []);
@@ -198,10 +236,11 @@ export function RangeCalendar({
     pending.current = apply && s && e ? { start: s, end: e } : null;
     // The Wallet applies the range only once the sheet is gone, so its
     // re-render never competes with the exit and the total rolls in view.
-    p.set(
-      withTiming(0, { duration: OUT_MS, easing: EASE_OUT }, finished => {
-        if (finished) scheduleOnRN(finish);
-      })
+    // A re-open mid-exit stops this timing: finished=false, finish skipped.
+    Animated.timing(p, { toValue: 0, duration: OUT_MS, easing: EASE_OUT, useNativeDriver: true }).start(
+      ({ finished }) => {
+        if (finished) finish();
+      }
     );
   };
 
@@ -235,20 +274,26 @@ export function RangeCalendar({
         quoted && quoted.key === rangeKey ? ` · ${formatCents(quoted.cents)} drained` : ''
       }`;
 
-  const scrimStyle = useAnimatedStyle(() => ({ opacity: p.get() }));
-  const sheetStyle = useAnimatedStyle(() =>
-    reduce
-      ? { opacity: p.get() }
-      : { transform: [{ translateY: (1 - p.get()) * sheetH.get() }] }
-  );
-  const onSheetLayout = (e: LayoutChangeEvent) => sheetH.set(e.nativeEvent.layout.height);
+  const scrimStyle = { opacity: p };
+  const sheetStyle = reduce ? { opacity: p } : { transform: [{ translateY: sheetY }] };
+  const onSheetLayout = (e: LayoutChangeEvent) => {
+    sheetH.setValue(e.nativeEvent.layout.height);
+    // The sheet's views exist natively now, so the animation can reach them.
+    if (wantIn.current) slideIn();
+  };
+  // A second tap on the chip (made while a slow phone was still mounting the
+  // sheet) lands here; it must not close what it just asked to open.
+  const onScrim = () => {
+    if (Date.now() - shownAt.current < IN_MS) return;
+    close(false);
+  };
 
   if (!mounted) return null;
 
   return (
     <Modal visible transparent animationType="none" statusBarTranslucent onRequestClose={() => close(false)}>
       <Animated.View style={[StyleSheet.absoluteFill, { backgroundColor: colors.scrim }, scrimStyle]}>
-        <Pressable style={StyleSheet.absoluteFill} onPress={() => close(false)} />
+        <Pressable style={StyleSheet.absoluteFill} onPress={onScrim} />
       </Animated.View>
       <View style={styles.sheetWrap} pointerEvents="box-none">
         <Animated.View

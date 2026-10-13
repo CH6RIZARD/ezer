@@ -51,7 +51,7 @@ import { brandSkin } from '../../utils/cardArt/color';
 import { resolveCardArt } from '../../utils/cardArt/resolver';
 import { useCardArtPrefs } from '../../utils/cardArt/useCardArtPrefs';
 import type { CardArtFallback, CardArtInput } from '../../utils/cardArt/types';
-import RangeCalendar from '../../components/redesign/RangeCalendar';
+import RangeCalendar, { type RangeCalendarHandle } from '../../components/redesign/RangeCalendar';
 // Only the date-range helper is still used here — the charge expansion in that
 // module reads bundled demo subscriptions, and every figure on this screen now
 // comes from the API instead.
@@ -177,6 +177,56 @@ const BANK_CARD_SKINS = [
  * see that file for the full ordering and why.
  */
 
+/**
+ * One "Where it goes" row. Memoized on primitives: a card swipe re-renders
+ * the Wallet (index, dots, totals), and before this every row's PressScale,
+ * MerchantMark and texts re-rendered with it even when its numbers were the
+ * same — on a slow phone that was a visible part of the switch.
+ */
+const MerchantRow = React.memo(function MerchantRow({
+  merchantId,
+  merchantName,
+  count,
+  totalCents,
+  subscriptionId,
+  ink,
+  mut,
+  red,
+}: {
+  merchantId: string;
+  merchantName: string;
+  count: number;
+  totalCents: number;
+  subscriptionId: string | null;
+  ink: string;
+  mut: string;
+  red: string;
+}) {
+  return (
+    <PressScale
+      onPress={() => {
+        // No active/trial Subscription row for this merchant — e.g. it was
+        // since cancelled. Nothing to open rather than a 404.
+        if (!subscriptionId) return;
+        router.push({ pathname: '/screens/SubscriptionDetail', params: { id: subscriptionId } });
+      }}
+    >
+      <Surface style={styles.row}>
+        <MerchantMark name={merchantName} merchantId={merchantId} size={40} />
+        <View style={{ flex: 1 }}>
+          <Text style={[styles.rowName, { color: ink }]} numberOfLines={1}>
+            {merchantName}
+          </Text>
+          <Text style={[styles.rowMeta, { color: mut }]}>
+            {count} charge{count === 1 ? '' : 's'} in range
+          </Text>
+        </View>
+        <Text style={[styles.rowAmount, { color: red }]}>{formatCents(totalCents)}</Text>
+      </Surface>
+    </PressScale>
+  );
+});
+
 export default function WalletScreen() {
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
@@ -188,7 +238,8 @@ export default function WalletScreen() {
 
   const [index, setIndex] = useState(0);
   const [preset, setPreset] = useState<RangePreset>('thisMonth');
-  const [pickOpen, setPickOpen] = useState(false);
+  // Imperative, not a pickOpen state: see RangeCalendar's header (10-tap bug).
+  const calRef = useRef<RangeCalendarHandle>(null);
   const [rStart, setRStart] = useState<Date | null>(null);
   const [rEnd, setREnd] = useState<Date | null>(null);
 
@@ -333,44 +384,60 @@ export default function WalletScreen() {
   const keyFor = (cardId: string, r: { start: Date; end: Date }) =>
     `${cardId}|${dayKey(r.start)}|${dayKey(r.end)}`;
 
+  // One request per (card, days) at a time. A swipe onto a card whose
+  // prefetch was still in flight used to start a SECOND identical request
+  // and wait for it from scratch, queued behind the other prefetches on the
+  // API: the "4 seconds to show the numbers after switching card" report
+  // (Oct 12 2026). Now it joins the request already running.
+  const inflight = useRef(new Map<string, Promise<Breakdown & { ok: boolean }>>());
   const fetchBreakdown = useCallback(
-    async (cardId: string, r: { start: Date; end: Date }): Promise<Breakdown & { ok: boolean }> => {
-      const { merchants: rows, predicted: predictedRows, ok } = await getMerchants(cardId, 'custom', {
-        startDate: r.start.toISOString(),
-        endDate: r.end.toISOString(),
-      });
-      const b: Breakdown = {
-        merchants: rows.map(m => ({
-          merchantId: m.merchantId,
-          merchantName: m.merchantName,
-          logo: m.logo,
-          totalCents: m.totalDrainedCents,
-          count: m.chargeCount,
-          // The real Subscription id now, not merchantId standing in for
-          // it — GET /subscriptions/:id looks up by the Subscription row's
-          // own primary key, which a merchant id can never match. Every
-          // tap 404'd as "Subscription not found" until the API started
-          // actually resolving and returning this.
-          subscriptionId: m.subscriptionId,
-        })),
-        predicted: predictedRows,
-      };
-      // Only a genuine answer enters the cache. getMerchants swallows network
-      // failures into empty rows; stamping those as fresh would pin "$0 / no
-      // charges" on every tap and swipe for BREAKDOWN_FRESH_MS after the
-      // connection (or a paused API) came back — launched offline, the
-      // prefetch would have warmed every card × preset with nothing.
-      if (ok) {
-        const cache = breakdownCache.current;
-        cache.set(keyFor(cardId, r), { b, at: Date.now() });
-        // ponytail: FIFO eviction via Map insertion order, cap 50; make it LRU
-        // if custom ranges ever churn the cache in one session.
-        while (cache.size > 50) cache.delete(cache.keys().next().value!);
-      }
-      return { ...b, ok };
+    (cardId: string, r: { start: Date; end: Date }): Promise<Breakdown & { ok: boolean }> => {
+      const k = keyFor(cardId, r);
+      const running = inflight.current.get(k);
+      if (running) return running;
+      const req = load(cardId, r).finally(() => inflight.current.delete(k));
+      inflight.current.set(k, req);
+      return req;
     },
+    // keyFor is a stable inline helper.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [getMerchants]
   );
+  async function load(cardId: string, r: { start: Date; end: Date }): Promise<Breakdown & { ok: boolean }> {
+    const { merchants: rows, predicted: predictedRows, ok } = await getMerchants(cardId, 'custom', {
+      startDate: r.start.toISOString(),
+      endDate: r.end.toISOString(),
+    });
+    const b: Breakdown = {
+      merchants: rows.map(m => ({
+        merchantId: m.merchantId,
+        merchantName: m.merchantName,
+        logo: m.logo,
+        totalCents: m.totalDrainedCents,
+        count: m.chargeCount,
+        // The real Subscription id now, not merchantId standing in for
+        // it — GET /subscriptions/:id looks up by the Subscription row's
+        // own primary key, which a merchant id can never match. Every
+        // tap 404'd as "Subscription not found" until the API started
+        // actually resolving and returning this.
+        subscriptionId: m.subscriptionId,
+      })),
+      predicted: predictedRows,
+    };
+    // Only a genuine answer enters the cache. getMerchants swallows network
+    // failures into empty rows; stamping those as fresh would pin "$0 / no
+    // charges" on every tap and swipe for BREAKDOWN_FRESH_MS after the
+    // connection (or a paused API) came back — launched offline, the
+    // prefetch would have warmed every card × preset with nothing.
+    if (ok) {
+      const cache = breakdownCache.current;
+      cache.set(keyFor(cardId, r), { b, at: Date.now() });
+      // ponytail: FIFO eviction via Map insertion order, cap 50; make it LRU
+      // if custom ranges ever churn the cache in one session.
+      while (cache.size > 50) cache.delete(cache.keys().next().value!);
+    }
+    return { ...b, ok };
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -493,22 +560,24 @@ export default function WalletScreen() {
     };
   }, [active?.id, preset, range.start, range.end, fetchBreakdown, retryNonce]);
 
-  // Warm the cache for every card × fixed preset as soon as the cards are
-  // known (2 cards × 3 presets = 6 small requests, once). After this, every
-  // preset tap and every card swipe is a cache hit: the numbers change on
-  // the same frame as the gesture instead of after a round trip. 'custom'
-  // is skipped — its range is whatever the picker says, not known up front.
+  // Warm the cache for every card as soon as the cards are known, and again
+  // for the range on screen whenever it changes (a custom range included).
+  // The range ON SCREEN goes out first for EVERY card, so a swipe is a cache
+  // hit — the numbers change in the same frame as the card — and only then
+  // the other presets, so the requests that matter are not queued behind
+  // ones that might never be looked at. All in parallel; fetchBreakdown
+  // dedupes against the effect above.
   useEffect(() => {
-    for (const c of cards) {
-      for (const p of ['thisMonth', 'lastMonth', 'ytd'] as const) {
-        const r = presetRange(p);
+    const ranges = [range, ...(['thisMonth', 'lastMonth', 'ytd'] as const).map(p => presetRange(p))];
+    for (const r of ranges) {
+      for (const c of cards) {
         if (breakdownCache.current.has(keyFor(c.id, r))) continue;
         void fetchBreakdown(c.id, r).catch(() => {});
       }
     }
-    // keyFor is a stable inline helper; cards/fetchBreakdown are the real inputs.
+    // keyFor is a stable inline helper; cards/fetchBreakdown/range are the real inputs.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cards, fetchBreakdown]);
+  }, [cards, fetchBreakdown, range]);
 
   const drained = merchants.reduce((s, m) => s + m.totalCents, 0);
   // Stable, so RollingNumber (memo) skips the Wallet's unrelated renders.
@@ -539,7 +608,6 @@ export default function WalletScreen() {
   /** Picker closed. Only a complete range changes anything — one batched
    *  render, after the sheet has already left the screen. */
   const onPickClose = useCallback((r: { start: Date; end: Date } | null) => {
-    setPickOpen(false);
     if (!r) return;
     setRStart(r.start);
     setREnd(r.end);
@@ -670,17 +738,21 @@ export default function WalletScreen() {
   };
 
   /**
-   * WEB: the only scroll callback react-native-web forwards, so it is the only
-   * place `index` can be kept in sync. CSS scroll-snap does the snapping, so
-   * this no longer schedules any scrolling of its own.
+   * BOTH platforms: the index commits the moment the scroll position crosses
+   * the midpoint between two cards, not after the glide settles. Waiting for
+   * onMomentumScrollEnd (+100ms) put the whole snap animation between the
+   * swipe and the new card's numbers, part of the "4 seconds to show the
+   * numbers" report (Oct 12 2026). With every card's breakdown prefetched,
+   * the numbers now change while the card is still moving. The settle
+   * commits above stay as the backstop for the final resting card.
    *
    * setIndex only fires when the nearest card actually changes, which is a few
    * times per swipe rather than once per frame — the breakdown below the
    * carousel would otherwise re-render on every scroll event.
    */
-  const handleWebScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+  const handleScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
     const i = nearestIndex(e.nativeEvent.contentOffset.x);
-    if (i !== index) setIndex(i);
+    if (i !== indexRef.current) setIndex(i);
   };
 
   return (
@@ -717,7 +789,7 @@ export default function WalletScreen() {
               gap: CARD_GAP,
               paddingTop: 18,
             }}
-            onScroll={IS_WEB ? handleWebScroll : undefined}
+            onScroll={handleScroll}
             onMomentumScrollBegin={IS_WEB ? undefined : cancelCommit}
             onMomentumScrollEnd={IS_WEB ? undefined : scheduleCommit}
             onScrollEndDrag={IS_WEB ? undefined : scheduleCommit}
@@ -807,7 +879,7 @@ export default function WalletScreen() {
                       // numbers) change when a complete range is applied —
                       // never to a half-picked one, which used to fall back
                       // to "This month" and swap the totals mid-pick.
-                      if (key === 'custom') setPickOpen(true);
+                      if (key === 'custom') calRef.current?.open();
                       else setPreset(key);
                     }}
                   >
@@ -893,34 +965,17 @@ export default function WalletScreen() {
 
             <View style={{ gap: 8 }}>
               {merchants.map(m => (
-                <PressScale
+                <MerchantRow
                   key={m.merchantId}
-                  onPress={() => {
-                    // No active/trial Subscription row for this merchant —
-                    // e.g. it was since cancelled. Nothing to open rather
-                    // than a 404.
-                    if (!m.subscriptionId) return;
-                    router.push({
-                      pathname: '/screens/SubscriptionDetail',
-                      params: { id: m.subscriptionId },
-                    });
-                  }}
-                >
-                  <Surface style={styles.row}>
-                    <MerchantMark name={m.merchantName} merchantId={m.merchantId} size={40} />
-                    <View style={{ flex: 1 }}>
-                      <Text style={[styles.rowName, { color: colors.ink }]} numberOfLines={1}>
-                        {m.merchantName}
-                      </Text>
-                      <Text style={[styles.rowMeta, { color: colors.mut }]}>
-                        {m.count} charge{m.count === 1 ? '' : 's'} in range
-                      </Text>
-                    </View>
-                    <Text style={[styles.rowAmount, { color: colors.red }]}>
-                      {formatCents(m.totalCents)}
-                    </Text>
-                  </Surface>
-                </PressScale>
+                  merchantId={m.merchantId}
+                  merchantName={m.merchantName}
+                  count={m.count}
+                  totalCents={m.totalCents}
+                  subscriptionId={m.subscriptionId}
+                  ink={colors.ink}
+                  mut={colors.mut}
+                  red={colors.red}
+                />
               ))}
 
               {merchants.length === 0 && !breakdownError && (
@@ -945,7 +1000,7 @@ export default function WalletScreen() {
       {/* An overlay sheet, not part of the page: opening or closing it must
           never change the page's height (see RangeCalendar's header). */}
       <RangeCalendar
-        open={pickOpen}
+        ref={calRef}
         initialStart={rStart}
         initialEnd={rEnd}
         quote={quoteRange}
