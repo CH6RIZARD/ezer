@@ -22,6 +22,7 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import { useTheme } from '../utils/ThemeContext';
+import { motion } from '../theme/type';
 import { CELL, PERCH, WORD, XY } from './doveFrames';
 import { HOVER } from './doveHoverFrames';
 
@@ -161,47 +162,87 @@ export function DoveFlight({
   );
 }
 
+const hoverSize = (k: number) => ({ width: HOVER.w * HOVER.cols * k, height: HOVER.h * HOVER.rows * k });
+// Past this the sheet is late: the dove stays perched for the whole wait
+// rather than switching mid-way (a late take-off reads as a freeze then a jump).
+const HOVER_CAP_MS = 200;
+const TAKEOFF_MS = 200;
+const TAKEOFF_EASE = Easing.bezier(...motion.easeOut);
+
+/** The hover sheet, invisible. LockGate mounts it while the keypad is up so
+ *  the sheet is decoded (and in the image cache) before the passcode is
+ *  accepted, and DoveHover can take off on its first frame. */
+export function DoveHoverPreload({ width }: { width: number }) {
+  const reduced = useReducedMotion();
+  if (reduced) return null;
+  // pointerEvents none: it sits over part of the keypad and must not take its taps.
+  return (
+    <View pointerEvents="none" style={{ position: 'absolute', left: 0, top: 0, opacity: 0 }}>
+      <Image source={HOVER_SHEET} style={hoverSize(width / WORD.w)} />
+    </View>
+  );
+}
+
 /**
- * The wait after the passcode: the dove lifts off the R and flaps in place
- * above it (the "hover" loader render, E:\ezer-dove\work\export_hover.py),
- * instead of the still perched mark. Loops while mounted; LockGate mounts it
- * only for that phase. The perched dove shows until the sheet has decoded, so
- * the R is never bare.
+ * The wait after the passcode: the dove takes off from the R and flaps in
+ * place above it (the "hover" loader render, E:\ezer-dove\work\export_hover.py).
+ * Loops while mounted; LockGate mounts it only for that phase.
+ * Take-off: the loop starts on frame 0, the pose closest to the perched dove,
+ * with the cell transformed (HOVER.t0, from the exporter) so that frame sits
+ * exactly over the perched dove, and eases to the hover box over TAKEOFF_MS
+ * while it flaps. So there is no frozen beat and no jump. Until the sheet
+ * decodes the perched dove holds the R (same pose, so the swap is invisible);
+ * if it misses HOVER_CAP_MS it stays perched for the whole phase.
  */
 export function DoveHover({ width }: { width: number }) {
   const reduced = useReducedMotion();
   const edge = useEdge();
   const k = width / WORD.w;
-  const [loaded, setLoaded] = useState(false);
-  const f = useSharedValue(0);
+  const [state, setState] = useState<'wait' | 'fly' | 'perch'>('wait');
   useEffect(() => {
-    if (reduced || !loaded) return;
+    const t = setTimeout(() => setState(s => (s === 'wait' ? 'perch' : s)), HOVER_CAP_MS);
+    return () => clearTimeout(t);
+  }, []);
+  const f = useSharedValue(0);
+  const up = useSharedValue(0);
+  useEffect(() => {
+    if (reduced || state !== 'fly') return;
+    up.value = withTiming(1, { duration: TAKEOFF_MS, easing: TAKEOFF_EASE });
     f.value = withRepeat(withTiming(HOVER.n, { duration: (HOVER.n / HOVER.fps) * 1000, easing: Easing.linear }), -1);
-    return () => cancelAnimation(f);
-  }, [f, reduced, loaded]);
+    return () => {
+      cancelAnimation(f);
+      cancelAnimation(up);
+    };
+  }, [f, up, reduced, state]);
+  const cell = useAnimatedStyle(() => {
+    const r = 1 - up.value;
+    return { transform: [{ translateX: HOVER.t0.x * k * r }, { translateY: HOVER.t0.y * k * r }, { scale: 1 + (HOVER.t0.s - 1) * r }] };
+  });
   const sheet = useAnimatedStyle(() => {
     const i = Math.floor(f.value) % HOVER.n;
     return { transform: [{ translateX: -(i % HOVER.cols) * HOVER.w * k }, { translateY: -Math.floor(i / HOVER.cols) * HOVER.h * k }] };
   });
 
   if (reduced) return <Perched k={k} />;
-  const size = { width: HOVER.w * HOVER.cols * k, height: HOVER.h * HOVER.rows * k };
+  const size = hoverSize(k);
   return (
     <>
-      {!loaded && <Perched k={k} />}
-      <View
-        pointerEvents="none"
-        needsOffscreenAlphaCompositing={!!edge}
-        style={{ position: 'absolute', left: HOVER.x * k, top: HOVER.y * k, width: HOVER.w * k, height: HOVER.h * k, overflow: 'hidden', opacity: loaded ? 1 : 0 }}
-      >
-        {edge &&
-          EDGE.map(([dx, dy], i) => (
-            <View key={i} style={{ position: 'absolute', left: dx * EDGE_DP, top: dy * EDGE_DP, opacity: EDGE_OPACITY }}>
-              <Animated.Image source={HOVER_SHEET} style={[size, { tintColor: edge }, sheet]} />
-            </View>
-          ))}
-        <Animated.Image source={HOVER_SHEET} style={[size, sheet]} onLoad={() => setLoaded(true)} />
-      </View>
+      {state !== 'fly' && <Perched k={k} />}
+      {state !== 'perch' && (
+        <Animated.View
+          pointerEvents="none"
+          needsOffscreenAlphaCompositing={!!edge}
+          style={[{ position: 'absolute', left: HOVER.x * k, top: HOVER.y * k, width: HOVER.w * k, height: HOVER.h * k, overflow: 'hidden', opacity: state === 'fly' ? 1 : 0 }, cell]}
+        >
+          {edge &&
+            EDGE.map(([dx, dy], i) => (
+              <View key={i} style={{ position: 'absolute', left: dx * EDGE_DP, top: dy * EDGE_DP, opacity: EDGE_OPACITY }}>
+                <Animated.Image source={HOVER_SHEET} style={[size, { tintColor: edge }, sheet]} />
+              </View>
+            ))}
+          <Animated.Image source={HOVER_SHEET} style={[size, sheet]} onLoad={() => setState(s => (s === 'wait' ? 'fly' : s))} />
+        </Animated.View>
+      )}
     </>
   );
 }

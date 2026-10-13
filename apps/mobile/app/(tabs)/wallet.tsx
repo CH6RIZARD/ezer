@@ -578,19 +578,20 @@ export default function WalletScreen() {
    * pill's own rendering — the pill was always correct for the index it was
    * given, the index just stopped matching what was on screen.
    *
-   * `index` MUST be in this callback's own dependency array. Leaving it out
-   * (matching it only on `cards.length`) is what broke the first two attempts
-   * at this fix: the callback then only gets recreated when the card COUNT
-   * changes, so after the very first swipe moves `index` away from 0, this
-   * closure keeps the `index` it captured at mount — 0 — forever. Confirmed
-   * on-device via logging: this effect kept scrolling back to card 0 on every
-   * focus, fighting the correct state, while the dots (rendered fresh from
-   * live state every render) correctly showed card 1 active the whole time.
+   * `index` is read through `indexRef`, NOT captured. A captured `index`
+   * with only `cards.length` in the deps kept the value from mount — 0 —
+   * forever (the first two attempts at this fix; confirmed on-device). But
+   * putting `index` in the deps instead made this re-run on EVERY index
+   * commit, i.e. right after each swipe's snap and during a dot's animated
+   * scroll: a second, instant scrollTo on top of the settle — the "jumps
+   * every time I scroll" report (Oct 12 2026). Focus is the only trigger.
    */
+  const indexRef = useRef(index);
+  indexRef.current = index;
   useFocusEffect(
     useCallback(() => {
       if (cards.length === 0) return;
-      const i = Math.min(index, cards.length - 1);
+      const i = Math.min(indexRef.current, cards.length - 1);
       // A single requestAnimationFrame fires before the tab's native surface
       // has actually finished re-attaching after being off-screen, so the
       // very first attempt at this silently no-ops — scrollTo on a ScrollView
@@ -607,7 +608,7 @@ export default function WalletScreen() {
       return () => {
         if (rafRef.current != null) cancelAnimationFrame(rafRef.current);
       };
-    }, [cards.length, index])
+    }, [cards.length])
   );
 
   /**
@@ -650,6 +651,13 @@ export default function WalletScreen() {
     },
     []
   );
+
+  /** Momentum has started: the drag-end's commit would read the RELEASE
+   *  offset mid-glide. Drop it; onMomentumScrollEnd schedules the real one. */
+  const cancelCommit = () => {
+    if (settleTimer.current != null) clearTimeout(settleTimer.current);
+    settleTimer.current = null;
+  };
 
   const scheduleCommit = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
     const offsetX = e.nativeEvent.contentOffset.x;
@@ -710,6 +718,7 @@ export default function WalletScreen() {
               paddingTop: 18,
             }}
             onScroll={IS_WEB ? handleWebScroll : undefined}
+            onMomentumScrollBegin={IS_WEB ? undefined : cancelCommit}
             onMomentumScrollEnd={IS_WEB ? undefined : scheduleCommit}
             onScrollEndDrag={IS_WEB ? undefined : scheduleCommit}
             scrollEventThrottle={16}

@@ -118,6 +118,21 @@ style problem.
   whose chips never shrink (`flexShrink: 0`) — four equal-width chips and
   then four shrinkable ones both clipped "This month"/"Last month" on a 360dp
   phone with a larger system font. Don't put them back in a fixed row.
+- **The Wallet card carousel scrolls exactly once per swipe.** The settle
+  commit (`scheduleCommit`, 100ms quiet clock) only updates `index`; nothing
+  may scroll the carousel in response to an index change. The focus re-assert
+  (`useFocusEffect` in `wallet.tsx`, `WalletFocusKey` in `WalletView.swift`)
+  is keyed on focus + card count ONLY and reads `index` through a ref. When
+  it was keyed on `index` it re-ran after every snap and during every dot's
+  animated scroll, firing a second instant scrollTo: "the screen jumps every
+  time I scroll, it doesn't sit in the same place" (Oct 12 2026, both apps).
+  RN also drops the drag-end commit on `onMomentumScrollBegin`, so a commit
+  never reads the release offset mid-glide. iOS snaps with SwiftUI's own
+  `.viewAligned` + `.scrollTargetLayout()` + `.safeAreaPadding(.horizontal,
+  centerPad)` (every card rests at the same inset, symmetric peeks);
+  `WalletSnapBehavior` only wraps it to learn of drag ends. The old port of
+  RN's `snapToOffsets` maths plus `decelerationRate` UIScrollView poking is
+  gone; don't bring it back.
 - **The Wallet's Custom range picker (`components/redesign/RangeCalendar.tsx`)
   is an overlay sheet with its OWN half-picked state, and applies once.** The
   Custom chip only opens it; `preset`/`rStart`/`rEnd` change in one batch in
@@ -749,6 +764,17 @@ style problem.
   On cream (light mode only) the white dove gets a faint `colors.gold` edge,
   its own silhouette tinted and drawn at 8 offsets behind it, asked for because
   white on cream washed out. Don't drop it as "extra draws"; dark themes skip it.
+- **After the passcode the dove TAKES OFF on the loading phase's first frame
+  (`DoveHover`), never perched-then-pop.** The owner called the old version
+  (still perched until the sheet decoded, then a jump into the loop) uncanny.
+  Three parts, in both apps: the keypad decodes the hover sheet while it is up
+  (`DoveHoverPreload` in LockGate.tsx; `DoveImages.load(.hover)` in
+  LockGate.swift); the loop starts on frame 0, the pose closest to the perched
+  dove, with the cell transformed by `HOVER.t0` (emitted by `export_hover.py`,
+  so frame 0 sits exactly over the perched dove) and eased to identity over
+  200ms while it flaps; if the sheet still isn't ready after 200ms the dove
+  stays perched for the whole wait instead of switching late. Reduced Motion:
+  perched, no flap. Rerun `export_hover.py` after a re-render; don't hand-tune t0.
   The edged dove's container sets `needsOffscreenAlphaCompositing`: without
   it, a fading parent (keypad, lift) faded the 8 gold copies and the white
   dove separately on Android and the gold showed through the dove (owner:

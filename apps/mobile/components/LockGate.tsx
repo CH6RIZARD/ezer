@@ -50,7 +50,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../utils/ThemeContext';
 import { useAuth } from '../utils/AuthContext';
 import { useData } from '../contexts/DataContext';
-import { DoveFlight, DoveHover, DoveMark } from './DoveReveal';
+import { DoveFlight, DoveHover, DoveHoverPreload, DoveMark } from './DoveReveal';
 import PasscodePad from './PasscodePad';
 import PasscodeSetup from './PasscodeSetup';
 import { fontFamily } from '../theme/type';
@@ -420,6 +420,9 @@ export default function LockGate({ children }: { children: React.ReactNode }) {
         </View>
       ) : (
         <Animated.View style={{ flex: 1, opacity: pad }}>
+          {/* Decode the hover sheet now, so the dove takes off on the
+              loading phase's first frame instead of freezing, then popping. */}
+          {phase === 'locked' && <DoveHoverPreload width={bigMark} />}
           {phase === 'setup' ? (
             <PasscodeSetup
               palette={colors}
