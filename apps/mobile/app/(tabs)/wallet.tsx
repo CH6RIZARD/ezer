@@ -853,6 +853,11 @@ export default function WalletScreen() {
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
+              // iOS bounces a horizontal ScrollView even when its content
+              // fits, so a tap that drifted a few points became a drag and
+              // cancelled the chip's press (one of the reasons Custom took
+              // more than one tap). Only scroll when the chips overflow.
+              alwaysBounceHorizontal={false}
               keyboardShouldPersistTaps="handled"
               style={styles.chipScroll}
               contentContainerStyle={styles.chipRow}

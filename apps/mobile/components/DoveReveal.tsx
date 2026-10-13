@@ -370,10 +370,13 @@ function P1Window({
         {edge &&
           EDGE.map(([ex, ey], i) => (
             <View key={i} style={{ position: 'absolute', left: ex * EDGE_DP, top: ey * EDGE_DP, opacity: EDGE_OPACITY }}>
-              <Animated.Image source={c.sheet} style={[size, { tintColor: edge }, slide]} />
+              <Animated.Image source={c.sheet} resizeMode="stretch" style={[size, { tintColor: edge }, slide]} />
             </View>
           ))}
-        <Animated.Image source={c.sheet} style={[size, slide]} onLoad={onLoad} />
+        {/* stretch, not the default cover: the sheet's pixel cell and the window
+            differ in aspect by up to 0.5%, and cover's central crop shifted the outer
+            columns by up to ~5% of a cell, so a neighbouring frame's wing showed. */}
+        <Animated.Image source={c.sheet} resizeMode="stretch" style={[size, slide]} onLoad={onLoad} />
       </Animated.View>
     </View>
   );

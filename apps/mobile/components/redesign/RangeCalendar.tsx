@@ -370,8 +370,11 @@ const styles = StyleSheet.create({
   sheet: {
     borderTopLeftRadius: 26,
     borderTopRightRadius: 26,
-    borderWidth: 1,
-    borderBottomWidth: 0,
+    // Top edge only. The sheet runs to the bottom of the screen (insets.bottom
+    // is padding inside it), so side borders ran into the phone's rounded
+    // display corners and were clipped there ("cut off at the bottom corners",
+    // Oct 13 2026). The top corners' border tapers out along the arcs.
+    borderTopWidth: 1,
     paddingHorizontal: layout.screenX,
     paddingTop: 10,
   },

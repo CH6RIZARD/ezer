@@ -43,6 +43,7 @@ import {
 import ProgressRing from '../../components/redesign/ProgressRing';
 import MoveMoneySheet, { type MoveMode } from '../../components/redesign/MoveMoneySheet';
 import GoalFormSheet from '../../components/redesign/GoalFormSheet';
+import { useCameraDove } from '../../components/CameraDove';
 
 /** Goals store dollars; formatCents wants cents. One conversion, one place. */
 const dollarsToCents = (d: number) => Math.round(d * 100);
@@ -70,6 +71,10 @@ export default function SavingsScreen() {
     isLoading,
     error,
   } = useSavingsGoals();
+
+  // The camera dove is the only loader: a refresh (pull or otherwise) shows
+  // it, and the RefreshControl below is invisible (iOS drew its grey circle).
+  useCameraDove(isLoading);
 
   const [moveMode, setMoveMode] = useState<MoveMode | null>(null);
   const [creating, setCreating] = useState(false);
@@ -252,10 +257,16 @@ export default function SavingsScreen() {
         }}
         showsVerticalScrollIndicator={false}
         refreshControl={
+          // Invisible on purpose: the pull only triggers the refresh, and the
+          // camera dove (useCameraDove above) is what shows the wait. Kept
+          // refreshing={false} so the list springs back at once instead of
+          // holding an empty gap where the hidden spinner would be.
           <RefreshControl
-            refreshing={isLoading}
+            refreshing={false}
             onRefresh={() => { void refresh(); }}
-            tintColor={colors.mut}
+            tintColor="transparent"
+            colors={['transparent']}
+            progressBackgroundColor="transparent"
           />
         }
       >

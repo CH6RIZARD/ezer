@@ -8,7 +8,7 @@
 // Source of truth: "Handoff: Ezer Redesign — Full Light + Dark Patch".
 // =============================================================================
 
-import React, { useEffect, useState } from 'react';
+import React, { useContext, useEffect, useState } from 'react';
 import {
   AccessibilityInfo,
   View,
@@ -22,6 +22,7 @@ import {
 import { useIsFocused } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { DoveMark } from '../DoveReveal';
+import { LockOpenContext } from '../LockGate';
 import { useTheme } from '../../utils/ThemeContext';
 import Animated, {
   Easing,
@@ -119,9 +120,14 @@ export const TAB_MARK_W = 56;
 const TAB_MARK_TOP = 26;
 export function TabMark() {
   const insets = useSafeAreaInsets();
+  // No perched dove while the lock is up: P1 flies into the camera WHILE the
+  // lock lifts and this tab shows through, and the owner saw two doves at once
+  // (Oct 13 2026). Exactly one dove on screen: this one appears once P1 is in
+  // the camera and the lock is open.
+  const lockOpen = useContext(LockOpenContext);
   return (
     <View pointerEvents="none" style={{ position: 'absolute', top: insets.top + TAB_MARK_TOP, right: layout.screenX }}>
-      <DoveMark width={TAB_MARK_W} />
+      <DoveMark width={TAB_MARK_W} perched={lockOpen} />
     </View>
   );
 }

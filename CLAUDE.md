@@ -162,6 +162,19 @@ style problem.
   picker, not the whole Wallet. Don't go back to an `open` prop, a Reanimated
   entrance, or starting it from an effect. Swift: the same scrim guard
   (`shownAt` in `RangeCalendar.swift`).
+  "Multiple clicks again" on iPhone (Oct 13 2026), two more causes, both
+  apps: the chips' horizontal ScrollView bounced even with nothing to scroll,
+  so a tap that drifted a few points became a pan and cancelled the press
+  (`alwaysBounceHorizontal={false}` / `.scrollBounceBehavior(.basedOnSize)`);
+  and in Swift, `RNModal`'s bare `present` was silently dropped while the
+  previous sheet was still being dismissed, leaving `pickOpen` true with
+  nothing on screen, so every later tap was a no-op. `ModalPresenter.present`
+  now waits out transitions, verifies, and retries; `openPicker()` re-presents
+  when `pickOpen` is already true (the modal covers the chip, so a tap that
+  reaches it means the sheet is not up). The sheet's border is the TOP edge
+  only (`SheetTopEdge` / `borderTopWidth: 1`): it is full-bleed to the bottom,
+  and a border down the sides ran into the iPhone's rounded display corners
+  and looked cut off. Don't put the full outline back.
 - **Wallet card switches must be cache hits** (Oct 12 2026, "4 secs to show
   the numbers"). Measured on web against a mock API that answers one request
   at a time: a swipe made before the prefetch finished took 3.7s, because the
@@ -825,6 +838,16 @@ style problem.
   it, a fading parent (keypad, lift) faded the 8 gold copies and the white
   dove separately on Android and the gold showed through the dove (owner:
   "looks slightly botched"). SwiftUI needs `.compositingGroup()` for the same.
+  **Exactly one dove on screen.** P1's exit flies while the lock lifts, so the
+  tab underneath shows through, and its `TabMark` had its own perched dove:
+  two doves at once (owner, Oct 13 2026). `TabMark` draws no perched dove
+  while `LockOpenContext` / `\.lockOpen` is false; it appears once the lock is
+  open (P1 is in the camera by then). The camera dove host is gated the same
+  way (registrations wait until the lock is open). Sprite sheets draw with
+  `resizeMode="stretch"` / `CoverImage(stretch: true)`: a sheet's pixel cell
+  and its point cell differ in aspect by up to 0.5%, and the default cover
+  crop shifted outer columns by ~5% of a cell, so a neighbouring frame's wing
+  could show at the window's edge.
   Tabs end with `insets.bottom + layout.tabBottom` (176): room past the floating
   bar so a scroll doesn't stop dead on the last row (owner's request).
 
@@ -836,7 +859,13 @@ style problem.
   pointerEvents none, above the screens) flies a rendered dove out of the
   phone's camera. Buttons keep their label, dim and disable, and register;
   full-screen/section waits keep their layout with no spinner box. Don't add
-  an `ActivityIndicator` back. Swift: `Components/CameraDove.swift`, its own
+  an `ActivityIndicator` back. Pull-to-refresh is invisible: RN's
+  `RefreshControl` is `refreshing={false}` with transparent `tintColor` /
+  `colors` / `progressBackgroundColor`, and Swift uses `.pullToRefresh {}`
+  (`RNControls.swift`, a clear UIRefreshControl that ends at once) instead of
+  `.refreshable`, which always draws the system circle (owner: "only seeing
+  circles" on Savings). The screen registers the dove for the wait
+  (`useCameraDove(isLoading)` / `.cameraDove(savings.isLoading)`). Swift: `Components/CameraDove.swift`, its own
   pass-through window (`OverlayWindows`), `.cameraDove(active)` / `DoveLoader`.
 - **Rules (owner, Oct 13 2026):** each appearance picks A, B, C or F at random,
   never the same twice in a row; it only comes out if the wait passes ~300 ms;

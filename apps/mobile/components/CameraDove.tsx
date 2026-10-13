@@ -163,7 +163,12 @@ export function CameraDoveHost({ nested = false }: { nested?: boolean }) {
   }, [nested]);
   useEffect(() => {
     if (nested) return;
+    const opened = lockOpen && !gate;
     gate = active && lockOpen;
+    // The lock just opened (P1 has gone into the camera) with something still
+    // loading: come straight back out, no 300 ms wait, so it reads as the same
+    // bird ducking in and out rather than a pause and a second dove.
+    if (opened && gate && count > 0 && !run) start();
     update();
   }, [nested, active, lockOpen]);
 
@@ -254,10 +259,10 @@ function Sprite({ id, serial: s }: { id: CameraDoveId; serial: number }) {
         {edge &&
           EDGE.map(([dx, dy], i) => (
             <View key={i} style={{ position: 'absolute', left: dx * EDGE_DP, top: dy * EDGE_DP, opacity: EDGE_OPACITY }}>
-              <Animated.Image source={P.sheet} style={[size, { tintColor: edge }, slide]} />
+              <Animated.Image source={P.sheet} resizeMode="stretch" style={[size, { tintColor: edge }, slide]} />
             </View>
           ))}
-        <Animated.Image source={P.sheet} style={[size, slide]} />
+        <Animated.Image source={P.sheet} resizeMode="stretch" style={[size, slide]} />
       </Animated.View>
     </View>
   );
