@@ -22,7 +22,7 @@ cd "$(dirname "$0")/.."
 INSTALL=1; [ "${1:-}" = "--no-install" ] && INSTALL=0
 BRANCH=$(git rev-parse --abbrev-ref HEAD)
 
-if [ -n "$(git status --porcelain -- apps/mobile packages apps/api)" ]; then
+if [ -n "$(git status --porcelain --untracked-files=no -- apps/mobile packages apps/api)" ]; then
   echo "apps/mobile, apps/api or packages has uncommitted changes: commit them first so both builds share one version." >&2
   exit 1
 fi
