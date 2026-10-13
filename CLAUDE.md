@@ -211,6 +211,21 @@ style problem.
   the layout, specifically so the two screens that show a design cannot drift
   apart the way the front once silently grew cardholder/number text back onto
   it. Add card visuals here, not in a screen file.
+- **The card design is restored from the server when local storage is empty**
+  (`GET /cards/designs/latest`, newest `CardDesign` row for the signed-in
+  user). Every save was always POSTed, but nothing read it back, so a
+  reinstall, the other phone (the iPhone port is its own install) or a
+  sign-out (`AuthContext.logout()` wipes `@ezer_card_design` so the next
+  account on the device can't see it) reopened a blank canvas: "I've
+  designed it many times." RN restores inside `loadCardDesign`/
+  `getCardDesignId` (`readOrRestore` in `utils/cardDesignStore.ts`); Swift
+  readers are sync, so `CardDesignStore.restoreFromServerIfMissing()` is
+  awaited first by PhysicalCardView, PhysicalCardReviewView and
+  CardFlowStatus. Keep both, and keep the logout wipe (the server copy makes
+  it harmless). `CardDesign`/`CardAccessList` key on a plain `userId`
+  string, so no cascade reaches them: `DELETE /account` deletes them
+  explicitly in the same transaction and `/account/export` includes them.
+  Anything new keyed on a bare userId needs the same.
 - **Card Studio's "Continue" branches on whether a `CardAccessOutcome` already
   exists** (`utils/cardDesignStore.ts`): first time through a saved design
   goes to `PhysicalCardApproval`; re-editing an already-approved design (via

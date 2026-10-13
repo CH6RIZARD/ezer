@@ -58,7 +58,15 @@ export async function accountRoutes(server: FastifyInstance) {
     // One statement erases everything: the schema carries onDelete: Cascade on
     // every user-owned relation, so subscriptions, transactions, Plaid items,
     // funding sources, goals, transfers and ledger entries all go with it.
-    await prisma.user.delete({ where: { id: userId } });
+    // EXCEPT the card designer's two tables: CardDesign and CardAccessList key
+    // on a plain userId string (a design can predate the account), so no
+    // cascade reaches them and they outlived every deleted account. Same
+    // transaction, so "everything goes" (docs/privacy.html) stays true.
+    await prisma.$transaction([
+      prisma.cardDesign.deleteMany({ where: { userId } }),
+      prisma.cardAccessList.deleteMany({ where: { userId } }),
+      prisma.user.delete({ where: { id: userId } }),
+    ]);
 
     if (failed.length > 0) {
       request.log.warn({ userId, failed }, 'account deleted with unrevoked Plaid items — revoke manually');
@@ -153,6 +161,15 @@ export async function accountRoutes(server: FastifyInstance) {
     const { passwordHash, ...safe } = user as any;
 
     reply.header('Content-Disposition', 'attachment; filename="ezer-data-export.json"');
-    return { success: true, data: { exportedAt: new Date().toISOString(), user: safe } };
+    // Card designs and access-list decisions aren't relations on User (see
+    // DELETE above), so the include can't reach them.
+    const [cardDesigns, cardAccessList] = await Promise.all([
+      prisma.cardDesign.findMany({ where: { userId } }),
+      prisma.cardAccessList.findMany({ where: { userId } }),
+    ]);
+    return {
+      success: true,
+      data: { exportedAt: new Date().toISOString(), user: { ...safe, cardDesigns, cardAccessList } },
+    };
   });
 }

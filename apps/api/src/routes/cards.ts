@@ -100,6 +100,24 @@ export async function cardRoutes(server: FastifyInstance) {
     return { success: true, data: { id: record.id } };
   });
 
+  // GET /cards/designs/latest — the signed-in user's most recent design, or
+  // null. The app's copy lives in on-device storage, which a reinstall, a
+  // second phone (the iPhone port is its own install) or a sign-out wipes;
+  // every save already landed here, but nothing ever read it back, so the
+  // owner's design looked like it never saved. cardDesignStore's
+  // loadCardDesign restores from this when local storage is empty. Anonymous
+  // is a shared bucket, not a person: no token, no restore.
+  server.get('/designs/latest', async request => {
+    const userId = resolveUserId(request);
+    if (userId === 'anonymous') return { success: true, data: null };
+    const record = await prisma.cardDesign.findFirst({ where: { userId }, orderBy: { createdAt: 'desc' } });
+    if (!record) return { success: true, data: null };
+    return {
+      success: true,
+      data: { id: record.id, finish: record.finish, strokes: record.strokes, updatedAt: record.updatedAt.toISOString() },
+    };
+  });
+
   // GET /cards/designs/:id
   server.get<{ Params: { id: string } }>('/designs/:id', async (request, reply) => {
     const userId = resolveUserId(request);

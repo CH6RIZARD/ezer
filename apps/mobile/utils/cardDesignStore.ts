@@ -181,9 +181,41 @@ export async function saveCardDesign(design: CardDesign): Promise<{ id: string }
   return { id: serverId };
 }
 
-/** The saved design, or null if nothing has ever been saved. Never throws. */
+/**
+ * The local record, else the signed-in user's latest design from GET
+ * /cards/designs/latest (written locally once found), else null. Never throws.
+ *
+ * The server fallback is the fix for "my card design isn't saving": every
+ * save was POSTed, but nothing ever read it back, so a reinstall, the other
+ * phone, or a sign-out (which wipes the local copy, see AuthContext.logout)
+ * reopened a blank canvas. Keep it.
+ */
+async function readOrRestore(): Promise<StoredRecord | null> {
+  const local = await readRecord();
+  if (local) return local;
+  try {
+    const res = await api.get<{ data?: { id?: string; finish?: string; strokes?: unknown; updatedAt?: string } | null }>(
+      '/cards/designs/latest'
+    );
+    const d = res?.data;
+    if (!d || typeof d.id !== 'string' || typeof d.finish !== 'string' || !Array.isArray(d.strokes)) return null;
+    const record: StoredRecord = {
+      id: d.id,
+      design: { finish: d.finish, strokes: d.strokes as CardStroke[], updatedAt: d.updatedAt ?? new Date().toISOString() },
+      synced: true,
+    };
+    // Re-check: a save made while the request was in flight wins.
+    if (await readRecord()) return readRecord();
+    await writeRecord(record);
+    return record;
+  } catch {
+    return null;
+  }
+}
+
+/** The saved design (local, else restored from the server), or null. Never throws. */
 export async function loadCardDesign(): Promise<CardDesign | null> {
-  const record = await readRecord();
+  const record = await readOrRestore();
   return record ? record.design : null;
 }
 
@@ -192,7 +224,7 @@ export async function loadCardDesign(): Promise<CardDesign | null> {
  * entry to the artwork; a `local_…` id means the server has not seen it yet.
  */
 export async function getCardDesignId(): Promise<string | null> {
-  const record = await readRecord();
+  const record = await readOrRestore();
   return record ? record.id : null;
 }
 
