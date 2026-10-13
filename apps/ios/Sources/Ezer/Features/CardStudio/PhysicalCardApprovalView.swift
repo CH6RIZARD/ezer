@@ -469,7 +469,8 @@ struct PhysicalCardApprovalView: View {
                         if complete {
                             Ionicon("checkmark-circle", size: 18, color: c.success)
                         } else if current {
-                            RNActivityIndicator(color: c.accInk)
+                            Ionicon("ellipse", size: 18, color: c.accInk)
+                                .cameraDove(true)
                         } else {
                             Ionicon("ellipse-outline", size: 18, color: c.mut3)
                         }

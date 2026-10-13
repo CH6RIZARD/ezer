@@ -234,13 +234,12 @@ private struct MoveMoneyContent: View {
 
             PressScale(scaleTo: Motion.pressScale, disabled: !canSubmit, action: { submit() }) {
                 ZStack {
-                    if busy {
-                        RNActivityIndicator(color: white)
-                    } else {
+                    Group {
                         Text(amountDollars > 0 ? "\(copy.cta) \(formatCents(savingsDollarsToCents(amountDollars)))" : copy.cta)
                             .font(.ezer(FontFamily.bold, 14.5))
                             .foregroundStyle(canSubmit ? white : c.mut2)
                     }
+                    .cameraDove(busy)
                 }
                 .padding(.vertical, 15)
                 .frame(maxWidth: .infinity, minHeight: Layout.hitTarget)

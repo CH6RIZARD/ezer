@@ -436,7 +436,7 @@ private struct PayIn4SheetContent: View {
                     .padding(.bottom, 28)
 
                 if !model.loaded {
-                    RNActivityIndicator(color: colors.gold)
+                    DoveLoader()
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 60)
                 } else {
@@ -664,7 +664,8 @@ private struct PayIn4SheetContent: View {
                         if complete {
                             Ionicon("checkmark-circle", size: 18, color: colors.success)
                         } else if current {
-                            RNActivityIndicator(color: colors.accInk)
+                            Ionicon("ellipse", size: 18, color: colors.accInk)
+                                .cameraDove(true)
                         } else {
                             Ionicon("ellipse-outline", size: 18, color: colors.mut3)
                         }

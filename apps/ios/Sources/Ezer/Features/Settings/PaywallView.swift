@@ -278,13 +278,12 @@ struct PaywallView: View {
     private func cta(busy: Bool) -> some View {
         Button(action: handlePurchase) {
             ZStack {
-                if isPurchasing {
-                    RNActivityIndicator(color: Color(css: "#FFFFFF"))
-                } else {
+                Group {
                     Text("Start your free 7-day trial")
                         .font(.ezer(UI_BOLD, 15))
                         .foregroundStyle(Color(css: "#FFFFFF"))
                 }
+                .cameraDove(isPurchasing)
             }
             .frame(maxWidth: .infinity)
             .frame(height: 56)
@@ -339,13 +338,12 @@ struct PaywallView: View {
                 }
                 Button(action: handleRedeemDevCode) {
                     ZStack {
-                        if isRedeeming {
-                            RNActivityIndicator(color: Color(css: "#FFFFFF"))
-                        } else {
+                        Group {
                             Text("Unlock")
                                 .font(.ezer(UI_SEMI, 13))
                                 .foregroundStyle(Color(css: "#FFFFFF"))
                         }
+                        .cameraDove(isRedeeming)
                     }
                     .frame(maxWidth: .infinity)
                     .frame(height: 42)
@@ -362,14 +360,14 @@ struct PaywallView: View {
     private func restoreRow(busy: Bool) -> some View {
         HStack(alignment: .center, spacing: 14) {
             Button(action: handleRestore) {
-                if isRestoring {
-                    RNActivityIndicator(color: INK_MUTED)
-                } else {
+                Group {
                     Text("Restore purchase")
                         .font(.system(size: 12))
                         .underline()
                         .foregroundStyle(INK_MUTED)
                 }
+                .cameraDove(isRestoring)
+                .opacity(isRestoring ? 0.6 : 1)
             }
             .buttonStyle(PlainPressStyle())
             .disabled(busy)

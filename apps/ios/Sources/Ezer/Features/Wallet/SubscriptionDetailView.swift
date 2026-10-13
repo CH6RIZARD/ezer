@@ -152,7 +152,7 @@ struct SubscriptionDetailView: View {
             if loading {
                 ZStack {
                     colors.bg.ignoresSafeArea()
-                    RNActivityIndicator(color: colors.accInk)
+                    DoveLoader()
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if let sub = detail {
@@ -575,13 +575,13 @@ struct SubscriptionDetailView: View {
                         Task { await enableSmartSaving(sub.merchantName, price, half) }
                     }) {
                         Group {
-                            if smartBusy {
-                                RNActivityIndicator(color: Color(css: "#FFFFFF"))
-                            } else {
+                            Group {
                                 Text("Enable smart saving")
                                     .font(.custom(FontFamily.bold, size: 14))
                                     .foregroundStyle(Color(css: "#FFFFFF"))
                             }
+                            .cameraDove(smartBusy)
+                            .opacity(smartBusy ? 0.6 : 1)
                         }
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 14)

@@ -64,6 +64,11 @@ final class LockGateModel {
     /// a failed load never keeps the keypad back.
     private(set) var introReady = false
     private var cycleDone = false
+    /// P1 flies into the camera WHILE the layer lifts (drawn outside the faded layer); 'open', which
+    /// hides the lock window, waits until it is in.
+    private(set) var p1Exit = false
+    @ObservationIgnored private var p1Busy = false
+    @ObservationIgnored private var openAfterP1 = false
 
     var locked: Bool { phase != .open }
     var warm: Bool { phase == .open || phase == .loading }
@@ -108,11 +113,17 @@ final class LockGateModel {
     private func move(_ next: LockPhase) {
         if next == .open || next == .loading { markLockWarm() }
         if next != .open { withoutAnimation { layer = 1 } }
+        p1Busy = false
+        openAfterP1 = false
+        p1Exit = false
         setPhase(next)
     }
 
     private func phaseEffects() {
         OverlayWindows.shared.setLockVisible(phase != .open)
+        CameraDoveCenter.shared.setLockOpen(phase == .open)
+        // Decode P1's sheets while the keypad is up, so the dove takes off on the loading phase's first frame.
+        if phase == .locked { Task { for n in P1_SHEETS { await DoveSheets.prepare(n) } } }
         lifting = false
 
         // A keyboard left open in a sheet sits in its own window ABOVE the lock. Blur it.
@@ -317,9 +328,15 @@ final class LockGateModel {
             return
         }
 
-        // Loading: one full breath, longer only if auth or the first data are still out.
-        if phase == .loading && cycleDone && !auth.isLoading {
-            if !auth.isAuthenticated || data.isReady { lift() }
+        // Loading: one full breath, longer only if auth or the first data are still out. The dove (P1)
+        // loops for as long as that takes and leaves from wherever it is: never cut shorter than the
+        // breath, never held for the end of a lap.
+        if phase == .loading && cycleDone && !auth.isLoading && !p1Exit {
+            if !auth.isAuthenticated || data.isReady {
+                p1Busy = true
+                p1Exit = true
+                lift()
+            }
         }
     }
 
@@ -333,7 +350,17 @@ final class LockGateModel {
             layer = 0
         } completion: {
             // Only if nothing re-locked or covered the app during the fade.
-            if self.phase == from { self.enter(.open) }
+            guard self.phase == from else { return }
+            if self.p1Busy { self.openAfterP1 = true } else { self.enter(.open) }
+        }
+    }
+
+    /// DoveP1 is in the camera.
+    func p1Exited() {
+        p1Busy = false
+        if openAfterP1 && phase == .loading {
+            openAfterP1 = false
+            enter(.open)
         }
     }
 
@@ -404,25 +431,39 @@ private struct LockSheet: View {
     @Environment(ThemeStore.self) private var theme
     @Environment(\.safeInsets) private var insets
     @Environment(\.windowSize) private var win
+    /// The wordmark's top-left in the window (P1's camera point is in word units).
+    @State private var wordAt: CGPoint?
 
     var body: some View {
         let colors = theme.colors
         // The approved render's proportions: the word is 0.517 of the screen width.
         let bigMark = jsRound(Double(win.width) * 0.517)
+        let k = CGFloat(bigMark) / DoveFrames.WORD.w
+        let word = wordAt ?? CGPoint(x: (win.width - CGFloat(bigMark)) / 2, y: insets.top + (win.height - insets.top - DoveFrames.WORD.h * k) / 2)
+        // Camera point: top-centre, half the top inset down (island centre / notch).
+        let cam = CGPoint(x: (win.width / 2 - word.x) / k, y: (insets.top / 2 - word.y) / k)
+        // The layer's opacity is on the background, the word and the keypad, not on the sheet: P1
+        // keeps flying, at full strength, over the app as it appears.
         ZStack {
-            colors.bg
+            colors.bg.opacity(lock.layer)
             if lock.showMark {
                 VStack(spacing: 0) {
                     Spacer(minLength: 0)
                     // Intro: only the word fades; the dove flies in at full strength and lands on
-                    // the R as the fade ends. Loading (after the passcode): the word breathes and the
-                    // dove flaps above the R. Covering: the whole mark, dove included, breathes.
+                    // the R as the fade ends. Loading (after the passcode): the word breathes while the
+                    // dove (P1) takes off from the R and circles it. Covering: the whole mark breathes.
                     // The doves are overlays (RN: absolute children), so only the word sizes the box.
                     DoveMark(width: bigMark, perched: lock.phase == .cover)
                         .opacity(lock.mark)
+                        .opacity(lock.layer)
+                        .background(GeometryReader { g in
+                            Color.clear
+                                .onAppear { wordAt = g.frame(in: .global).origin }
+                                .onChange(of: g.frame(in: .global).origin) { _, o in wordAt = o }
+                        })
                         .overlay(alignment: .topLeading) {
                             if lock.phase == .loading {
-                                DoveHover(width: bigMark)
+                                DoveP1(width: bigMark, cam: cam, exit: lock.p1Exit, fade: insets.top < 44) { lock.p1Exited() }
                             }
                             if lock.phase == .intro {
                                 DoveFlight(width: bigMark, duration: FADE_MS, play: lock.introReady)
@@ -458,10 +499,10 @@ private struct LockSheet: View {
                     }
                 }
                 .opacity(lock.pad)
+                .opacity(lock.layer)
                 .debugScreenCapture(lock.phase == .setup ? "lock-setup" : "lock-keypad")
             }
         }
-        .opacity(lock.layer)
         .ignoresSafeArea()
         .accessibilityAddTraits(.isModal)
     }

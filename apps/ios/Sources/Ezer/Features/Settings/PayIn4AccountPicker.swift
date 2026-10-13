@@ -187,13 +187,12 @@ private struct SettingsPayIn4PickerSheet: View {
                 PressScale(scaleTo: Motion.pressScale, disabled: saving, action: onSave) {
                     // styles.cta: height 56, radius.pill, ink, centred.
                     ZStack {
-                        if saving {
-                            RNActivityIndicator(color: Color(css: "#FFFFFF"))
-                        } else {
+                        Group {
                             Text(changed ? "Save · re-check spending power" : "Keep current account")
                                 .font(.ezer(FontFamily.bold, 15))
                                 .foregroundStyle(Color(css: "#FFFFFF"))
                         }
+                        .cameraDove(saving)
                     }
                     .frame(maxWidth: .infinity)
                     .frame(height: 56)

@@ -211,13 +211,12 @@ struct OnboardingAuthPrimaryButton: View {
         let c = theme.colors
         Button(action: action) {
             Group {
-                if isLoading {
-                    RNActivityIndicator(color: .white)
-                } else {
+                Group {
                     Text(title)
                         .font(.system(size: 16, weight: .bold))
                         .foregroundStyle(Color.white)
                 }
+                .cameraDove(isLoading)
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 16)

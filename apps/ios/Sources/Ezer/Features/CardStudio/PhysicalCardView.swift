@@ -261,7 +261,7 @@ struct PhysicalCardView: View {
                     // --- Live preview / canvas ---------------------------------------
                     Group {
                         if loading {
-                            RNActivityIndicator(color: colors.accInk)
+                            DoveLoader()
                                 .frame(width: CARD_W, height: 190)
                                 .rnBox(bg: colors.card, radius: Radius.virtualCard, border: colors.line)
                         } else {

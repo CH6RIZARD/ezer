@@ -116,7 +116,7 @@ struct LinkedBanksView: View {
     @ViewBuilder
     private func payIn4Card(_ colors: ThemeColors) -> some View {
         if loadingBanks {
-            RNActivityIndicator(color: colors.gold)
+            DoveLoader()
                 .frame(maxWidth: .infinity)
                 .padding(.top, 10)
         } else {

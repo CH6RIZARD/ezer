@@ -58,13 +58,12 @@ struct SavingsLegacyButton: View {
 
         Button(action: onPress) {
             ZStack {
-                if loading {
-                    RNActivityIndicator(color: spinner)
-                } else {
+                Group {
                     Text(title)
                         .font(.system(size: 16, weight: .semibold))
                         .foregroundStyle(fg)
                 }
+                .cameraDove(loading)
             }
             // button { paddingV 16, paddingH 24, radius 12, centre, minHeight 52 }; fullWidth { width: '100%' }
             .padding(.vertical, 16 + bw)

@@ -199,13 +199,12 @@ private struct GoalFormContent: View {
 
             PressScale(scaleTo: Motion.pressScale, disabled: busy, action: { save() }) {
                 ZStack {
-                    if busy {
-                        RNActivityIndicator(color: c.mut)
-                    } else {
+                    Group {
                         Text(isEdit ? "Save changes" : "Create goal")
                             .font(.ezer(FontFamily.bold, 14.5))
                             .foregroundStyle(Color(css: "#FFFFFF"))
                     }
+                    .cameraDove(busy)
                 }
                 .padding(.vertical, 15)
                 .frame(maxWidth: .infinity, minHeight: Layout.hitTarget)

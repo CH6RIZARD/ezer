@@ -65,6 +65,9 @@ final class OverlayWindows {
 
     private(set) var lockWindow: PassThroughWindow?
     private(set) var alertWindow: PassThroughWindow?
+    /// The camera dove (CameraDove.swift): below the lock, above presented sheets; never takes a touch.
+    private(set) var cameraDoveWindow: PassThroughWindow?
+    private var cameraDoveVisible = false
     private var env: AppEnvironment?
     private var lockVisible = false
     /// The notice card's frame in window coordinates (touches elsewhere pass through).
@@ -83,6 +86,17 @@ final class OverlayWindows {
         lock.rootViewController = lockHost
         lock.isHidden = !lockVisible
         lockWindow = lock
+
+        // The lock passes touches through while P1 flies into the camera over the app.
+        lock.isInteractive = { [weak model = env.lock] _ in !(model?.p1Exit ?? false) }
+
+        let dove = PassThroughWindow(windowScene: scene)
+        dove.windowLevel = .alert
+        dove.backgroundColor = .clear
+        dove.isInteractive = { _ in false }
+        dove.rootViewController = OverlayHostingController(rootView: AnyView(CameraDoveRoot().appEnvironment(env)))
+        dove.isHidden = !cameraDoveVisible
+        cameraDoveWindow = dove
 
         let alerts = PassThroughWindow(windowScene: scene)
         alerts.windowLevel = .alert + 2
@@ -113,6 +127,11 @@ final class OverlayWindows {
         }
     }
 
+    func setCameraDoveVisible(_ visible: Bool) {
+        cameraDoveVisible = visible
+        cameraDoveWindow?.isHidden = !visible
+    }
+
     func alertQueueChanged() {
         alertWindow?.isHidden = AppAlertCenter.shared.current == nil
     }
@@ -121,5 +140,6 @@ final class OverlayWindows {
         let style: UIStatusBarStyle = isDark ? .lightContent : .darkContent
         (lockWindow?.rootViewController as? OverlayHostingController<AnyView>)?.statusBarStyle = style
         (alertWindow?.rootViewController as? OverlayHostingController<AnyView>)?.statusBarStyle = style
+        (cameraDoveWindow?.rootViewController as? OverlayHostingController<AnyView>)?.statusBarStyle = style
     }
 }

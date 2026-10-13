@@ -691,14 +691,13 @@ private struct OnboardingAccountStep: View {
                     Task { await provider(.apple) }
                 } label: {
                     HStack(spacing: 10) {
-                        if busy == .apple {
-                            RNActivityIndicator(color: T.bg)
-                        } else {
+                        Group {
                             Ionicon("logo-apple", size: 19, color: T.bg)
                             Text("Continue with Apple")
                                 .font(.ezer(UI_BOLD, 15))
                                 .foregroundStyle(T.bg)
                         }
+                        .cameraDove(busy == .apple)
                     }
                     .frame(maxWidth: .infinity)
                     .frame(height: 54)
@@ -713,14 +712,13 @@ private struct OnboardingAccountStep: View {
                     Task { await provider(.google) }
                 } label: {
                     HStack(spacing: 10) {
-                        if busy == .google {
-                            RNActivityIndicator(color: T.ink)
-                        } else {
+                        Group {
                             Ionicon("logo-google", size: 19, color: T.ink)
                             Text("Continue with Google")
                                 .font(.ezer(UI_BOLD, 15))
                                 .foregroundStyle(T.ink)
                         }
+                        .cameraDove(busy == .google)
                     }
                     .frame(maxWidth: .infinity)
                     .frame(height: 54)

@@ -113,7 +113,7 @@ struct BankDetailView: View {
                     header(colors)
 
                     if loading {
-                        RNActivityIndicator(color: colors.gold)
+                        DoveLoader()
                             .frame(maxWidth: .infinity)
                             .padding(.top, 40)
                     } else if let item {
@@ -205,9 +205,7 @@ struct BankDetailView: View {
                         .padding(.top, 3)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                if readBusy {
-                    RNActivityIndicator(color: colors.accInk)
-                } else {
+                Group {
                     RNSwitch(
                         isOn: Binding(
                             get: { item.readForSubscriptions },
@@ -218,7 +216,9 @@ struct BankDetailView: View {
                         thumbColor: Color(css: "#FFFFFF")
                     )
                     .fixedSize()
+                    .disabled(readBusy)
                 }
+                .cameraDove(readBusy)
             }
             .padding(.horizontal, 14 + 1)
             .padding(.vertical, 14 + 1)
@@ -234,14 +234,13 @@ struct BankDetailView: View {
         PressScale(scaleTo: motionPress, disabled: disconnecting, action: disconnect) {
             // styles.disconnect: height 52, radius.buttonLg, 1.5 line2 border, row centre, gap 8.
             HStack(alignment: .center, spacing: 8) {
-                if disconnecting {
-                    RNActivityIndicator(color: colors.red)
-                } else {
+                Group {
                     Ionicon("unlink-outline", size: 18, color: colors.red)
                     Text("Disconnect \(item.institutionName ?? "bank")")
                         .font(.ezer(FontFamily.bold, 15))
                         .foregroundStyle(colors.red)
                 }
+                .cameraDove(disconnecting)
             }
             .frame(maxWidth: .infinity)
             .frame(height: 52)
@@ -275,13 +274,13 @@ struct BankDetailView: View {
                     .background(Capsule().fill(colors.goldSoft))
             } else if a.eligibleForPayIn4 {
                 Button { makePayIn4(a.instrumentId) } label: {
-                    if busyAccountId == a.instrumentId {
-                        RNActivityIndicator(color: colors.gold)
-                    } else {
+                    Group {
                         Text("Use for Pay in 4")
                             .font(.ezer(FontFamily.semibold, 12))
                             .foregroundStyle(colors.gold)
                     }
+                    .cameraDove(busyAccountId == a.instrumentId)
+                    .opacity(busyAccountId == a.instrumentId ? 0.6 : 1)
                 }
                 .buttonStyle(PlainPressStyle())
                 .disabled(busyAccountId == a.instrumentId)

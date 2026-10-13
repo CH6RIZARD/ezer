@@ -43,7 +43,7 @@ struct PhysicalCardReviewView: View {
         let c = theme.colors
         Group {
             if loading {
-                RNActivityIndicator(color: c.accInk)
+                DoveLoader()
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .background(c.bg)
             } else {

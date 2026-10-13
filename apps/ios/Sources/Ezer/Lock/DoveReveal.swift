@@ -11,7 +11,7 @@
 //   DoveMark(width: w, perched: false, ink: ThemeColors.dark.ink)   // `ink` overrides the theme (onboarding)
 //   DoveFlight(width: w, duration: 900, play: ready)        // hidden until `play`, then plays once
 //   DoveFlight(width: w, duration: 900, play: ready, edge: .some(nil))   // RN edge={null}: no gold edge
-//   DoveHover(width: w)                                     // after the passcode: the dove flaps above the R
+//   DoveP1(width: w, cam: c, exit: e, fade: f) { ... }    // after the passcode: P1 (open, loop, exit into the camera)
 // The tabs' header EZER is Primitives' TabMark (one size, one place); there is no per-title mark.
 
 import SwiftUI
@@ -86,7 +86,7 @@ private struct CoverImage: View {
 
 /** The dove's edge colour for the current theme, or nil for none. */
 @MainActor
-private struct EdgeReader {
+struct EdgeReader {
     static func edge(_ theme: ThemeStore) -> Color? { theme.mode == .light ? theme.colors.gold : nil }
 }
 
@@ -120,7 +120,7 @@ private struct Perched: View {
 
 /// One cell of a sprite sheet seen through a clipped window: the sheet slides inside it. Cells carry
 /// a 2px transparent margin, so the edge copies stay inside them. Sizes are already scaled.
-private struct SpriteCell: View {
+struct SpriteCell: View {
     let image: UIImage?
     let cellW: CGFloat
     let cellH: CGFloat
@@ -283,5 +283,160 @@ struct DoveHover: View {
     private func index(at now: Date) -> Int {
         let H = DoveFrames.HOVER
         return Int(max(0, now.timeIntervalSince(start)) * H.fps) % H.n
+    }
+}
+
+// MARK: - P1
+
+// The wait after the passcode (owner's pick, Oct 2026: P1; frames in DoveP1Frames.swift, sheets
+// dove-p1-{open,loop,exit}.webp, both from E:\ezer-dove\loaders\work\export_app_doves.py).
+// open: takes off from EXACTLY the perched pose on the R; loop: circles the word while LockGate
+// waits; exit: climbs fully up into the camera as Home appears. LockGate decides when (at least
+// FADE_MS * 2, and auth/data ready). The exit starts from the CURRENT loop frame, never waiting for
+// the lap: its path is (1 - c) * (x, y) + c * cam with (x, y) the loop position the dove is at, and
+// over the first EXIT_BLEND frames position, scale and sprite blend from the still-running loop
+// into the exit's own climb.
+
+private let EXIT_BLEND: Double = 6
+let P1_SHEETS = ["dove-p1-open", "dove-p1-loop", "dove-p1-exit"]
+private let P1_CLIPS = [DoveP1Frames.open_, DoveP1Frames.loop, DoveP1Frames.exit]
+
+/// P1's clock (RN: shared values advanced by a frame callback). ph: 0 open, 1 loop, 2 exit, 3 done.
+@MainActor
+private final class P1Clock {
+    var ph = 0
+    var t: Double = 0
+    var L = 0
+    var last: Date?
+    var go = false
+    var notified = false
+
+    /// Advances to `now`; true exactly once, when the exit has finished.
+    func tick(_ now: Date) -> Bool {
+        if ph == 3 { return false }
+        let dt = last.map { min(0.1, max(0, now.timeIntervalSince($0))) } ?? 0
+        last = now
+        var x = t + dt * DoveP1Frames.fps
+        let no = Double(DoveP1Frames.open_.n), nl = Double(DoveP1Frames.loop.n), ne = Double(DoveP1Frames.exit.n)
+        if ph == 0 && x >= no { ph = 1; x -= no }
+        if ph == 1 {
+            if go {
+                // straight into the exit from this frame, no waiting for the lap
+                L = Int(x) % DoveP1Frames.loop.n
+                ph = 2
+                x -= floor(x)
+            } else if x >= nl { x -= nl }
+        }
+        var finished = false
+        if ph == 2 && x >= ne {
+            ph = 3
+            x = ne - 0.001
+            if !notified { notified = true; finished = true }
+        }
+        t = x
+        return finished
+    }
+
+    struct Pose {
+        var x, y, s: Double
+        var i: [Int]
+        var a: [Double]
+    }
+
+    func pose(cam: CGPoint, fade: Bool) -> Pose {
+        let i = Int(t)
+        if ph == 0 {
+            let io = min(i, DoveP1Frames.open_.n - 1), f = DoveP1Frames.open_.f
+            return Pose(x: f[io * 5], y: f[io * 5 + 1], s: f[io * 5 + 2], i: [io, 0, 0], a: [1, 0, 0])
+        }
+        let nl = DoveP1Frames.loop.n
+        let lf = DoveP1Frames.loop.f
+        if ph == 1 {
+            let il = i % nl
+            return Pose(x: lf[il * 5], y: lf[il * 5 + 1], s: lf[il * 5 + 2], i: [0, il, 0], a: [0, 1, 0])
+        }
+        let ie = min(i, DoveP1Frames.exit.n - 1)
+        let il = (L + ie) % nl
+        let ef = DoveP1Frames.exit.f
+        let b0 = min(1, t / EXIT_BLEND)
+        let b = b0 * b0 * (3 - 2 * b0)
+        // the exit's own climb, carried over to start from loop frame L
+        let ex = lf[L * 5] + ef[ie * 5] - ef[0]
+        let ey = lf[L * 5 + 1] + ef[ie * 5 + 1] - ef[1]
+        let es = lf[L * 5 + 2] * ef[ie * 5 + 2] / ef[2]
+        let x = lf[il * 5] + (ex - lf[il * 5]) * b
+        let y = lf[il * 5 + 1] + (ey - lf[il * 5 + 1]) * b
+        let c = ef[ie * 5 + 3]
+        let o = ph == 3 ? 0 : fade ? ef[ie * 5 + 4] : 1
+        return Pose(x: (1 - c) * x + c * Double(cam.x), y: (1 - c) * y + c * Double(cam.y),
+                    s: lf[il * 5 + 2] + (es - lf[il * 5 + 2]) * b, i: [0, il, ie], a: [0, (1 - b) * o, b * o])
+    }
+}
+
+/**
+ * The after-passcode dove. Draw it as an overlay of the wordmark (DoveMark's coordinates). `cam`:
+ * the camera point in word units. `exit` true: fly into the camera now; `onExited` once it is in
+ * (at once with Reduce Motion or a sheet not decoded by then: the dove simply stays perched).
+ * `fade`: fade out at the camera (phones whose camera hides nothing).
+ * Perched until the open sheet is decoded (LockGate decodes all three while the keypad is up), then
+ * it takes off: open's first frame IS the perched pose, so a late take-off is not a jump.
+ */
+struct DoveP1: View {
+    @Environment(ThemeStore.self) private var theme
+    @Environment(\.accessibilityReduceMotion) private var reduced
+    let width: CGFloat
+    let cam: CGPoint
+    let exit: Bool
+    let fade: Bool
+    let onExited: () -> Void
+
+    @State private var loaded = false
+    @State private var clock = P1Clock()
+
+    var body: some View {
+        let k = width / DoveFrames.WORD.w
+        let flying = !reduced && loaded
+        ZStack(alignment: .topLeading) {
+            if !flying { Perched(k: k) }
+            if flying {
+                TimelineView(.animation(paused: clock.ph == 3)) { tl in
+                    let done = clock.tick(tl.date)
+                    let q = clock.pose(cam: cam, fade: fade)
+                    ZStack(alignment: .topLeading) {
+                        ForEach(0..<3, id: \.self) { w in
+                            window(w, q: q, k: k)
+                        }
+                    }
+                    .onChange(of: done, initial: true) { _, d in if d { onExited() } }
+                }
+            }
+        }
+        .allowsHitTesting(false)
+        .task {
+            guard !reduced else { return }
+            var ok = true
+            for n in P1_SHEETS { ok = await DoveSheets.prepare(n) && ok }
+            if ok && !exit { loaded = true }
+        }
+        .onChange(of: exit, initial: true) { _, e in
+            clock.go = e
+            if e && !flying { onExited() }
+        }
+    }
+
+    private func window(_ w: Int, q: P1Clock.Pose, k: CGFloat) -> some View {
+        let c = P1_CLIPS[w]
+        let W0 = DoveP1Frames.w * k
+        let H0 = DoveP1Frames.h * k
+        // The window sits at the word's origin and scales about its centre: this puts the cell's
+        // pivot on (x, y).
+        let dx = DoveP1Frames.px * k - W0 / 2
+        let dy = DoveP1Frames.py * k - H0 / 2
+        let s = CGFloat(q.s)
+        return SpriteCell(image: DoveSheets.image(P1_SHEETS[w]), cellW: W0, cellH: H0, cols: c.cols, rows: c.rows,
+                          i: q.i[w], edge: EdgeReader.edge(theme))
+            .scaleEffect(s)
+            .offset(x: CGFloat(q.x) * k - W0 / 2 - s * dx, y: CGFloat(q.y) * k - H0 / 2 - s * dy)
+            .opacity(q.a[w])
     }
 }

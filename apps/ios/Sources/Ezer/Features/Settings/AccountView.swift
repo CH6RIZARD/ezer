@@ -183,11 +183,10 @@ struct AccountView: View {
     private func row(_ colors: ThemeColors, busyNow: Bool, icon: String, tint: Color, title: String, sub: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             HStack(alignment: .center, spacing: 0) {
-                if busyNow {
-                    RNActivityIndicator(color: tint)
-                } else {
+                Group {
                     Ionicon(icon, size: 22, color: tint)
                 }
+                .cameraDove(busyNow)
                 VStack(alignment: .leading, spacing: 0) {
                     Text(title)
                         .font(.system(size: 16, weight: .semibold))
