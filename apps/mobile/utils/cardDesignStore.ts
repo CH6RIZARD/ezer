@@ -351,10 +351,28 @@ function parseAccessOutcome(raw: string | null): CardAccessOutcome | null {
   }
 }
 
-/** The locally-cached Spending Power outcome, or null. Never throws. */
+/**
+ * The Spending Power outcome: the local cache, else the server's decision
+ * (cached here once found), else null. Never throws.
+ *
+ * The server fallback is load-bearing. This key is only a mirror, and a
+ * reinstall, cleared data, another phone, or an assessment made through Card
+ * Studio leaves it empty while GET /cards/access-list still has the real
+ * decision. Home's tile (useCardFlowStatus) always fell back to the server;
+ * this reader did not, so Home said $25.00 and the sheet said "Your number is
+ * still a blank", and the Pay in 4 CTA POSTed a fresh 'waitlist' join whose
+ * newer row buried the approval for every latest-row reader (Home, the
+ * Highnote auth webhook). Every reader of this key goes through here — the
+ * sheet, the Pay in 4 CTA label, Settings > Linked banks, Card Studio's
+ * carry-over — so the fallback lives here, once. Keep it.
+ */
 export async function getSpendingPowerOutcome(): Promise<CardAccessOutcome | null> {
   try {
-    return parseAccessOutcome(await AsyncStorage.getItem(SPENDING_POWER_KEY));
+    const local = parseAccessOutcome(await AsyncStorage.getItem(SPENDING_POWER_KEY));
+    if (local) return local;
+    const server = await fetchServerAccessOutcome();
+    if (server) await saveSpendingPowerOutcome(server);
+    return server;
   } catch {
     return null;
   }
@@ -399,5 +417,16 @@ export async function markSpendingPowerRevealSeen(): Promise<void> {
     await AsyncStorage.setItem(REVEAL_SEEN_KEY, '1');
   } catch {
     // Worst case the reveal plays again next open — cosmetic, not data loss.
+  }
+}
+
+/** Wipe the cached Spending Power outcome and its reveal flag. Used by
+ *  sign-out (AuthContext.logout), so one account's limit never shows for the
+ *  next account on this device. Never throws. */
+export async function clearSpendingPowerOutcome(): Promise<void> {
+  try {
+    await AsyncStorage.multiRemove([SPENDING_POWER_KEY, REVEAL_SEEN_KEY]);
+  } catch {
+    // Nothing useful to do.
   }
 }

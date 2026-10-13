@@ -22,7 +22,7 @@ import {
   Surface,
   PressScale,
   ScreenBody,
-  Wordmark,
+  TabMark,
 } from '../../components/redesign/Primitives';
 import MerchantMark from '../../components/redesign/MerchantMark';
 
@@ -101,19 +101,14 @@ export default function AlertsScreen() {
         contentContainerStyle={{
           paddingTop: insets.top + 10,
           paddingHorizontal: layout.screenX,
-          paddingBottom: layout.contentBottom,
+          paddingBottom: insets.bottom + layout.tabBottom,
         }}
         showsVerticalScrollIndicator={false}
         bounces={false}
         overScrollMode="never"
       >
         <ScreenBody>
-          <View style={styles.header}>
-            <View style={{ flex: 1 }} />
-            <Wordmark roomAbove />
-          </View>
-
-          <Text style={[typeScale.screenTitle, { color: colors.ink, marginTop: 4 }]}>Alerts</Text>
+          <Text style={[typeScale.screenTitle, { color: colors.ink }]}>Alerts</Text>
           <Body style={{ marginTop: 6 }}>Next 30 days · stay ahead of every charge</Body>
 
           {trials.length > 0 && (
@@ -138,16 +133,13 @@ export default function AlertsScreen() {
             </Surface>
           )}
         </ScreenBody>
+        <TabMark />
       </ScrollView>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
   section: {
     marginTop: 24,
     marginBottom: 10,

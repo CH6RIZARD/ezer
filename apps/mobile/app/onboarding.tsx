@@ -26,8 +26,8 @@ import {
   Easing,
   TextInput,
   ScrollView,
-  ActivityIndicator,
   Platform,
+  ActivityIndicator,
   useWindowDimensions,
   StyleSheet,
 } from 'react-native';
@@ -39,8 +39,10 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useAuth } from '../utils/AuthContext';
 import { darkTokens as T } from '../theme/tokens';
 import PasscodeSetup from '../components/PasscodeSetup';
+import { DoveFlight, DoveMark } from '../components/DoveReveal';
 import { getPasscodeInfo } from '../utils/passcode';
 import { useCardLayers, CardStack } from '../components/redesign/SpinCard';
+import MerchantMark from '../components/redesign/MerchantMark';
 
 // --- shared -----------------------------------------------------------------
 
@@ -136,15 +138,63 @@ function Rise({ delay = 0, children }: { delay?: number; children: React.ReactNo
 
 // --- 01 · ticker ------------------------------------------------------------
 
+/**
+ * The brand mark: the lock screen's dove reveal (components/DoveReveal.tsx),
+ * on this flow's fixed dark palette. EZER fades in (0.3 to 1 over 900ms) while
+ * the rendered dove flies under the letters and lands on the R. Both wait for
+ * their images, as the lock screen does, so the flight is never spent on an
+ * empty screen; held at most 1.5s. Same width as the lock screen's mark.
+ */
+const REVEAL_MS = 900;
+function BrandReveal() {
+  const { width } = useWindowDimensions();
+  const markW = Math.round(width * 0.517);
+  const [loaded, setLoaded] = useState({ word: false, dove: false });
+  const ready = loaded.word && loaded.dove;
+  const word = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    if (!ready) {
+      const t = setTimeout(() => setLoaded({ word: true, dove: true }), 1500);
+      return () => clearTimeout(t);
+    }
+    word.setValue(0.3);
+    const fade = Animated.timing(word, { toValue: 1, duration: REVEAL_MS, easing: Easing.inOut(Easing.ease), useNativeDriver: true });
+    fade.start();
+    return () => fade.stop();
+  }, [ready, word]);
+  return (
+    // The perched dove rises 0.36 of the word's width above it.
+    <View style={{ marginTop: Math.ceil(markW * 0.36) }}>
+      <Animated.View style={{ opacity: word }}>
+        <DoveMark
+          width={markW}
+          perched={false}
+          ink={T.ink}
+          onLoad={() => setLoaded(l => (l.word ? l : { ...l, word: true }))}
+        />
+      </Animated.View>
+      <DoveFlight
+        width={markW}
+        duration={REVEAL_MS}
+        play={ready}
+        edge={null}
+        onLoad={() => setLoaded(l => (l.dove ? l : { ...l, dove: true }))}
+      />
+    </View>
+  );
+}
+
+// Each chip leads with the merchant's real logo (MerchantMark, keyed on `pre`).
+// "Split in 4" is EZER's own product, not a merchant, so it has no mark.
 const CHIPS = [
   { pre: 'Netflix', hl: '-$15.49', hc: T.red, post: 'caught' },
   { pre: 'Hulu trial', hl: 'flagged', hc: T.gold, post: '' },
   { pre: 'Adobe CC', hl: '-$22.99', hc: T.red, post: 'caught' },
   { pre: 'Spotify', hl: '-$11.99', hc: T.red, post: 'caught' },
-  { pre: 'Gym app', hl: 'renewal seen', hc: T.gold, post: '' },
+  { pre: 'Peloton', hl: 'renewal seen', hc: T.gold, post: '' },
   { pre: 'YouTube', hl: '-$13.99', hc: T.red, post: 'caught' },
   { pre: 'Figma', hl: '-$34', hc: T.red, post: 'caught' },
-  { pre: 'Split in 4', hl: '$212 sofa', hc: T.accInk, post: '' },
+  { pre: 'Split in 4', hl: '$212 sofa', hc: T.accInk, post: '', own: true },
   { pre: 'iCloud', hl: '-$2.99', hc: T.red, post: 'caught' },
 ];
 
@@ -172,7 +222,8 @@ function Marquee({ duration, reverse }: { duration: number; reverse?: boolean })
   const run = (key: string) => (
     <View key={key} style={{ flexDirection: 'row', gap: 8 }} onLayout={key === 'a' ? e => setRunWidth(e.nativeEvent.layout.width + 8) : undefined}>
       {CHIPS.map((c, i) => (
-        <View key={i} style={{ paddingHorizontal: 14, paddingVertical: 8, borderRadius: 12, backgroundColor: T.card, borderWidth: 1, borderColor: T.line }}>
+        <View key={i} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 12, backgroundColor: T.card, borderWidth: 1, borderColor: T.line }}>
+          {c.own ? null : <MerchantMark name={c.pre} size={15} />}
           <Text style={{ fontSize: 11.5, fontFamily: UI_SEMI, color: T.mut }}>
             {c.pre} <Text style={{ color: c.hc, fontFamily: UI_BOLD }}>{c.hl}</Text>{c.post ? ` ${c.post}` : ''}
           </Text>
@@ -210,9 +261,7 @@ function ScreenTicker({ onStart, onLogin }: { onStart: () => void; onLogin: () =
 
       <View style={{ flex: 1, justifyContent: 'flex-end', paddingHorizontal: 24, paddingBottom: insets.bottom + 24 }}>
         <View style={{ alignItems: 'center', marginBottom: 40 }}>
-          <Rise delay={100}>
-            <Text style={{ fontFamily: SERIF, fontSize: 72, lineHeight: 78, letterSpacing: -2, color: T.ink }}>Ezer</Text>
-          </Rise>
+          <BrandReveal />
           <Rise delay={250}>
             <Text style={{ fontSize: 15, lineHeight: 22, color: T.mut, textAlign: 'center', maxWidth: 280, marginTop: 12 }}>
               While you read this, somebody's trial just billed. Yours won't.
@@ -307,12 +356,12 @@ function SpinCard() {
 // --- 03 · leak replay -------------------------------------------------------
 
 const CHARGES = [
-  { day: 3, letter: 'N', color: '#E50914', amount: 15.49 },
-  { day: 7, letter: 'S', color: '#1DB954', amount: 11.99 },
-  { day: 12, letter: 'Y', color: '#FF0033', amount: 13.99 },
-  { day: 16, letter: 'A', color: '#FA0F00', amount: 22.99 },
-  { day: 21, letter: 'F', color: T.accent, amount: 34.0 },
-  { day: 27, letter: 'H', color: '#17B26A', amount: 17.99 },
+  { day: 3, name: 'Netflix', amount: 15.49 },
+  { day: 7, name: 'Spotify', amount: 11.99 },
+  { day: 12, name: 'YouTube', amount: 13.99 },
+  { day: 16, name: 'Adobe CC', amount: 22.99 },
+  { day: 21, name: 'Figma', amount: 34.0 },
+  { day: 27, name: 'Hulu', amount: 17.99 },
 ];
 const LEAK_TOTAL = CHARGES.reduce((s, c) => s + c.amount, 0);
 
@@ -326,9 +375,7 @@ function ChargeDot({ charge, shown }: { charge: typeof CHARGES[number]; shown: b
   }, [a, shown]);
   return (
     <Animated.View style={{ alignItems: 'center', gap: 1, opacity: a, transform: [{ scale: a.interpolate({ inputRange: [0, 1], outputRange: [0.4, 1] }) }] }}>
-      <View style={{ width: 17, height: 17, borderRadius: 6, backgroundColor: charge.color, alignItems: 'center', justifyContent: 'center' }}>
-        <Text style={{ fontSize: 9, fontFamily: UI_BOLD, color: '#FFFFFF' }}>{charge.letter}</Text>
-      </View>
+      <MerchantMark name={charge.name} size={17} />
       <Text style={{ fontSize: 9, fontFamily: UI_BOLD, color: T.red }}>
         -${charge.amount.toFixed(2).replace('.00', '')}
       </Text>
@@ -402,9 +449,9 @@ function PulseBadge({ label, color, bg }: { label: string; color: string; bg: st
 }
 
 const UPCOMING = [
-  { letter: 'N', color: '#E50914', name: 'Netflix', sub: 'Renewal · $15.49', badge: 'in 3d', pulse: false },
-  { letter: 'H', color: '#17B26A', name: 'Hulu', sub: 'Trial ends · becomes $17.99/mo', badge: 'in 5d', pulse: true },
-  { letter: 'A', color: '#FA0F00', name: 'Adobe CC', sub: 'Renewal · $22.99', badge: 'in 9d', pulse: false },
+  { name: 'Netflix', sub: 'Renewal · $15.49', badge: 'in 3d', pulse: false },
+  { name: 'Hulu', sub: 'Trial ends · becomes $17.99/mo', badge: 'in 5d', pulse: true },
+  { name: 'Adobe CC', sub: 'Renewal · $22.99', badge: 'in 9d', pulse: false },
 ];
 
 // --- 05 · auth --------------------------------------------------------------
@@ -664,9 +711,7 @@ export default function OnboardingScreen() {
                 <Text style={{ fontSize: 10, fontFamily: UI_BOLD, letterSpacing: 0.8, color: T.mut2 }}>EXAMPLE</Text>
                 {UPCOMING.map(u => (
                   <View key={u.name} style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-                    <View style={{ width: 42, height: 42, borderRadius: 13, backgroundColor: u.color, alignItems: 'center', justifyContent: 'center' }}>
-                      <Text style={{ fontSize: 18, fontFamily: UI_BOLD, color: '#FFFFFF' }}>{u.letter}</Text>
-                    </View>
+                    <MerchantMark name={u.name} size={42} />
                     <View style={{ flex: 1, minWidth: 0 }}>
                       <Text style={{ fontSize: 15, fontFamily: UI_BOLD, color: T.ink }}>{u.name}</Text>
                       <Text style={{ fontSize: 12, color: T.mut }}>{u.sub}</Text>

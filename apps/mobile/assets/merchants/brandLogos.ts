@@ -199,6 +199,8 @@ export const MERCHANT_DOMAIN: Record<string, string> = {
   ascent: 'ascentfunding.com',
   'ascent funding': 'ascentfunding.com',
   kikoff: 'kikoff.com',
+  // peloton.com's favicon is an unrelated company's mark; Peloton is onepeloton.com.
+  peloton: 'onepeloton.com',
   cleo: 'meetcleo.com',
 };
 

@@ -20,7 +20,8 @@ import {
   type StyleProp,
 } from 'react-native';
 import { useIsFocused } from '@react-navigation/native';
-import { HeaderDoveMark, markWidthForTitle } from '../DoveReveal';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { DoveMark } from '../DoveReveal';
 import { useTheme } from '../../utils/ThemeContext';
 import Animated, {
   Easing,
@@ -105,10 +106,24 @@ export function Body({ children, style, color, ...rest }: TextProps) {
   );
 }
 
-/** The tab headers' EZER, the lock screen's Cinzel mark with the perched dove,
- *  as tall as a capital of the screen title (`titleSize`) it sits beside. */
-export function Wordmark({ roomAbove, titleSize = 26 }: { roomAbove?: boolean; titleSize?: number }) {
-  return <HeaderDoveMark width={markWidthForTitle(titleSize)} roomAbove={roomAbove} />;
+/** The EZER at the top right of every tab (the lock screen's Cinzel mark with
+ *  the perched dove). ONE size and ONE place on every tab, at the owner's
+ *  request ("hard locked in placement and size whenever it's on the screen";
+ *  he picked 56 dp, word on the right margin, Oct 12 2026). Absolute, so it
+ *  ignores each screen's padding: render it as a direct child of the tab's
+ *  ScrollView, after ScreenBody (it scrolls with the page, never fades or rises
+ *  with it). TAB_MARK_TOP puts EZER's floor on the baseline of a screenTitle
+ *  whose box starts at insets.top + 10 (Wallet, Pay in 4, Savings, Alerts),
+ *  measured on the k62. */
+export const TAB_MARK_W = 56;
+const TAB_MARK_TOP = 26;
+export function TabMark() {
+  const insets = useSafeAreaInsets();
+  return (
+    <View pointerEvents="none" style={{ position: 'absolute', top: insets.top + TAB_MARK_TOP, right: layout.screenX }}>
+      <DoveMark width={TAB_MARK_W} />
+    </View>
+  );
 }
 
 // -----------------------------------------------------------------------------

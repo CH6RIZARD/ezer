@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback, use
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { api } from './api';
 import { clearAllCardArtPrefs } from './cardArt/prefs';
+import { clearCardDesign, clearSpendingPowerOutcome } from './cardDesignStore';
 
 interface User {
   id: string;
@@ -245,6 +246,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // must not outlive the session (this also covers account deletion,
       // which ends in logout()).
       clearAllCardArtPrefs(),
+      // The cached Spending Power outcome and the card design are this
+      // account's, not the device's: left behind, the next account to sign
+      // in here would see the previous one's limit and design. Both helpers
+      // never throw, so account deletion (which ends here) can't fail on them.
+      clearSpendingPowerOutcome(),
+      clearCardDesign(),
       // NOT the passcode: LockGate clears it once the session has really
       // ended (components/LockGate.tsx). Clearing it here lifted the lock
       // while the app was still signed in.

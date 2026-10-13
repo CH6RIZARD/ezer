@@ -26,7 +26,7 @@ import {
   PressScale,
   PulseRing,
   ScreenBody,
-  Wordmark,
+  TabMark,
 } from '../../components/redesign/Primitives';
 import VirtualCard from '../../components/redesign/VirtualCard';
 import ProgressRing from '../../components/redesign/ProgressRing';
@@ -195,9 +195,9 @@ export default function PayInFourScreen() {
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
       <ScrollView
         contentContainerStyle={{
-          paddingTop: insets.top + 12,
+          paddingTop: insets.top + 10,
           paddingHorizontal: layout.screenX,
-          paddingBottom: layout.contentBottom,
+          paddingBottom: insets.bottom + layout.tabBottom,
         }}
         showsVerticalScrollIndicator={false}
         scrollEnabled={!cardDragging}
@@ -205,13 +205,8 @@ export default function PayInFourScreen() {
         overScrollMode="never"
       >
         <ScreenBody>
-          {/* --- header ------------------------------------------------------ */}
-          <View style={styles.headerRow}>
-            <View style={{ flex: 1 }} />
-            <Wordmark roomAbove />
-          </View>
-
-          <Text style={[typeScale.screenTitle, { color: colors.ink, marginTop: 6 }]}>
+          {/* --- header (EZER: TabMark, top right) ------------------------- */}
+          <Text style={[typeScale.screenTitle, { color: colors.ink }]}>
             Pay in{' '}
             <Text style={{ fontFamily: fontFamily.serif, color: colors.accInk, fontSize: 28 }}>
               four
@@ -347,6 +342,7 @@ export default function PayInFourScreen() {
             does not affect your credit score. Amounts shown are illustrative.
           </Text>
         </ScreenBody>
+        <TabMark />
       </ScrollView>
 
       <SpendingPowerSheet visible={sheetVisible} viaJoin={sheetViaJoin} onClose={closeSheet} />
@@ -355,10 +351,6 @@ export default function PayInFourScreen() {
 }
 
 const styles = StyleSheet.create({
-  headerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
   chipRow: {
     flexDirection: 'row',
     gap: 8,

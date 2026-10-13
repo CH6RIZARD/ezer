@@ -43,7 +43,7 @@ import {
   Surface,
   PressScale,
   ScreenBody,
-  Wordmark,
+  TabMark,
 } from '../../components/redesign/Primitives';
 import MerchantMark from '../../components/redesign/MerchantMark';
 import BankCardFace from '../../components/redesign/BankCardFace';
@@ -511,6 +511,40 @@ export default function WalletScreen() {
   }, [cards, fetchBreakdown]);
 
   const drained = merchants.reduce((s, m) => s + m.totalCents, 0);
+  // Stable, so RollingNumber (memo) skips the Wallet's unrelated renders.
+  const totalStyle = useMemo(() => [typeScale.totalValue, { color: colors.red }], [colors.red]);
+
+  /**
+   * The range picker's footer total. Goes through the same cache as the
+   * effect above, so a quote fetched while the sheet is open makes Done a
+   * same-frame cache hit — the total then rolls once, straight to the new
+   * figure, instead of sitting on the old one for a round trip.
+   */
+  const quoteRange = useCallback(
+    async (start: Date, endDay: Date): Promise<number | null> => {
+      const cardId = active?.id;
+      if (!cardId) return null;
+      const r = { start, end: endOfDay(endDay) };
+      const sum = (b: Breakdown) => b.merchants.reduce((s, m) => s + m.totalCents, 0);
+      const hit = breakdownCache.current.get(keyFor(cardId, r));
+      if (hit && Date.now() - hit.at < BREAKDOWN_FRESH_MS) return sum(hit.b);
+      const { ok, ...b } = await fetchBreakdown(cardId, r);
+      return ok ? sum(b) : hit ? sum(hit.b) : null;
+    },
+    // keyFor is a stable inline helper.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [active?.id, fetchBreakdown]
+  );
+
+  /** Picker closed. Only a complete range changes anything — one batched
+   *  render, after the sheet has already left the screen. */
+  const onPickClose = useCallback((r: { start: Date; end: Date } | null) => {
+    setPickOpen(false);
+    if (!r) return;
+    setRStart(r.start);
+    setREnd(r.end);
+    setPreset('custom');
+  }, []);
 
   const chipLabel =
     preset === 'custom' && rStart && rEnd
@@ -647,7 +681,7 @@ export default function WalletScreen() {
         ref={pageRef}
         contentContainerStyle={{
           paddingTop: insets.top + 10,
-          paddingBottom: insets.bottom + layout.contentBottom,
+          paddingBottom: insets.bottom + layout.tabBottom,
         }}
         showsVerticalScrollIndicator={false}
         bounces={false}
@@ -656,7 +690,6 @@ export default function WalletScreen() {
         <ScreenBody>
           <View style={[styles.header, { paddingHorizontal: layout.screenX }]}>
             <Text style={[typeScale.screenTitle, { color: colors.ink, flex: 1 }]}>Wallet</Text>
-            <Wordmark />
           </View>
 
           {/* --- card carousel ----------------------------------------------- */}
@@ -761,9 +794,12 @@ export default function WalletScreen() {
                     // when the row is too narrow it scrolls instead.
                     style={{ flexGrow: 1, flexShrink: 0, flexBasis: 'auto' }}
                     onPress={() => {
-                      setPreset(key);
+                      // Custom only OPENS the picker. The preset (and so the
+                      // numbers) change when a complete range is applied —
+                      // never to a half-picked one, which used to fall back
+                      // to "This month" and swap the totals mid-pick.
                       if (key === 'custom') setPickOpen(true);
-                      else setPickOpen(false);
+                      else setPreset(key);
                     }}
                   >
                     <View
@@ -795,18 +831,6 @@ export default function WalletScreen() {
               })}
             </ScrollView>
 
-            {pickOpen && (
-              <RangeCalendar
-                start={rStart}
-                end={rEnd}
-                drainedCents={drained}
-                onChange={(s, e) => {
-                  setRStart(s);
-                  setREnd(e);
-                }}
-                onDone={() => setPickOpen(false)}
-              />
-            )}
 
             {/* --- total drained --------------------------------------------- */}
             {/* A failed load must not render as "$0.00 drained" — same banner
@@ -827,7 +851,7 @@ export default function WalletScreen() {
               <Label>Total drained</Label>
               {/* Rolls digit by digit when the range changes, not a jump. */}
               <View style={{ marginTop: 4 }}>
-                <RollingNumber value={formatCents(drained)} style={[typeScale.totalValue, { color: colors.red }]} />
+                <RollingNumber value={formatCents(drained)} style={totalStyle} />
               </View>
               {/* "0 active subscriptions" directly above a "$450.12
                   predicted" pill read as contradictory — the card obviously
@@ -906,7 +930,18 @@ export default function WalletScreen() {
             </PressScale>
           </View>
         </ScreenBody>
+        <TabMark />
       </ScrollView>
+
+      {/* An overlay sheet, not part of the page: opening or closing it must
+          never change the page's height (see RangeCalendar's header). */}
+      <RangeCalendar
+        open={pickOpen}
+        initialStart={rStart}
+        initialEnd={rEnd}
+        quote={quoteRange}
+        onClose={onPickClose}
+      />
     </View>
   );
 }
@@ -914,8 +949,7 @@ export default function WalletScreen() {
 const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
-    // EZER's floor on the title's baseline (see Wordmark).
-    alignItems: 'baseline',
+    alignItems: 'center',
   },
   dots: {
     flexDirection: 'row',

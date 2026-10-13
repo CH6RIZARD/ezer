@@ -4,6 +4,19 @@ Read this before editing. It records decisions that are load-bearing for
 compliance or that cost real money to get wrong, and it exists because this
 repo is edited from two places that drift apart.
 
+## Every build is BOTH platforms, from one commit
+
+The owner (Oct 12 2026): "anytime a build is created it has to build both the
+iOS and the Android build at once so that neither are differing in version".
+EZER ships as this RN app (Android) AND a native SwiftUI port for iPhone (built
+in WSL at ~/apps/Ezer with xtool, snapshotted into `apps/ios` here). So:
+- Any change to apps/mobile is ported into the Swift app in the same pass
+  (translate the RN code; specs in E:\iphone-ezer\spec).
+- Build with `bash scripts/build-both.sh`: it snapshots apps/ios, commits,
+  pushes, starts the Android build for that SHA and builds + installs iOS from
+  the same SHA. Never trigger only one platform. Install the Android APK only
+  after the phone has been idle (see the handoff notes).
+
 ## GitHub is the source of truth. Your local copy probably is not.
 
 This project is edited BOTH locally on the operator's machine AND by remote
@@ -105,6 +118,20 @@ style problem.
   whose chips never shrink (`flexShrink: 0`) — four equal-width chips and
   then four shrinkable ones both clipped "This month"/"Last month" on a 360dp
   phone with a larger system font. Don't put them back in a fixed row.
+- **The Wallet's Custom range picker (`components/redesign/RangeCalendar.tsx`)
+  is an overlay sheet with its OWN half-picked state, and applies once.** The
+  Custom chip only opens it; `preset`/`rStart`/`rEnd` change in one batch in
+  `onPickClose`, after the sheet's exit animation, and only for a complete
+  range (Done with one end picked, scrim tap and back all change nothing).
+  It used to be inline in the page and controlled by the Wallet's state:
+  every day tap re-rendered the whole Wallet, a first tap (end = null) fell
+  back to "This month" and swapped the totals mid-pick, and opening/closing
+  it moved everything below by ~350dp (plus Android's scroll clamp). The
+  footer total comes from `quoteRange`, which goes through the breakdown
+  cache, so Done is usually a same-frame hit; never feed it the on-screen
+  `drained` (that is the previous range's figure). Don't move the picker
+  back into the page or lift its picking state into `WalletScreen`. The
+  SwiftUI port (`Features/Wallet/`) follows the same rule.
 - **The build needs devDependencies** (prisma CLI, typescript). Railway's
   `NODE_ENV=production` makes `pnpm install` skip them, which shows up as
   "spawn prisma EACCES". That's why `railway.json`'s buildCommand installs
@@ -260,6 +287,20 @@ style problem.
   interaction (idle float, drag-rotate, half-turn settle) instead of a second
   hand-copied implementation. Edit the physics there; `VirtualCard.tsx` and
   `PhysicalCardReview.tsx` should only ever supply front/back content to it.
+- **The Pay in 4 card has no tap-to-reveal** (`VirtualCard.tsx`, Swift
+  `VirtualCard.swift`). Issued: masked + last4, EXPIRES expiry. Preview:
+  masked, STATUS / PREVIEW. `GET /cards/highnote` returns only last4+expiry,
+  so an issued card's reveal did nothing, and the preview "revealed" an
+  invented number (5312 7702 4401 8873, 09/29). A real reveal needs
+  Highnote's PCI-scoped secure display, not a number in this app. Keep it.
+- **`PhysicalCardApproval` never shows or saves a number the server didn't
+  give.** Its plaid-POST failure used to fall back to an invented $1,000
+  `DEMO_LIMIT_CENTS` approval and SAVE it. Now: failure → the sheet's
+  "Couldn't check your spending power just now. Try again." banner on the
+  choice step, nothing saved; `'suspended'` → "Paused" with the sheet's
+  words; any other no-limit answer → the same failure (no review state).
+  A real approved/suspended decision is also written to the Spending Power
+  key. Keep it.
 
 ## Spending Power / Pay in 4 underwriting
 
@@ -423,6 +464,22 @@ style problem.
     Checking •4532") — nothing in the app ever routed to it, but it sat there
     as a landmine for exactly the confusion it was built to avoid. Do not
     recreate a "connected accounts" screen separate from the ones above.
+- **`getSpendingPowerOutcome()` falls back to the server** (local key, else
+  `fetchServerAccessOutcome()`, cached once found; Swift
+  `CardDesignStore.getSpendingPowerOutcome`). The key is only a mirror; a
+  reinstall/cleared data/other phone/Card Studio assessment leaves it empty
+  while `GET /cards/access-list` has the decision. Without the fallback Home
+  (which always fell back) said $25.00 and the sheet said "Your number is
+  still a blank", and the Pay in 4 CTA POSTed a waitlist join. Every reader
+  (sheet, Pay in 4 CTA label, Settings › Linked banks, Card Studio's
+  carry-over) goes through it; don't read the key directly. Sign-out clears
+  the key, the reveal flag and the design record (`AuthContext.logout`), so
+  one account's limit/design never shows for the next. Keep both.
+- **`POST /cards/access-list` mode `'waitlist'` returns the user's latest
+  `'plaid'` decision instead of writing a row, when one exists.** A join is
+  not a decision, and `GET /cards/access-list` (Home) and the Highnote auth
+  webhook (`routes/highnoteAuth.ts`) read the LATEST row: a newer waitlist
+  row blanked Home and would start declining the issued card. Keep it.
 
 ## Inbox scanning (`apps/mobile/utils/inboxScan/`, `SCOPES.md`)
 
@@ -631,6 +688,15 @@ style problem.
   TikTok. The cancel probe also rejects redirects to another site. Add
   curated domains to `MERCHANT_DOMAIN` when the `{name}.com` guess is wrong
   (ascent.com 404s; Ascent is ascentfunding.com).
+- **The Spending Power pill is tap OR slide-to-confirm** (owner's request,
+  Oct 12 2026; `pillPan` in `SpendingPowerSheet.tsx`, mirrored in the Swift
+  port). Three traps: the sheet's `<Modal>` content is wrapped in its own
+  `GestureHandlerRootView`, because an RN Modal is a separate Android window
+  and RNGH gestures inside it never fire without one. The drag follows
+  `absoluteX - downX`, not `translationX`, because RNGH zeroes translation
+  when the pan activates, leaving the circle 10 dp behind the finger. The
+  `dragged` ref stops the PressScale tap from also firing after a drag on
+  web, where RNGH doesn't cancel RN's press.
 
 ## No swipe between tabs
 
@@ -660,13 +726,16 @@ style problem.
   R as the real dove, not an SVG. The keypad header uses the same `DoveMark`.
   The PNGs and `doveFrames.ts` are generated by `E:\ezer-dove\work\export_app.py`
   from the Blender renders; rerun it rather than hand-editing coordinates.
-  `Wordmark` (Primitives, every tab header) is now the small `DoveMark` too.
-  It is as tall as the title's capitals (`markWidthForTitle`): the owner wants
-  the dove's top on the title's roof and EZER's floor on its baseline. Only
-  the word takes layout space (the dove overhangs into the padding) and the
-  title rows use `alignItems: 'baseline'`; Home's centre column is
-  column-reverse with the title first so its baseline is the title's. `roomAbove`
-  reserves the dove's height where the mark starts the screen (status bar).
+  The tabs' top-right EZER is `TabMark` (Primitives): ONE size (56 dp, the
+  owner's pick) in ONE place on every tab, absolutely positioned against the
+  ScrollView's content (insets.top + TAB_MARK_TOP, right: screenX), so it
+  ignores each screen's padding. The owner asked for it "hard locked in
+  placement and size whenever it's on the screen" after per-tab sizing (title
+  cap height) and per-tab rows made it jump between tabs. Wallet, Pay in 4,
+  Savings and Alerts start their screenTitle at insets.top + 10 with no row
+  above it, so EZER's floor sits on each title's baseline; Home keeps its
+  centred title with an empty 72-wide right slot. Don't put the mark back into
+  a header row or size it per screen.
   The intro's fade and flight wait for the word and the sprite sheet to load
   (`introReady` in LockGate, max 1.5s): started at once, they ran on an empty
   screen on a cold start. The splash, `android.backgroundColor` (the window
@@ -680,6 +749,29 @@ style problem.
   On cream (light mode only) the white dove gets a faint `colors.gold` edge,
   its own silhouette tinted and drawn at 8 offsets behind it, asked for because
   white on cream washed out. Don't drop it as "extra draws"; dark themes skip it.
+  The edged dove's container sets `needsOffscreenAlphaCompositing`: without
+  it, a fading parent (keypad, lift) faded the 8 gold copies and the white
+  dove separately on Android and the gold showed through the dove (owner:
+  "looks slightly botched"). SwiftUI needs `.compositingGroup()` for the same.
+  Tabs end with `insets.bottom + layout.tabBottom` (176): room past the floating
+  bar so a scroll doesn't stop dead on the last row (owner's request).
+
+## Dove loader (`components/DoveLoader.tsx`)
+
+- **Geometry and timing match the approved previews** (`E:\ezer-dove\loaders\previews`,
+  numbers in `E:\ezer-dove\loaders\presentations.md`). Sprites and
+  `doveLoaderFrames.ts` are generated by `E:\ezer-dove\loaders\work\export_loaders.py`;
+  rerun it, don't hand-edit. Orbit/infinity use their `_tight` renders in the island
+  and in buttons (inline `size <= 40`), where the full path's bird is a speck.
+- **The island's droplet and neck are two SVG paths, not one.** Near the snap the
+  neck's outline crosses itself inside the droplet, and a single nonzero fill
+  punched a visible hole there. The island capsule is `#000` on every theme; the
+  black-theme hairline and ring track use `darkTokens.line`, because
+  `blackTokens.line` nearly vanishes on black.
+- **Headless Edge reports reduced motion, and sparse virtual-time frames desync
+  the island's springs from its delays** (Reanimated caps a spring step at 64 ms).
+  Pass `--force-prefers-no-reduced-motion`, and don't judge the morph's timing
+  from a `--virtual-time-budget` screenshot.
 
 ## Alerts are in-app, never the OS dialog
 

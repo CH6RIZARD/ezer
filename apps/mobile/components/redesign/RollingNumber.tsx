@@ -47,7 +47,7 @@ function DigitColumn({ digit, m, style, rollIn }: { digit: number; m: Metrics; s
   );
 }
 
-export default function RollingNumber({
+function RollingNumber({
   value,
   style,
   containerStyle,
@@ -121,3 +121,7 @@ const styles = StyleSheet.create({
   center: { textAlign: 'center' },
   measure: { position: 'absolute', opacity: 0, flexDirection: 'row' },
 });
+
+// Memoized: a parent that re-renders for unrelated reasons (and passes a
+// stable style) skips ~10 Texts per digit column.
+export default React.memo(RollingNumber);

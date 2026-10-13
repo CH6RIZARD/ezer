@@ -149,6 +149,27 @@ export async function cardRoutes(server: FastifyInstance) {
     }
 
     if (mode === 'waitlist') {
+      // A join is not a decision. If this user was already assessed, hand
+      // that decision back instead of writing a waitlist row: GET
+      // /cards/access-list (Home's tile) and the Highnote auth webhook
+      // (services/highnoteAuth.ts) both read the LATEST row, so a newer
+      // waitlist row would blank Home's limit and start declining the issued
+      // card. A client with an empty local cache sent exactly that. Keep it.
+      if (userId !== 'anonymous') {
+        const decided = await prisma.cardAccessList.findFirst({
+          where: { userId, mode: 'plaid' },
+          orderBy: { createdAt: 'desc' },
+        });
+        if (decided) {
+          return {
+            success: true,
+            data: {
+              status: decided.status,
+              ...(decided.limitCents && decided.limitCents > 0 ? { limitCents: decided.limitCents } : {}),
+            },
+          };
+        }
+      }
       const record = await prisma.cardAccessList.create({
         data: { userId, designId: designId || null, mode: 'waitlist', status: 'waitlist' },
       });

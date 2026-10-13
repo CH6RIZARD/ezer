@@ -15,8 +15,15 @@
 // revealed limit is an indication, not a card.
 //
 // PLAID: gated behind EXPO_PUBLIC_FEATURE_PLAID. With the flag off (the demo
-// build) the screen runs a fully self-contained mocked assessment that always
-// produces the SAME number, so the flow is complete without credentials.
+// build) Plaid Link is skipped, but the assessment is still the server's.
+//
+// A failed assessment shows NO number. This screen used to fall back to an
+// invented $1,000 "demo" approval on any request failure, and SAVED it, so
+// Home and Card Studio then showed a limit the server never gave. It now ends
+// the way SpendingPowerSheet.tsx does: an honest "couldn't check" banner,
+// nothing saved, retry available. 'suspended' shows the sheet's "Paused";
+// there is no manual-review state (CLAUDE.md), so any other no-limit answer
+// is the same honest failure. Keep both.
 // =============================================================================
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
@@ -34,13 +41,20 @@ import {
   PressScale,
   ScreenBody,
 } from '../../components/redesign/Primitives';
-import { getCardDesignId, loadCardDesign, saveCardAccessOutcome } from '../../utils/cardDesignStore';
+import {
+  getCardDesignId,
+  loadCardDesign,
+  mapServerStatus,
+  saveCardAccessOutcome,
+  saveSpendingPowerOutcome,
+  type CardAccessOutcome,
+} from '../../utils/cardDesignStore';
 import { usePlaid } from '../../utils/usePlaid';
 import { useData } from '../../contexts/DataContext';
 import { api } from '../../utils/api';
 
 // -----------------------------------------------------------------------------
-// Feature flag + demo constants
+// Feature flag + constants
 // -----------------------------------------------------------------------------
 
 /**
@@ -49,14 +63,6 @@ import { api } from '../../utils/api';
  * never even reached there.
  */
 const FEATURE_PLAID = process.env.EXPO_PUBLIC_FEATURE_PLAID === '1';
-
-/**
- * Offline fallback limit, in CENTS. Mirrors what apps/api/src/routes/cards.ts
- * scores for its demo signal set (77 → $1,000 band) so the number is identical
- * whether or not the API is reachable. A demo that shows a different limit on
- * every run is worse than no demo.
- */
-const DEMO_LIMIT_CENTS = 100_000;
 
 /** Assessment theatre. Fixed order, fixed timing — deterministic, like the result. */
 const CHECK_STEPS: { key: string; label: string }[] = [
@@ -76,7 +82,8 @@ function formatLimit(cents: number): string {
   return `$${Math.round(cents / 100).toLocaleString('en-US')}`;
 }
 
-type Phase = 'choice' | 'assessing' | 'approved' | 'review' | 'waitlist';
+type Phase = 'choice' | 'assessing' | 'approved' | 'suspended' | 'waitlist';
+type Decision = { status: CardAccessOutcome['status']; limitCents: number };
 
 type AccessResponse = {
   data?: { status?: string; limitCents?: number };
@@ -100,6 +107,8 @@ export default function PhysicalCardApprovalScreen() {
   const [stepIndex, setStepIndex] = useState(0);
   const [limitCents, setLimitCents] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
+  /** The last assessment failed: banner up on 'choice', nothing saved. */
+  const [assessmentError, setAssessmentError] = useState(false);
 
   // Timers must not fire into an unmounted tree — the user can back out of the
   // assessment mid-run.
@@ -120,36 +129,55 @@ export default function PhysicalCardApprovalScreen() {
   }, []);
 
   /**
-   * Join the access list. Best-effort: a network failure must NOT strand the
-   * user on a spinner, because the design is already saved locally and the
-   * decision is reproducible client-side. Returns the limit in cents for the
-   * plaid path (0 = routed to manual review), or null for waitlist.
+   * Join the access list. Returns the server's decision, or null when the
+   * request failed or the answer was unreadable. Never invents one. A
+   * 'waitlist' POST from someone already assessed gets that earlier decision
+   * back (routes/cards.ts), so the caller must read the status, not assume it.
    */
-  const joinAccessList = useCallback(
-    async (mode: 'plaid' | 'waitlist'): Promise<number | null> => {
-      const designId = await getCardDesignId();
-      try {
-        const res = await api.post<AccessResponse>('/cards/access-list', {
-          mode,
-          // A `local_…` id means the design never reached the server; sending it
-          // would 404, so it is dropped and the entry is created design-less.
-          designId: designId && !designId.startsWith('local_') ? designId : null,
-        });
-        const payload = res?.data ?? res;
-        if (mode === 'waitlist') return null;
-        return typeof payload?.limitCents === 'number' ? payload.limitCents : 0;
-      } catch {
-        // Offline / not signed in / API down. Fall back to the same demo band
-        // the server would have returned so the screen still resolves.
-        return mode === 'plaid' ? DEMO_LIMIT_CENTS : null;
-      }
-    },
-    []
-  );
+  const joinAccessList = useCallback(async (mode: 'plaid' | 'waitlist'): Promise<Decision | null> => {
+    const designId = await getCardDesignId();
+    try {
+      const res = await api.post<AccessResponse>('/cards/access-list', {
+        mode,
+        // A `local_…` id means the design never reached the server; sending it
+        // would 404, so it is dropped and the entry is created design-less.
+        designId: designId && !designId.startsWith('local_') ? designId : null,
+      });
+      const payload = res?.data ?? res;
+      const status = mapServerStatus(payload?.status);
+      if (!status) return null;
+      return { status, limitCents: typeof payload?.limitCents === 'number' ? payload.limitCents : 0 };
+    } catch {
+      return null;
+    }
+  }, []);
+
+  /** Show and save a real decision. False = nothing usable; the caller shows the failure. */
+  const settle = useCallback((result: Decision | null): boolean => {
+    const joinedAt = new Date().toISOString();
+    if (result?.status === 'approved' && result.limitCents > 0) {
+      setLimitCents(result.limitCents);
+      setPhase('approved');
+      void saveCardAccessOutcome({ status: 'approved', limitCents: result.limitCents, joinedAt });
+      // A real decision also goes to the Spending Power sheet's key, so the
+      // sheet can't keep showing an older answer than this one.
+      void saveSpendingPowerOutcome({ status: 'approved', limitCents: result.limitCents, joinedAt });
+      return true;
+    }
+    if (result?.status === 'suspended' || result?.status === 'waitlist') {
+      setLimitCents(null);
+      setPhase(result.status);
+      void saveCardAccessOutcome({ status: result.status, limitCents: null, joinedAt });
+      if (result.status === 'suspended') void saveSpendingPowerOutcome({ status: 'suspended', limitCents: null, joinedAt });
+      return true;
+    }
+    return false;
+  }, []);
 
   const runAssessment = useCallback(async () => {
     setPhase('assessing');
     setStepIndex(0);
+    setAssessmentError(false);
 
     for (let i = 0; i < CHECK_STEPS.length; i++) {
       await wait(STEP_MS);
@@ -157,29 +185,25 @@ export default function PhysicalCardApprovalScreen() {
       setStepIndex(i + 1);
     }
 
-    const cents = await joinAccessList('plaid');
+    const result = await joinAccessList('plaid');
     if (!alive.current) return;
 
-    if (cents && cents > 0) {
-      setLimitCents(cents);
-      setPhase('approved');
-      void saveCardAccessOutcome({ status: 'approved', limitCents: cents, joinedAt: new Date().toISOString() });
-    } else {
-      // A thin file is not a decline. It goes to a human.
+    if (!settle(result)) {
+      // Failed, or no limit and not suspended: never show or save a number.
       setLimitCents(null);
-      setPhase('review');
-      void saveCardAccessOutcome({ status: 'review', limitCents: null, joinedAt: new Date().toISOString() });
+      setAssessmentError(true);
+      setPhase('choice');
     }
-  }, [joinAccessList, wait]);
+  }, [joinAccessList, settle, wait]);
 
   const handleConnectBank = useCallback(async () => {
     if (busy) return;
     setBusy(true);
 
     if (!FEATURE_PLAID || hasBank) {
-      // Already linked, or the MOCKED PATH (demo build): no Plaid Link, no credentials, deterministic
-      // outcome. Everything downstream of the link step is identical to the
-      // real path, so the screen is fully exercised.
+      // Already linked, or the demo build: no Plaid Link, no credentials.
+      // Everything downstream of the link step is identical to the real
+      // path, so the screen is fully exercised.
       await runAssessment();
       if (alive.current) setBusy(false);
       return;
@@ -207,15 +231,16 @@ export default function PhysicalCardApprovalScreen() {
   const handleSkip = useCallback(async () => {
     if (busy) return;
     setBusy(true);
-    await joinAccessList('waitlist');
+    setAssessmentError(false);
+    const result = await joinAccessList('waitlist');
     if (!alive.current) return;
-    setLimitCents(null);
-    setPhase('waitlist');
-    void saveCardAccessOutcome({ status: 'waitlist', limitCents: null, joinedAt: new Date().toISOString() });
+    // Best-effort join: a failed request still lands on the list locally (as
+    // SpendingPowerSheet does); a real earlier decision coming back wins.
+    if (!settle(result)) settle({ status: 'waitlist', limitCents: 0 });
     setBusy(false);
-  }, [busy, joinAccessList]);
+  }, [busy, joinAccessList, settle]);
 
-  const done = phase === 'approved' || phase === 'review' || phase === 'waitlist';
+  const done = phase === 'approved' || phase === 'suspended' || phase === 'waitlist';
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
@@ -257,6 +282,16 @@ export default function PhysicalCardApprovalScreen() {
               <Body style={{ marginTop: 6, marginBottom: 14 }}>
                 Two ways in. One tells you your number today.
               </Body>
+
+              {/* Same banner and words as SpendingPowerSheet.tsx's. */}
+              {assessmentError && (
+                <View style={[styles.errorBanner, { backgroundColor: colors.card, borderColor: colors.red }]}>
+                  <Ionicons name="alert-circle-outline" size={16} color={colors.red} />
+                  <Text style={[styles.errorBannerText, { color: colors.red }]}>
+                    Couldn't check your spending power just now. Try again.
+                  </Text>
+                </View>
+              )}
 
               <PressScale onPress={handleConnectBank} scaleTo={0.98} disabled={busy}>
                 <View
@@ -318,6 +353,7 @@ export default function PhysicalCardApprovalScreen() {
                     {complete ? (
                       <Ionicons name="checkmark-circle" size={18} color={colors.success} />
                     ) : current ? (
+                      // Width 18, the other steps' icons, so the label doesn't shift as steps advance.
                       <ActivityIndicator size="small" color={colors.accInk} />
                     ) : (
                       <Ionicons name="ellipse-outline" size={18} color={colors.mut3} />
@@ -350,13 +386,13 @@ export default function PhysicalCardApprovalScreen() {
             </Surface>
           )}
 
-          {/* --- Thin file → human review ------------------------------------ */}
-          {phase === 'review' && (
+          {/* --- Uncured missed Pay in 4 payment: same words as the sheet ---- */}
+          {phase === 'suspended' && (
             <Surface style={styles.reveal}>
-              <Label>Under review</Label>
+              <Label color={colors.red}>Paused</Label>
               <Body style={{ marginTop: 6 }}>
-                We couldn't set a limit from your account history yet, so a person
-                is taking a look. You're on the access list and we'll be in touch.
+                A Pay in 4 payment didn’t go through, so new spending power is paused until
+                it’s resolved. Nothing else on your account is affected.
               </Body>
             </Surface>
           )}
@@ -499,6 +535,16 @@ const styles = StyleSheet.create({
     fontSize: 13,
     flex: 1,
   },
+  errorBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 14,
+    padding: 12,
+    borderRadius: radius.chip,
+    borderWidth: 1,
+  },
+  errorBannerText: { fontFamily: fontFamily.semibold, fontSize: 12.5, flex: 1 },
   reveal: {
     marginTop: 22,
     padding: 18,

@@ -38,7 +38,7 @@ import {
   Surface,
   PressScale,
   ScreenBody,
-  Wordmark,
+  TabMark,
 } from '../../components/redesign/Primitives';
 import ProgressRing from '../../components/redesign/ProgressRing';
 import MoveMoneySheet, { type MoveMode } from '../../components/redesign/MoveMoneySheet';
@@ -248,7 +248,7 @@ export default function SavingsScreen() {
         contentContainerStyle={{
           paddingTop: insets.top + 10,
           paddingHorizontal: layout.screenX,
-          paddingBottom: layout.contentBottom,
+          paddingBottom: insets.bottom + layout.tabBottom,
         }}
         showsVerticalScrollIndicator={false}
         refreshControl={
@@ -260,12 +260,7 @@ export default function SavingsScreen() {
         }
       >
         <ScreenBody>
-          <View style={styles.header}>
-            <View style={{ flex: 1 }} />
-            <Wordmark roomAbove />
-          </View>
-
-          <Text style={[typeScale.screenTitle, { color: colors.ink, marginTop: 4 }]}>Savings</Text>
+          <Text style={[typeScale.screenTitle, { color: colors.ink }]}>Savings</Text>
           <Body style={{ marginTop: 6 }}>Saved for you · yours to move</Body>
 
           {/* A failed load must not render as "$0.00 saved". */}
@@ -494,6 +489,7 @@ export default function SavingsScreen() {
             connections are being certified — no funds are held, promised or guaranteed.
           </Text>
         </ScreenBody>
+        <TabMark />
       </ScrollView>
 
       <MoveMoneySheet
@@ -512,10 +508,6 @@ export default function SavingsScreen() {
 }
 
 const styles = StyleSheet.create({
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
   section: {
     marginTop: 26,
     marginBottom: 10,

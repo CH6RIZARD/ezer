@@ -34,18 +34,20 @@ const LAST = XY.length - 1;
 // On cream the white dove washes out, so light mode rings it with a faint
 // brand-gold edge: the dove's own silhouette tinted and drawn at 8 small
 // offsets behind it. Offsets are in dp, so the edge is the same at any size.
-const EDGE = [[1, 0], [-1, 0], [0, 1], [0, -1], [0.7, 0.7], [-0.7, 0.7], [0.7, -0.7], [-0.7, -0.7]] as const;
-const EDGE_DP = 0.9;
-const EDGE_OPACITY = 0.6;
+// DoveLoader.tsx draws its edge from these too.
+export const EDGE = [[1, 0], [-1, 0], [0, 1], [0, -1], [0.7, 0.7], [-0.7, 0.7], [0.7, -0.7], [-0.7, -0.7]] as const;
+export const EDGE_DP = 0.9;
+export const EDGE_OPACITY = 0.6;
 
 /** The dove's edge colour for the current theme, or null for none. */
-function useEdge(): string | null {
+export function useEdge(): string | null {
   const { mode, colors } = useTheme();
   return mode === 'light' ? colors.gold : null;
 }
 
-function Perched({ k, onLoad }: { k: number; onLoad?: () => void }) {
-  const edge = useEdge();
+function Perched({ k, onLoad, edge: edgeOverride }: { k: number; onLoad?: () => void; edge?: string | null }) {
+  const themeEdge = useEdge();
+  const edge = edgeOverride === undefined ? themeEdge : edgeOverride;
   const box = { position: 'absolute' as const, left: PERCH.x * k, top: PERCH.y * k, width: PERCH.w * k, height: PERCH.h * k };
   return (
     <>
@@ -63,36 +65,35 @@ function Perched({ k, onLoad }: { k: number; onLoad?: () => void }) {
 }
 
 /** The wordmark with the dove on the R. `width` is the wordmark's width in dp;
- *  the dove sits above that box (0.36 of the width), outside its layout. */
-export function DoveMark({ width, perched = true, onLoad }: { width: number; perched?: boolean; onLoad?: () => void }) {
+ *  the dove sits above that box (0.36 of the width), outside its layout.
+ *  `ink` overrides the theme's word colour (onboarding is always dark). */
+export function DoveMark({
+  width,
+  perched = true,
+  onLoad,
+  ink,
+}: {
+  width: number;
+  perched?: boolean;
+  onLoad?: () => void;
+  ink?: string;
+}) {
   const { colors } = useTheme();
+  const edge = useEdge();
   const k = width / WORD.w;
   return (
-    <View style={{ width, height: WORD.h * k }} accessible accessibilityRole="image" accessibilityLabel="EZER">
-      <Image source={WORDMARK} style={{ width, height: WORD.h * k, tintColor: colors.ink }} onLoad={onLoad} />
+    // needsOffscreenAlphaCompositing: when a parent fades (the keypad, the
+    // lift), Android otherwise fades each of the 8 gold edge copies and the
+    // white dove separately, and the gold shows through the dove as a blob.
+    <View
+      style={{ width, height: WORD.h * k }}
+      needsOffscreenAlphaCompositing={perched && !!edge}
+      accessible
+      accessibilityRole="image"
+      accessibilityLabel="EZER"
+    >
+      <Image source={WORDMARK} style={{ width, height: WORD.h * k, tintColor: ink ?? colors.ink }} onLoad={onLoad} />
       {perched && <Perched k={k} />}
-    </View>
-  );
-}
-
-/** Space Grotesk's capital height as a share of the font size (measured on
- *  the k62: 'Wallet' at 26 spans 36px at 2x). */
-const CAP = 0.69;
-
-/** The mark width at which the dove's top to the word's baseline is exactly as
- *  tall as a capital of a `fontSize` title: the owner wants the bird's top on
- *  the title's roof and EZER's floor on its floor. */
-export const markWidthForTitle = (fontSize: number) => Math.round((fontSize * CAP * WORD.w) / (WORD.h - PERCH.y));
-
-/** The tab headers' mark. Only the word takes layout space (the dove overhangs
- *  into the padding), so a row with `alignItems: 'baseline'` puts EZER's floor
- *  on the title's baseline: Yoga reads this box's baseline as the word image's
- *  bottom. `roomAbove` keeps the dove's height for a mark that starts the
- *  screen, so the dove clears the status bar. */
-export function HeaderDoveMark({ width = 56, roomAbove = false }: { width?: number; roomAbove?: boolean }) {
-  return (
-    <View style={roomAbove ? { paddingTop: Math.ceil((-PERCH.y * width) / WORD.w) } : null}>
-      <DoveMark width={width} />
     </View>
   );
 }
@@ -109,14 +110,18 @@ export function DoveFlight({
   duration,
   play,
   onLoad,
+  edge: edgeOverride,
 }: {
   width: number;
   duration: number;
   play: boolean;
   onLoad?: () => void;
+  /** null: no gold edge whatever the theme (onboarding's fixed dark design). */
+  edge?: string | null;
 }) {
   const reduced = useReducedMotion();
-  const edge = useEdge();
+  const themeEdge = useEdge();
+  const edge = edgeOverride === undefined ? themeEdge : edgeOverride;
   const k = width / WORD.w;
   const f = useSharedValue(0);
   useEffect(() => {
@@ -135,13 +140,14 @@ export function DoveFlight({
 
   // Reduced motion: no travel, the dove is simply there.
   if (reduced) {
-    return <Perched k={k} onLoad={onLoad} />;
+    return <Perched k={k} onLoad={onLoad} edge={edge} />;
   }
   const size = { width: CELL.w * CELL.cols * k, height: CELL.h * CELL.rows * k };
   // Cells carry a 2px transparent margin, so the edge copies stay inside them.
   return (
     <Animated.View
       pointerEvents="none"
+      needsOffscreenAlphaCompositing={!!edge}
       style={[{ position: 'absolute', left: 0, top: 0, width: CELL.w * k, height: CELL.h * k, overflow: 'hidden', opacity: play ? 1 : 0 }, box]}
     >
       {edge &&
@@ -185,6 +191,7 @@ export function DoveHover({ width }: { width: number }) {
       {!loaded && <Perched k={k} />}
       <View
         pointerEvents="none"
+        needsOffscreenAlphaCompositing={!!edge}
         style={{ position: 'absolute', left: HOVER.x * k, top: HOVER.y * k, width: HOVER.w * k, height: HOVER.h * k, overflow: 'hidden', opacity: loaded ? 1 : 0 }}
       >
         {edge &&

@@ -4,10 +4,16 @@
 // The free-drag spin physics live in SpinCard.tsx (a "hard requirement" per
 // the handoff, and shared with Card Studio's finished-design review so there
 // is exactly one implementation of it). This file owns only what is specific
-// to the Pay in 4 card: its front/back content and the tap-to-reveal number.
+// to the Pay in 4 card: its front/back content.
+//
+// There is NO tap-to-reveal. GET /cards/highnote returns only last4 + expiry,
+// never the full number (PAN), so an issued card cannot be revealed from what
+// this app holds; a real reveal needs Highnote's PCI-scoped secure display.
+// The preview card's "revealed" number (and its 09/29 expiry) was invented,
+// which is worse than showing nothing. Keep it masked.
 // =============================================================================
 
-import React, { useState } from 'react';
+import React from 'react';
 import { View, Text, StyleSheet, type StyleProp, type ViewStyle } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { gradients, cardFinishes, type CardFinish } from '../../theme/tokens';
@@ -16,7 +22,6 @@ import SpinCard from './SpinCard';
 import CardChip from './CardChip';
 
 const NUMBER_MASKED = '••••  ••••  ••••  ••••';
-const NUMBER_REAL = '5312 7702 4401 8873';
 
 export interface VirtualCardProps {
   finish?: CardFinish;
@@ -32,15 +37,12 @@ export interface VirtualCardProps {
 }
 
 export function VirtualCard({ finish = 'amethyst', style, onDragChange, issued }: VirtualCardProps) {
-  const [revealed, setRevealed] = useState(false);
   const finishColors = cardFinishes[finish];
 
   return (
     <SpinCard
       style={style}
       onDragChange={onDragChange}
-      onTap={() => setRevealed(v => !v)}
-      hint="Drag to spin it around · tap to reveal/hide the number"
       front={
         <LinearGradient
           colors={finishColors as unknown as readonly [string, string, ...string[]]}
@@ -53,7 +55,7 @@ export function VirtualCard({ finish = 'amethyst', style, onDragChange, issued }
             <CardChip />
           </View>
 
-          <Text selectable={false} style={styles.number}>{issued ? `••••  ••••  ••••  ${issued.last4}` : revealed ? NUMBER_REAL : NUMBER_MASKED}</Text>
+          <Text selectable={false} style={styles.number}>{issued ? `••••  ••••  ••••  ${issued.last4}` : NUMBER_MASKED}</Text>
 
           <View style={styles.rowBetween}>
             <View>
@@ -62,10 +64,10 @@ export function VirtualCard({ finish = 'amethyst', style, onDragChange, issued }
             </View>
             <View>
               <Text selectable={false} style={styles.cardLabel}>
-                {issued || revealed ? 'EXPIRES' : 'STATUS'}
+                {issued ? 'EXPIRES' : 'STATUS'}
               </Text>
               <Text selectable={false} style={styles.cardValue}>
-                {issued ? issued.expiry : revealed ? '09/29' : 'PREVIEW'}
+                {issued ? issued.expiry : 'PREVIEW'}
               </Text>
             </View>
           </View>

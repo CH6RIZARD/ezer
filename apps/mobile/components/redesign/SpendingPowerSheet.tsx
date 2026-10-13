@@ -27,8 +27,8 @@
 // single pill for "Use connected bank" (runs the SAME assessment, no Link)
 // vs "Connect a new bank" (Plaid Link tagged 'pay_in_4', separate from
 // whatever backs subscriptions). The slide animation itself (circle
-// left→right, covering the label as it passes) is done with a plain
-// Animated.Value translateX rather than the mock's CSS clip-path — the
+// left→right, covering the label as it passes) is a translateX on a
+// Reanimated shared value rather than the mock's CSS clip-path — the
 // circle is simply opaque and rendered AFTER the label in the JSX, so
 // sliding it over the text covers it with no masking trickery needed.
 // =============================================================================
@@ -41,10 +41,21 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
+  Platform,
   ActivityIndicator,
-  Animated,
-  Easing,
 } from 'react-native';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withTiming,
+  cancelAnimation,
+  interpolate,
+  Extrapolation,
+  Easing,
+} from 'react-native-reanimated';
+import { scheduleOnRN } from 'react-native-worklets';
+import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
+import * as Haptics from 'expo-haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../utils/ThemeContext';
@@ -71,6 +82,20 @@ const CHECK_STEPS = [
   'Calculating your spending power',
 ];
 const STEP_MS = 620;
+// The primary pill's circle. A tap slides it across in SLIDE_MS. A drag
+// follows the finger; released past COMMIT_AT of the track, or flicked
+// forward faster than FLICK_VX (dp/s), it finishes in COMMIT_MS and runs the
+// tap's action; otherwise it returns home in RETURN_MS (ease-out, no
+// overshoot). The pan claims the touch only after DRAG_SLOP dp sideways, and
+// gives it up to the page scroll after DRAG_SLOP dp vertically.
+const SLIDE_EASE = Easing.bezier(...motion.cardSettleBezier);
+const RETURN_EASE = Easing.bezier(...motion.easeOut);
+const SLIDE_MS = 550;
+const COMMIT_AT = 0.6;
+const FLICK_VX = 800;
+const COMMIT_MS = 250;
+const RETURN_MS = 300;
+const DRAG_SLOP = 10;
 const FEATURE_PLAID = process.env.EXPO_PUBLIC_FEATURE_PLAID === '1';
 
 type Phase = 'ask' | 'assessing' | 'reveal' | 'status';
@@ -136,8 +161,18 @@ export default function SpendingPowerSheet({
   // at the left and slides to the right, covering the label as it passes —
   // achieved by simple z-order (circle renders after the label) rather than
   // a clip mask. `pillWidth` comes from the pill's own onLayout since the
-  // slide distance depends on it (pillWidth - circle size).
-  const slideAnim = useRef(new Animated.Value(0)).current;
+  // slide distance depends on it (pillWidth - circle size). A Reanimated
+  // shared value (0 = left, 1 = right) because a finger drags it too.
+  const slide = useSharedValue(0);
+  /** Where the circle was when the current drag took hold. */
+  const dragStart = useSharedValue(0);
+  /** The finger's x at touch-down. Not translationX: RNGH zeroes that at
+   *  activation, which left the circle DRAG_SLOP behind the finger. */
+  const downX = useSharedValue(0);
+  /** True between a pill drag taking hold and the next touch-down. RNGH on
+   *  web does not cancel the Pressable under a drag (CLAUDE.md "No swipe
+   *  between tabs"), so a drag would also fire the pill's tap there. */
+  const dragged = useRef(false);
   const [pillWidth, setPillWidth] = useState(0);
   const CIRCLE = 40;
   const CIRCLE_MARGIN = 8;
@@ -146,17 +181,17 @@ export default function SpendingPowerSheet({
   // handlePrimaryTap slides the circle to 1 (fully right) and only resets it
   // back to 0 on a few specific branches — a cancelled Plaid Link, or when
   // the split choice appears. A SUCCESSFUL flow (Plaid Link completes,
-  // runAssessment finishes) never did, so slideAnim stayed at 1 after the
+  // runAssessment finishes) never did, so the slide stayed at 1 after the
   // sheet moved on to the 'reveal'/'status' phase. Those phases render their
-  // OWN primary pill sharing this same Animated.Value, so it mounted
+  // OWN primary pill sharing this same value, so it mounted
   // already-slid: the circle resting on top of its own label instead of at
   // the left edge, exactly the "word should disappear as it slides, not sit
   // under it already" bug. Resetting on every phase change guarantees each
   // new pill starts at rest regardless of how the previous one's animation
   // ended.
   useEffect(() => {
-    slideAnim.setValue(0);
-  }, [phase, slideAnim]);
+    slide.set(0);
+  }, [phase, slide]);
 
   const alive = useRef(true);
   useEffect(
@@ -176,7 +211,7 @@ export default function SpendingPowerSheet({
     setShowChoice(false);
     setAssessmentError(false);
     setOpening(false);
-    slideAnim.setValue(0);
+    slide.set(0);
 
     const [outcome, revealSeen, design] = await Promise.all([
       getSpendingPowerOutcome(),
@@ -304,7 +339,7 @@ export default function SpendingPowerSheet({
       void runAssessment().finally(() => {
         if (alive.current) setBusy(false);
         setOpening(false);
-        slideAnim.setValue(0);
+        slide.set(0);
       });
       return;
     }
@@ -321,19 +356,14 @@ export default function SpendingPowerSheet({
         // Cancelled — animate the circle back to idle rather than leaving it
         // parked mid-slide (only visible when the idle pill is what was
         // tapped; harmless no-op otherwise since the split pills don't
-        // touch slideAnim at all).
+        // touch the slide at all).
         if (alive.current) setBusy(false);
         setOpening(false);
-        Animated.timing(slideAnim, {
-          toValue: 0,
-          duration: 550,
-          easing: Easing.bezier(0.22, 1, 0.36, 1),
-          useNativeDriver: true,
-        }).start();
+        slide.set(withTiming(0, { duration: SLIDE_MS, easing: SLIDE_EASE }));
       },
       'pay_in_4'
     );
-  }, [busy, openPlaidLink, runAssessment, slideAnim]);
+  }, [busy, openPlaidLink, runAssessment, slide]);
 
   /**
    * "Use connected bank" — runs the SAME assessment as "Connect a new bank",
@@ -358,23 +388,80 @@ export default function SpendingPowerSheet({
    * reveals the connected/new-bank choice; no bank at all goes straight to
    * Plaid (nothing to choose between for someone starting from zero).
    */
+  const afterSlide = useCallback(() => {
+    if (!alive.current) return;
+    if (hasBank) {
+      slide.set(0);
+      setShowChoice(true);
+    } else {
+      handleConnect();
+    }
+  }, [hasBank, handleConnect, slide]);
+
   const handlePrimaryTap = useCallback(() => {
     if (busy) return;
-    Animated.timing(slideAnim, {
-      toValue: 1,
-      duration: 550,
-      easing: Easing.bezier(0.22, 1, 0.36, 1),
-      useNativeDriver: true,
-    }).start(({ finished }) => {
-      if (!finished || !alive.current) return;
-      if (hasBank) {
-        slideAnim.setValue(0);
-        setShowChoice(true);
+    slide.set(
+      withTiming(1, { duration: SLIDE_MS, easing: SLIDE_EASE }, finished => {
+        'worklet';
+        if (finished) scheduleOnRN(afterSlide);
+      })
+    );
+  }, [busy, afterSlide, slide]);
+
+  const setDragged = (v: boolean) => {
+    dragged.current = v;
+  };
+  const commitHaptic = () => {
+    if (Platform.OS !== 'web') void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  };
+
+  /**
+   * Slide-to-confirm on the same pill: the circle follows the finger along
+   * the track, on the UI thread. Release past COMMIT_AT (or a forward flick)
+   * finishes the slide and then runs afterSlide, exactly what the tap runs;
+   * anything less returns the circle home. Grabbing it mid-animation stops it
+   * where it is.
+   */
+  const pillPan = Gesture.Pan()
+    .enabled(!busy && slideDistance > 0)
+    .activeOffsetX([-DRAG_SLOP, DRAG_SLOP])
+    .failOffsetY([-DRAG_SLOP, DRAG_SLOP])
+    .onBegin(e => {
+      downX.set(e.absoluteX);
+      scheduleOnRN(setDragged, false);
+    })
+    .onStart(() => {
+      cancelAnimation(slide);
+      dragStart.set(slide.get());
+      scheduleOnRN(setDragged, true);
+    })
+    .onUpdate(e => {
+      slide.set(Math.min(1, Math.max(0, dragStart.get() + (e.absoluteX - downX.get()) / slideDistance)));
+    })
+    .onEnd((e, success) => {
+      if (success && (slide.get() >= COMMIT_AT || e.velocityX >= FLICK_VX)) {
+        scheduleOnRN(commitHaptic);
+        slide.set(
+          withTiming(1, { duration: COMMIT_MS, easing: SLIDE_EASE }, finished => {
+            'worklet';
+            if (finished) scheduleOnRN(afterSlide);
+          })
+        );
       } else {
-        handleConnect();
+        slide.set(withTiming(0, { duration: RETURN_MS, easing: RETURN_EASE }));
       }
     });
-  }, [busy, hasBank, handleConnect, slideAnim]);
+
+  const onPillPress = () => {
+    if (!dragged.current) handlePrimaryTap();
+  };
+
+  const labelFade = useAnimatedStyle(() => ({
+    opacity: opening || busy ? 1 : interpolate(slide.get(), [0, 0.35], [1, 0], Extrapolation.CLAMP),
+  }));
+  const circleSlide = useAnimatedStyle(() => ({
+    transform: [{ translateX: slide.get() * slideDistance }],
+  }));
 
   const finishReveal = useCallback(async () => {
     await markSpendingPowerRevealSeen();
@@ -415,54 +502,39 @@ export default function SpendingPowerSheet({
         </PressScale>
       </View>
     ) : (
-      <PressScale onPress={handlePrimaryTap} scaleTo={motion.pressScale} disabled={busy}>
-        <View
-          style={[styles.ctaPill, { backgroundColor: colors.ink, opacity: busy && !opening ? 0.6 : 1 }]}
-          onLayout={e => setPillWidth(e.nativeEvent.layout.width)}
-        >
-          {/* The idle label fades out as the circle starts across, so the
-              word is gone before the circle reaches it — the circle is only
-              40px wide, so without this the label peeked out on both sides
-              of it mid-slide ("Check spending pow[●]"). The post-slide
-              labels ("Opening your bank…", busyLabel) show at full opacity
-              with the circle parked at the right. */}
-          <Animated.View
-            style={[
-              styles.ctaPillLabelWrap,
-              {
-                opacity:
-                  opening || busy
-                    ? 1
-                    : slideAnim.interpolate({ inputRange: [0, 0.35], outputRange: [1, 0], extrapolate: 'clamp' }),
-              },
-            ]}
+      <PressScale onPress={onPillPress} scaleTo={motion.pressScale} disabled={busy}>
+        <GestureDetector gesture={pillPan}>
+          <View
+            style={[styles.ctaPill, { backgroundColor: colors.ink, opacity: busy && !opening ? 0.6 : 1 }]}
+            onLayout={e => setPillWidth(e.nativeEvent.layout.width)}
           >
-            <Text style={[styles.ctaPillText, { color: colors.bg }]} numberOfLines={1}>
-              {opening ? 'Opening your bank…' : busy ? busyLabel : idleLabel}
-            </Text>
-          </Animated.View>
-          {/* Rendered AFTER the label so it stacks visually on top — sliding
-              it right covers the label as it passes, with no clip mask
-              needed. */}
-          <Animated.View
-            style={[
-              styles.ctaCircle,
-              {
-                backgroundColor: colors.gold,
-                transform: [
-                  { translateX: slideAnim.interpolate({ inputRange: [0, 1], outputRange: [0, slideDistance] }) },
-                ],
-              },
-            ]}
-          >
-            <Ionicons name="arrow-forward" size={18} color="#FFFFFF" />
-          </Animated.View>
-        </View>
+            {/* The idle label fades out as the circle starts across, so the
+                word is gone before the circle reaches it — the circle is only
+                40px wide, so without this the label peeked out on both sides
+                of it mid-slide ("Check spending pow[●]"). The post-slide
+                labels ("Opening your bank…", busyLabel) show at full opacity
+                with the circle parked at the right. */}
+            <Animated.View style={[styles.ctaPillLabelWrap, labelFade]}>
+              <Text style={[styles.ctaPillText, { color: colors.bg }]} numberOfLines={1}>
+                {opening ? 'Opening your bank…' : busy ? busyLabel : idleLabel}
+              </Text>
+            </Animated.View>
+            {/* Rendered AFTER the label so it stacks visually on top — sliding
+                it right covers the label as it passes, with no clip mask
+                needed. */}
+            <Animated.View style={[styles.ctaCircle, { backgroundColor: colors.gold }, circleSlide]}>
+              <Ionicons name="arrow-forward" size={18} color="#FFFFFF" />
+            </Animated.View>
+          </View>
+        </GestureDetector>
       </PressScale>
     );
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      {/* A Modal is its own native window on Android, outside the app's
+          GestureHandlerRootView; without this root the pill's pan never fires. */}
+      <GestureHandlerRootView style={{ flex: 1 }}>
       <Pressable style={StyleSheet.absoluteFill} onPress={busy ? undefined : onClose}>
         <View style={[StyleSheet.absoluteFill, { backgroundColor: colors.scrim }]} />
       </Pressable>
@@ -542,6 +614,7 @@ export default function SpendingPowerSheet({
                           {complete ? (
                             <Ionicons name="checkmark-circle" size={18} color={colors.success} />
                           ) : current ? (
+                            // Hover, not infinity: infinity's 64-dp-wide box would push this row's text off the others'.
                             <ActivityIndicator size="small" color={colors.accInk} />
                           ) : (
                             <Ionicons name="ellipse-outline" size={18} color={colors.mut3} />
@@ -718,6 +791,7 @@ export default function SpendingPowerSheet({
           )}
         </View>
       </View>
+      </GestureHandlerRootView>
     </Modal>
   );
 }

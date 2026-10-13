@@ -125,6 +125,10 @@ export const layout = {
   screenX: 20,
   /** Content bottom padding — clears the floating tab bar. */
   contentBottom: 96,
+  /** A tab's bottom padding (plus insets.bottom): the bar's clearance and
+   *  then room to breathe, so a scroll doesn't stop dead on the last row
+   *  (owner, Oct 12 2026: "like hitting a wall at the end of scroll"). */
+  tabBottom: 176,
   /** Minimum touch target. */
   hitTarget: 44,
   /** Calendar day cell minimum height. */
