@@ -12,7 +12,8 @@
 // =============================================================================
 
 import React, { useCallback, useState } from 'react';
-import { View, Text, ScrollView, Pressable, Switch, StyleSheet, ActivityIndicator } from 'react-native';
+import { View, Text, ScrollView, Pressable, Switch, StyleSheet } from 'react-native';
+import { DoveLoader } from '../../components/CameraDove';
 import { Alert } from '../../utils/appAlert';
 import { router, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -139,7 +140,7 @@ export default function BankDetailScreen() {
           </View>
 
           {loading ? (
-            <ActivityIndicator style={{ marginTop: 40 }} color={colors.gold} />
+            <DoveLoader />
           ) : !item ? (
             <Body style={{ marginTop: 24 }}>This bank is no longer connected.</Body>
           ) : (
@@ -174,12 +175,13 @@ export default function BankDetailScreen() {
                           <Text style={[typeScale.labelSm, { color: colors.gold }]}>PAY IN 4</Text>
                         </View>
                       ) : a.eligibleForPayIn4 ? (
-                        <Pressable onPress={() => makePayIn4(a.instrumentId)} disabled={busyAccountId === a.instrumentId}>
-                          {busyAccountId === a.instrumentId ? (
-                            <ActivityIndicator size="small" color={colors.gold} />
-                          ) : (
-                            <Text style={[styles.useForP4, { color: colors.gold }]}>Use for Pay in 4</Text>
-                          )}
+                        <Pressable
+                          onPress={() => makePayIn4(a.instrumentId)}
+                          disabled={busyAccountId === a.instrumentId}
+                          style={{ opacity: busyAccountId === a.instrumentId ? 0.6 : 1 }}
+                        >
+                          <DoveLoader active={busyAccountId === a.instrumentId} />
+                          <Text style={[styles.useForP4, { color: colors.gold }]}>Use for Pay in 4</Text>
                         </Pressable>
                       ) : null}
                     </View>
@@ -197,16 +199,14 @@ export default function BankDetailScreen() {
                       : 'Connected for Pay in 4 only. Turn on to find subscriptions here too.'}
                   </Body>
                 </View>
-                {readBusy ? (
-                  <ActivityIndicator color={colors.accInk} />
-                ) : (
-                  <Switch
-                    value={item.readForSubscriptions}
-                    onValueChange={toggleRead}
-                    trackColor={{ false: colors.line2, true: colors.accInk }}
-                    thumbColor="#FFFFFF"
-                  />
-                )}
+                <DoveLoader active={readBusy} />
+                <Switch
+                  value={item.readForSubscriptions}
+                  disabled={readBusy}
+                  onValueChange={toggleRead}
+                  trackColor={{ false: colors.line2, true: colors.accInk }}
+                  thumbColor="#FFFFFF"
+                />
               </Surface>
 
               {item.accounts.some(a => a.isPayIn4) && (
@@ -217,16 +217,13 @@ export default function BankDetailScreen() {
               )}
               <PressScale onPress={disconnect} scaleTo={motionPress} disabled={disconnecting} style={{ marginTop: 14 }}>
                 <View style={[styles.disconnect, { borderColor: colors.line2, opacity: disconnecting ? 0.6 : 1 }]}>
-                  {disconnecting ? (
-                    <ActivityIndicator color={colors.red} />
-                  ) : (
-                    <>
-                      <Ionicons name="unlink-outline" size={18} color={colors.red} />
-                      <Text style={[styles.disconnectText, { color: colors.red }]}>
-                        Disconnect {item.institutionName ?? 'bank'}
-                      </Text>
-                    </>
-                  )}
+                  <DoveLoader active={disconnecting} />
+                  <>
+                    <Ionicons name="unlink-outline" size={18} color={colors.red} />
+                    <Text style={[styles.disconnectText, { color: colors.red }]}>
+                      Disconnect {item.institutionName ?? 'bank'}
+                    </Text>
+                  </>
                 </View>
               </PressScale>
             </>

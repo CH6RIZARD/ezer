@@ -10,8 +10,8 @@ import {
   Pressable,
   KeyboardAvoidingView,
   Platform,
-  ActivityIndicator,
 } from 'react-native';
+import { DoveLoader } from '../../components/CameraDove';
 import { Alert } from '../../utils/appAlert';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -134,11 +134,8 @@ export default function LoginScreen() {
             onPress={handleLogin}
             disabled={isLoading}
           >
-            {isLoading ? (
-              <ActivityIndicator color="#FFFFFF" />
-            ) : (
-              <Text style={{ fontSize: 16, fontWeight: '700', color: '#FFFFFF' }}>Sign In</Text>
-            )}
+            <DoveLoader active={isLoading} />
+            <Text style={{ fontSize: 16, fontWeight: '700', color: '#FFFFFF' }}>Sign In</Text>
           </Pressable>
 
           {/* Divider */}

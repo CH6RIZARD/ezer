@@ -18,7 +18,8 @@
 // =============================================================================
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { View, Text, ScrollView, Switch, Dimensions, StyleSheet, ActivityIndicator } from 'react-native';
+import { View, Text, ScrollView, Switch, Dimensions, StyleSheet } from 'react-native';
+import { DoveLoader } from '../../components/CameraDove';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -180,7 +181,7 @@ export default function SubscriptionDetailScreen() {
   if (loading) {
     return (
       <View style={{ flex: 1, backgroundColor: colors.bg, alignItems: 'center', justifyContent: 'center' }}>
-        <ActivityIndicator color={colors.accInk} />
+        <DoveLoader />
       </View>
     );
   }
@@ -525,12 +526,9 @@ export default function SubscriptionDetailScreen() {
 
             {payOpt && !smartEnabled && (
               <PressScale onPress={() => void enableSmartSaving()} scaleTo={0.98} disabled={smartBusy}>
-                <View style={[styles.enableBtn, { backgroundColor: colors.accent }]}>
-                  {smartBusy ? (
-                    <ActivityIndicator color="#FFFFFF" />
-                  ) : (
-                    <Text style={styles.enableText}>Enable smart saving</Text>
-                  )}
+                <View style={[styles.enableBtn, { backgroundColor: colors.accent, opacity: smartBusy ? 0.6 : 1 }]}>
+                  <DoveLoader active={smartBusy} />
+                  <Text style={styles.enableText}>Enable smart saving</Text>
                 </View>
               </PressScale>
             )}

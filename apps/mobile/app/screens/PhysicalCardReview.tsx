@@ -17,7 +17,8 @@
 // =============================================================================
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { View, Text, ActivityIndicator, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet } from 'react-native';
+import { DoveLoader } from '../../components/CameraDove';
 // RNGH's ScrollView, so the card's pan cancels page scroll natively (SpinCard).
 import { ScrollView } from 'react-native-gesture-handler';
 import { router } from 'expo-router';
@@ -100,7 +101,7 @@ export default function PhysicalCardReviewScreen() {
   if (loading) {
     return (
       <View style={[styles.loadingScreen, { backgroundColor: colors.bg }]}>
-        <ActivityIndicator color={colors.accInk} />
+        <DoveLoader />
       </View>
     );
   }

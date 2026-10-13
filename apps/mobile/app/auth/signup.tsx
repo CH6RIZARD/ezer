@@ -10,9 +10,9 @@ import {
   Pressable,
   KeyboardAvoidingView,
   Platform,
-  ActivityIndicator,
   ScrollView,
 } from 'react-native';
+import { DoveLoader } from '../../components/CameraDove';
 import { Alert } from '../../utils/appAlert';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -255,11 +255,8 @@ export default function SignupScreen() {
             onPress={handleSignup}
             disabled={isLoading}
           >
-            {isLoading ? (
-              <ActivityIndicator color="#FFFFFF" />
-            ) : (
-              <Text style={{ fontSize: 16, fontWeight: '700', color: '#FFFFFF' }}>Create Account</Text>
-            )}
+            <DoveLoader active={isLoading} />
+            <Text style={{ fontSize: 16, fontWeight: '700', color: '#FFFFFF' }}>Create Account</Text>
           </Pressable>
 
           {/* Divider */}

@@ -32,10 +32,10 @@ import {
   Modal,
   Pressable,
   StyleSheet,
-  ActivityIndicator,
   type GestureResponderEvent,
   PanResponder,
 } from 'react-native';
+import { DoveLoader } from '../../components/CameraDove';
 import { router } from 'expo-router';
 // RNGH's ScrollView: CardCanvas's stroke gesture cancels page scroll natively.
 import { ScrollView } from 'react-native-gesture-handler';
@@ -448,7 +448,7 @@ export default function PhysicalCardScreen() {
           <View style={styles.canvasWrap}>
             {loading ? (
               <View style={[styles.loading, { backgroundColor: colors.card, borderColor: colors.line }]}>
-                <ActivityIndicator color={colors.accInk} />
+                <DoveLoader />
               </View>
             ) : (
               <CardCanvas

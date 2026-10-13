@@ -27,7 +27,7 @@
 // by setting the phone's clock back.
 // =============================================================================
 
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -39,6 +39,7 @@ import {
   Keyboard,
   Modal,
   Platform,
+  StatusBar,
   StyleSheet,
   useWindowDimensions,
 } from 'react-native';
@@ -50,7 +51,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../utils/ThemeContext';
 import { useAuth } from '../utils/AuthContext';
 import { useData } from '../contexts/DataContext';
-import { DoveFlight, DoveHover, DoveHoverPreload, DoveMark } from './DoveReveal';
+import { DoveFlight, DoveMark, DoveP1, DoveP1Preload } from './DoveReveal';
+import { WORD } from './doveFrames';
 import PasscodePad from './PasscodePad';
 import PasscodeSetup from './PasscodeSetup';
 import { fontFamily } from '../theme/type';
@@ -90,7 +92,7 @@ const IN_APP_FLOW_GRACE_MS = 10 * 60_000;
 export default function LockGate({ children }: { children: React.ReactNode }) {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
-  const { width: winW } = useWindowDimensions();
+  const { width: winW, height: winH } = useWindowDimensions();
   const auth = useAuth();
   const { isReady: dataReady } = useData();
 
@@ -110,6 +112,12 @@ export default function LockGate({ children }: { children: React.ReactNode }) {
   // 200ms, so the fully opaque wordmark sheet flashed back over the home
   // screen before it unmounted (device capture, Oct 2026).
   const layer = useRef(new Animated.Value(1)).current;
+  // The after-passcode dove (P1) flies up into the camera WHILE the layer
+  // lifts, so it is drawn outside the faded layer, and 'open' (which unmounts
+  // the overlay) waits until it is in.
+  const [p1Exit, setP1Exit] = useState(false);
+  const p1Busy = useRef(false);
+  const openAfterP1 = useRef(false);
 
   // Write the ref WITH the state, so a second AppState event queued before
   // the re-render reads the phase it just set.
@@ -117,6 +125,9 @@ export default function LockGate({ children }: { children: React.ReactNode }) {
     (next: Phase) => {
       if (next === 'open' || next === 'loading') markLockWarm();
       if (next !== 'open') layer.setValue(1);
+      p1Busy.current = false;
+      openAfterP1.current = false;
+      setP1Exit(false);
       phaseRef.current = next;
       setPhase(next);
     },
@@ -239,13 +250,25 @@ export default function LockGate({ children }: { children: React.ReactNode }) {
     Animated.timing(layer, { toValue: 0, duration: 220, useNativeDriver: true }).start(() => {
       // Only if nothing re-locked or covered the app during the fade (a
       // re-cover went through move(), which already put the layer back).
-      if (phaseRef.current === from) enter('open');
+      if (phaseRef.current !== from) return;
+      if (p1Busy.current) openAfterP1.current = true;
+      else enter('open');
     });
   }, [layer, enter]);
+  const p1Exited = useCallback(() => {
+    p1Busy.current = false;
+    if (openAfterP1.current && phaseRef.current === 'loading') {
+      openAfterP1.current = false;
+      enter('open');
+    }
+  }, [enter]);
 
   // Unlocked: one full EZER breath (up and back down), then in. Always the
   // one cycle, even when the saved dashboard is ready at once (the owner
   // wants the beat); longer only if auth or the first data are still out.
+  // The dove (P1) loops for as long as that takes, and the moment both are
+  // true it leaves from wherever it is in its loop: never cut shorter than
+  // the breath, never held for the end of a lap.
   const [cycleDone, setCycleDone] = useState(false);
   useEffect(() => {
     if (phase !== 'loading') return;
@@ -254,9 +277,13 @@ export default function LockGate({ children }: { children: React.ReactNode }) {
     return () => clearTimeout(t);
   }, [phase]);
   useEffect(() => {
-    if (phase !== 'loading' || !cycleDone || auth.isLoading) return;
-    if (!auth.isAuthenticated || dataReady) lift();
-  }, [phase, cycleDone, auth.isLoading, auth.isAuthenticated, dataReady, lift]);
+    if (phase !== 'loading' || !cycleDone || auth.isLoading || p1Exit) return;
+    if (!auth.isAuthenticated || dataReady) {
+      p1Busy.current = true;
+      setP1Exit(true);
+      lift();
+    }
+  }, [phase, cycleDone, auth.isLoading, auth.isAuthenticated, dataReady, lift, p1Exit]);
 
   // A keyboard left open in a sheet sits in its own window ABOVE the lock on
   // iOS, covering the keypad and typing into the hidden field. Blur it.
@@ -396,33 +423,55 @@ export default function LockGate({ children }: { children: React.ReactNode }) {
     </View>
   );
 
+  // The camera point in the word's units, for P1's climb into it: top-centre,
+  // half the status bar down (island centre / punch hole). The word's place
+  // in the window is measured; the estimate is the centred layout below.
+  const k = bigMark / WORD.w;
+  const wordRef = useRef<View>(null);
+  const [wordAt, setWordAt] = useState<{ x: number; y: number } | null>(null);
+  const bar = Platform.OS === 'android' ? StatusBar.currentHeight ?? insets.top : insets.top;
+  const word = wordAt ?? { x: (winW - bigMark) / 2, y: insets.top + (winH - insets.top - WORD.h * k) / 2 };
+  const cam = { x: (winW / 2 - word.x) / k, y: (bar / 2 - word.y) / k };
+
+  const padLayer = useMemo(() => Animated.multiply(pad, layer), [pad, layer]);
+
   const sheet = (
-    <Animated.View
-      style={[StyleSheet.absoluteFill, { backgroundColor: colors.bg, opacity: layer }]}
-      accessibilityViewIsModal
-    >
+    // The layer's opacity is on the background and the content, not on this
+    // root: P1 keeps flying, at full strength, over the app as it appears.
+    <View style={StyleSheet.absoluteFill} pointerEvents={p1Exit ? 'none' : 'auto'} accessibilityViewIsModal>
+      <Animated.View style={[StyleSheet.absoluteFill, { backgroundColor: colors.bg, opacity: layer }]} />
       {showMark ? (
         // Same box as app/index.tsx, so the hand-off from that screen is seamless.
         <View style={[styles.center, { paddingTop: insets.top }]}>
           {/* Intro: only the word fades; the dove flies in at full strength
               and lands on the R as the fade ends. Loading (after the
-              passcode): the word breathes and the dove flaps above the R.
-              Covering: the whole mark, dove included, breathes. */}
-          <View>
-            <Animated.View style={{ opacity: mark }}>
-              <DoveMark width={bigMark} perched={phase === 'cover'} onLoad={wordLoaded} />
+              passcode): the word breathes while the dove (P1) takes off from
+              the R and circles it. Covering: the whole mark, dove included, breathes. */}
+          <View ref={wordRef} onLayout={() => wordRef.current?.measureInWindow((x, y) => setWordAt({ x, y }))}>
+            <Animated.View style={{ opacity: layer }}>
+              <Animated.View style={{ opacity: mark }}>
+                <DoveMark width={bigMark} perched={phase === 'cover'} onLoad={wordLoaded} />
+              </Animated.View>
             </Animated.View>
-            {phase === 'loading' && <DoveHover width={bigMark} />}
+            {phase === 'loading' && (
+              <DoveP1
+                width={bigMark}
+                cam={cam}
+                exit={p1Exit}
+                fade={!(Platform.OS === 'ios' && insets.top >= 44)}
+                onExited={p1Exited}
+              />
+            )}
             {phase === 'intro' && (
               <DoveFlight width={bigMark} duration={FADE_MS} play={introReady} onLoad={doveLoaded} />
             )}
           </View>
         </View>
       ) : (
-        <Animated.View style={{ flex: 1, opacity: pad }}>
-          {/* Decode the hover sheet now, so the dove takes off on the
+        <Animated.View style={{ flex: 1, opacity: padLayer }}>
+          {/* Decode P1's sheets now, so the dove takes off on the
               loading phase's first frame instead of freezing, then popping. */}
-          {phase === 'locked' && <DoveHoverPreload width={bigMark} />}
+          {phase === 'locked' && <DoveP1Preload />}
           {phase === 'setup' ? (
             <PasscodeSetup
               palette={colors}
@@ -447,7 +496,7 @@ export default function LockGate({ children }: { children: React.ReactNode }) {
           )}
         </Animated.View>
       )}
-    </Animated.View>
+    </View>
   );
 
   return (

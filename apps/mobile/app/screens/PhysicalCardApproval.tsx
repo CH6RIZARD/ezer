@@ -27,7 +27,8 @@
 // =============================================================================
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { View, Text, ScrollView, StyleSheet, ActivityIndicator } from 'react-native';
+import { View, Text, ScrollView, StyleSheet } from 'react-native';
+import { DoveLoader } from '../../components/CameraDove';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -344,6 +345,7 @@ export default function PhysicalCardApprovalScreen() {
           {/* --- Assessing --------------------------------------------------- */}
           {phase === 'assessing' && (
             <Surface style={styles.assessing}>
+              <DoveLoader label="Assessing" />
               <Label>Assessing</Label>
               {CHECK_STEPS.map((s, i) => {
                 const complete = i < stepIndex;
@@ -353,8 +355,7 @@ export default function PhysicalCardApprovalScreen() {
                     {complete ? (
                       <Ionicons name="checkmark-circle" size={18} color={colors.success} />
                     ) : current ? (
-                      // Width 18, the other steps' icons, so the label doesn't shift as steps advance.
-                      <ActivityIndicator size="small" color={colors.accInk} />
+                      <Ionicons name="ellipse" size={18} color={colors.accInk} />
                     ) : (
                       <Ionicons name="ellipse-outline" size={18} color={colors.mut3} />
                     )}

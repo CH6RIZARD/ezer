@@ -8,7 +8,8 @@
 // =============================================================================
 
 import React, { useMemo, useState } from 'react';
-import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { CameraDoveHost, DoveLoader } from '../CameraDove';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useTheme } from '../../utils/ThemeContext';
 import { fontFamily, radius } from '../../theme/type';
@@ -99,7 +100,7 @@ export default function CardArtPicker({
             <ActionButton label="Take photo" onPress={() => takePhoto('camera')} disabled={busy} />
             <ActionButton label="Choose photo" onPress={() => takePhoto('library')} disabled={busy} />
             {prefs.photoUri ? <ActionButton label="Remove" onPress={onRemovePhoto} disabled={busy} subtle /> : null}
-            {busy ? <ActivityIndicator style={{ marginLeft: 6 }} /> : null}
+            <DoveLoader active={busy} />
           </View>
           {error ? <Text style={[styles.error, { color: colors.red }]}>{error}</Text> : null}
 
@@ -128,6 +129,8 @@ export default function CardArtPicker({
           </Text>
         </ScrollView>
       </View>
+      {/* Sheets draw above the root view on Android: the camera dove draws here while one is open. */}
+      <CameraDoveHost nested />
     </Modal>
   );
 

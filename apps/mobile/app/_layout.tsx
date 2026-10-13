@@ -21,6 +21,7 @@ import { ThemeProvider, useTheme } from '../utils/ThemeContext';
 import { DataProvider } from '../contexts/DataContext';
 import { SavingsGoalsProvider } from '../utils/SavingsGoalsContext';
 import LockGate from '../components/LockGate';
+import { CameraDoveHost } from '../components/CameraDove';
 import { CardWarmup } from '../components/redesign/SpinCard';
 
 class AppErrorBoundary extends React.Component<{ children: React.ReactNode }, { error: Error | null }> {
@@ -114,6 +115,8 @@ function RootLayoutNav() {
           <Stack.Screen name="savings" />
           <Stack.Screen name="screens/Paywall" options={{ presentation: 'fullScreenModal', animation: 'slide_from_bottom' }} />
         </Stack>
+        {/* The app's one loader: the dove out of the camera (useCameraDove). */}
+        <CameraDoveHost />
         </LockGate>
       </View>
     </>

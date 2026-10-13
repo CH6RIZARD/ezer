@@ -42,8 +42,8 @@ import {
   ScrollView,
   StyleSheet,
   Platform,
-  ActivityIndicator,
 } from 'react-native';
+import { CameraDoveHost, DoveLoader } from '../CameraDove';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -553,7 +553,7 @@ export default function SpendingPowerSheet({
 
           {!loaded ? (
             <View style={styles.loadingBox}>
-              <ActivityIndicator color={colors.gold} />
+              <DoveLoader />
             </View>
           ) : (
             <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
@@ -604,6 +604,7 @@ export default function SpendingPowerSheet({
               {/* --- Assessing --------------------------------------------- */}
               {phase === 'assessing' && (
                 <>
+                  <DoveLoader label="Working out your number" />
                   <Text style={[styles.headline, { color: colors.ink }]}>Working out your number</Text>
                   <View style={{ marginTop: 18 }}>
                     {CHECK_STEPS.map((label, i) => {
@@ -614,8 +615,7 @@ export default function SpendingPowerSheet({
                           {complete ? (
                             <Ionicons name="checkmark-circle" size={18} color={colors.success} />
                           ) : current ? (
-                            // Hover, not infinity: infinity's 64-dp-wide box would push this row's text off the others'.
-                            <ActivityIndicator size="small" color={colors.accInk} />
+                            <Ionicons name="ellipse" size={18} color={colors.accInk} />
                           ) : (
                             <Ionicons name="ellipse-outline" size={18} color={colors.mut3} />
                           )}
@@ -792,6 +792,8 @@ export default function SpendingPowerSheet({
         </View>
       </View>
       </GestureHandlerRootView>
+      {/* Sheets draw above the root view on Android: the camera dove draws here while one is open. */}
+      <CameraDoveHost nested />
     </Modal>
   );
 }

@@ -29,10 +29,10 @@ import {
   TextInput,
   ScrollView,
   StyleSheet,
-  ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
+import { CameraDoveHost, DoveLoader } from '../CameraDove';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../utils/ThemeContext';
 import { useSavingsGoals } from '../../utils/SavingsGoalsContext';
@@ -427,21 +427,20 @@ export default function MoveMoneySheet({
                 { backgroundColor: canSubmit ? colors.accent : colors.line },
               ]}
             >
-              {busy ? (
-                <ActivityIndicator color="#FFFFFF" />
-              ) : (
-                <Text
-                  style={[styles.confirmText, { color: canSubmit ? '#FFFFFF' : colors.mut2 }]}
-                >
-                  {amountDollars > 0
-                    ? `${copy.cta} ${formatCents(dollarsToCents(amountDollars))}`
-                    : copy.cta}
-                </Text>
-              )}
+              <DoveLoader active={busy} />
+              <Text
+                style={[styles.confirmText, { color: canSubmit ? '#FFFFFF' : colors.mut2 }]}
+              >
+                {amountDollars > 0
+                  ? `${copy.cta} ${formatCents(dollarsToCents(amountDollars))}`
+                  : copy.cta}
+              </Text>
             </View>
           </PressScale>
         </View>
       </KeyboardAvoidingView>
+      {/* Sheets draw above the root view on Android: the camera dove draws here while one is open. */}
+      <CameraDoveHost nested />
     </Modal>
   );
 }

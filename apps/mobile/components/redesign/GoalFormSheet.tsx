@@ -26,10 +26,10 @@ import {
   ScrollView,
   StyleSheet,
   Switch,
-  ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
+import { CameraDoveHost, DoveLoader } from '../CameraDove';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../utils/ThemeContext';
 import { useSavingsGoals, type SavingsGoal } from '../../utils/SavingsGoalsContext';
@@ -297,15 +297,14 @@ export default function GoalFormSheet({
                 { backgroundColor: busy ? colors.line : colors.accent },
               ]}
             >
-              {busy ? (
-                <ActivityIndicator color={colors.mut} />
-              ) : (
-                <Text style={styles.confirmText}>{isEdit ? 'Save changes' : 'Create goal'}</Text>
-              )}
+              <DoveLoader active={busy} />
+              <Text style={styles.confirmText}>{isEdit ? 'Save changes' : 'Create goal'}</Text>
             </View>
           </PressScale>
         </View>
       </KeyboardAvoidingView>
+      {/* Sheets draw above the root view on Android: the camera dove draws here while one is open. */}
+      <CameraDoveHost nested />
     </Modal>
   );
 }

@@ -10,21 +10,25 @@
 // re-render rather than nudging numbers here.
 // =============================================================================
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Image, View } from 'react-native';
 import Animated, {
   cancelAnimation,
   Easing,
   useAnimatedStyle,
+  useFrameCallback,
   useReducedMotion,
   useSharedValue,
   withRepeat,
   withTiming,
+  type SharedValue,
 } from 'react-native-reanimated';
+import { scheduleOnRN } from 'react-native-worklets';
 import { useTheme } from '../utils/ThemeContext';
 import { motion } from '../theme/type';
 import { CELL, PERCH, WORD, XY } from './doveFrames';
 import { HOVER } from './doveHoverFrames';
+import { P1 } from './doveP1Frames';
 
 const SHEET = require('../assets/dove/dove-sheet.png');
 const PERCHED = require('../assets/dove/dove-perch.png');
@@ -243,6 +247,227 @@ export function DoveHover({ width }: { width: number }) {
           <Animated.Image source={HOVER_SHEET} style={[size, sheet]} onLoad={() => setState(s => (s === 'wait' ? 'fly' : s))} />
         </Animated.View>
       )}
+    </>
+  );
+}
+
+// ------------------------------------------------------------------ P1
+// The wait after the passcode (owner's pick, Oct 2026: P1, frames in
+// E:\ezer-dove\loaders\frames\passcode_p1, exported by
+// E:\ezer-dove\loaders\work\export_app_doves.py into doveP1Frames.ts).
+// open: takes off from EXACTLY the perched pose on the R; loop: circles the
+// word while LockGate waits; exit: climbs fully up into the camera as Home
+// appears. LockGate decides when (at least FADE_MS * 2, and auth/data ready).
+// The exit starts from the CURRENT loop frame, never waiting for the lap: its
+// path is (1 - c) * (x, y) + c * cam with (x, y) the loop position the dove is
+// at, and over the first EXIT_BLEND frames position, scale and sprite blend
+// from the still-running loop into the exit's own climb.
+
+const EXIT_BLEND = 6;
+const P1_CLIPS = [P1.open, P1.loop, P1.exit];
+
+/** P1's sheets, invisible: mounted while the keypad is up, so they are decoded before the code is accepted. */
+export function DoveP1Preload() {
+  const reduced = useReducedMotion();
+  if (reduced) return null;
+  return (
+    <View pointerEvents="none" style={{ position: 'absolute', left: 0, top: 0, opacity: 0 }}>
+      {P1_CLIPS.map((c, i) => (
+        <Image key={i} source={c.sheet} style={{ width: 8, height: 8 }} />
+      ))}
+    </View>
+  );
+}
+
+type P1Pose = { x: number; y: number; s: number; i: [number, number, number]; a: [number, number, number] };
+
+/** Where the dove is and which cell of which clip shows, for phase ph (0 open, 1 loop, 2 exit, 3 done) at frame time t. */
+function p1Pose(ph: number, t: number, L: number, cx: number, cy: number, fade: boolean): P1Pose {
+  'worklet';
+  const i = Math.floor(t);
+  if (ph === 0) {
+    const io = Math.min(i, P1.open.n - 1);
+    const f = P1.open.f;
+    return { x: f[io * 5], y: f[io * 5 + 1], s: f[io * 5 + 2], i: [io, 0, 0], a: [1, 0, 0] };
+  }
+  const nl = P1.loop.n;
+  if (ph === 1) {
+    const il = i % nl;
+    const f = P1.loop.f;
+    return { x: f[il * 5], y: f[il * 5 + 1], s: f[il * 5 + 2], i: [0, il, 0], a: [0, 1, 0] };
+  }
+  const ie = Math.min(i, P1.exit.n - 1);
+  const il = (L + ie) % nl;
+  const lf = P1.loop.f;
+  const ef = P1.exit.f;
+  const b0 = Math.min(1, t / EXIT_BLEND);
+  const b = b0 * b0 * (3 - 2 * b0);
+  // the exit's own climb, carried over to start from loop frame L
+  const ex = lf[L * 5] + ef[ie * 5] - ef[0];
+  const ey = lf[L * 5 + 1] + ef[ie * 5 + 1] - ef[1];
+  const es = (lf[L * 5 + 2] * ef[ie * 5 + 2]) / ef[2];
+  const x = lf[il * 5] + (ex - lf[il * 5]) * b;
+  const y = lf[il * 5 + 1] + (ey - lf[il * 5 + 1]) * b;
+  const c = ef[ie * 5 + 3];
+  const o = ph === 3 ? 0 : fade ? ef[ie * 5 + 4] : 1;
+  return {
+    x: (1 - c) * x + c * cx,
+    y: (1 - c) * y + c * cy,
+    s: lf[il * 5 + 2] + (es - lf[il * 5 + 2]) * b,
+    i: [0, il, ie],
+    a: [0, (1 - b) * o, b * o],
+  };
+}
+
+type P1Shared = { ph: SharedValue<number>; t: SharedValue<number>; L: SharedValue<number> };
+
+function P1Window({
+  w,
+  k,
+  sv,
+  cam,
+  fade,
+  edge,
+  visible,
+  onLoad,
+}: {
+  w: 0 | 1 | 2;
+  k: number;
+  sv: P1Shared;
+  cam: { x: number; y: number };
+  fade: boolean;
+  edge: string | null;
+  visible: boolean;
+  onLoad?: () => void;
+}) {
+  const c = P1_CLIPS[w];
+  const W0 = P1.w * k;
+  const H0 = P1.h * k;
+  // The window sits at the word's origin; scaling is about its centre, so this puts the cell's pivot on (x, y).
+  const dx = P1.px * k - W0 / 2;
+  const dy = P1.py * k - H0 / 2;
+  const { ph, t, L } = sv;
+  const cx = cam.x;
+  const cy = cam.y;
+  const win = useAnimatedStyle(() => {
+    const q = p1Pose(ph.value, t.value, L.value, cx, cy, fade);
+    return {
+      opacity: q.a[w],
+      transform: [{ translateX: q.x * k - W0 / 2 - q.s * dx }, { translateY: q.y * k - H0 / 2 - q.s * dy }, { scale: q.s }],
+    };
+  });
+  const slide = useAnimatedStyle(() => {
+    const i = p1Pose(ph.value, t.value, L.value, cx, cy, fade).i[w];
+    return { transform: [{ translateX: -(i % c.cols) * W0 }, { translateY: -Math.floor(i / c.cols) * H0 }] };
+  });
+  const size = { width: W0 * c.cols, height: H0 * c.rows };
+  return (
+    <View pointerEvents="none" style={{ position: 'absolute', left: 0, top: 0, opacity: visible ? 1 : 0 }}>
+      <Animated.View
+        needsOffscreenAlphaCompositing={!!edge}
+        style={[{ position: 'absolute', left: 0, top: 0, width: W0, height: H0, overflow: 'hidden' }, win]}
+      >
+        {edge &&
+          EDGE.map(([ex, ey], i) => (
+            <View key={i} style={{ position: 'absolute', left: ex * EDGE_DP, top: ey * EDGE_DP, opacity: EDGE_OPACITY }}>
+              <Animated.Image source={c.sheet} style={[size, { tintColor: edge }, slide]} />
+            </View>
+          ))}
+        <Animated.Image source={c.sheet} style={[size, slide]} onLoad={onLoad} />
+      </Animated.View>
+    </View>
+  );
+}
+
+/**
+ * The after-passcode dove. Draw it inside the wordmark's box (DoveMark's
+ * coordinates). `cam`: the camera point in word units. `exit` true: fly into
+ * the camera now; `onExited` once it is in (at once with reduced motion or a
+ * sheet that has not loaded by then: the dove simply stays perched).
+ * `fade`: fade out at the camera (phones whose camera hides nothing).
+ */
+export function DoveP1({
+  width,
+  cam,
+  exit,
+  fade,
+  onExited,
+}: {
+  width: number;
+  cam: { x: number; y: number };
+  exit: boolean;
+  fade: boolean;
+  onExited: () => void;
+}) {
+  const reduced = useReducedMotion();
+  const edge = useEdge();
+  const k = width / WORD.w;
+  // Perched until the open sheet has loaded, then it takes off: open's first frame IS the perched
+  // pose, so a late take-off is not a jump (unlike the old hover loop, which needed a cap).
+  const [state, setState] = useState<'wait' | 'fly'>('wait');
+  const exited = useRef(onExited);
+  exited.current = onExited;
+  const flying = !reduced && state === 'fly';
+  useEffect(() => {
+    if (exit && !flying) exited.current();
+  }, [exit, flying]);
+
+  const ph = useSharedValue(0);
+  const t = useSharedValue(0);
+  const L = useSharedValue(0);
+  const go = useSharedValue(false);
+  useEffect(() => {
+    go.value = exit;
+  }, [go, exit]);
+  const done = () => exited.current();
+  const no = P1.open.n;
+  const nl = P1.loop.n;
+  const ne = P1.exit.n;
+  const fc = useFrameCallback(info => {
+    'worklet';
+    if (ph.value === 3) return;
+    let x = t.value + (Math.min(info.timeSincePreviousFrame ?? 16.7, 100) * P1.fps) / 1000;
+    if (ph.value === 0 && x >= no) {
+      ph.value = 1;
+      x -= no;
+    }
+    if (ph.value === 1) {
+      if (go.value) {
+        // straight into the exit from this frame, no waiting for the lap
+        L.value = Math.floor(x) % nl;
+        ph.value = 2;
+        x -= Math.floor(x);
+      } else if (x >= nl) x -= nl;
+    }
+    if (ph.value === 2 && x >= ne) {
+      ph.value = 3;
+      x = ne - 0.001;
+      scheduleOnRN(done);
+    }
+    t.value = x;
+  }, false);
+  useEffect(() => {
+    fc.setActive(flying);
+  }, [fc, flying]);
+
+  if (reduced) return <Perched k={k} />;
+  const sv = { ph, t, L };
+  return (
+    <>
+      {state !== 'fly' && <Perched k={k} />}
+      {([0, 1, 2] as const).map(w => (
+          <P1Window
+            key={w}
+            w={w}
+            k={k}
+            sv={sv}
+            cam={cam}
+            fade={fade}
+            edge={edge}
+            visible={state === 'fly'}
+            onLoad={w === 0 && !exit ? () => setState('fly') : undefined}
+          />
+        ))}
     </>
   );
 }

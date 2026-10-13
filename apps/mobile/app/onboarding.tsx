@@ -27,10 +27,10 @@ import {
   TextInput,
   ScrollView,
   Platform,
-  ActivityIndicator,
   useWindowDimensions,
   StyleSheet,
 } from 'react-native';
+import { DoveLoader } from '../components/CameraDove';
 import { router } from 'expo-router';
 import { useIsFocused } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -499,10 +499,9 @@ function AuthStep({ mode, setMode, onDone }: {
           disabled={busy !== null}
           style={{ height: 54, borderRadius: 17, backgroundColor: T.ink, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 10, opacity: busy ? 0.6 : 1 }}
         >
-          {busy === 'apple' ? <ActivityIndicator color={T.bg} /> : (
-            <><Ionicons name="logo-apple" size={19} color={T.bg} />
-            <Text style={{ fontSize: 15, fontFamily: UI_BOLD, color: T.bg }}>Continue with Apple</Text></>
-          )}
+          <DoveLoader active={busy === 'apple'} />
+          <Ionicons name="logo-apple" size={19} color={T.bg} />
+          <Text style={{ fontSize: 15, fontFamily: UI_BOLD, color: T.bg }}>Continue with Apple</Text>
         </Pressable>
 
         <Pressable
@@ -510,10 +509,9 @@ function AuthStep({ mode, setMode, onDone }: {
           disabled={busy !== null}
           style={{ height: 54, borderRadius: 17, backgroundColor: T.card, borderWidth: 1, borderColor: T.line2, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 10, opacity: busy ? 0.6 : 1 }}
         >
-          {busy === 'google' ? <ActivityIndicator color={T.ink} /> : (
-            <><Ionicons name="logo-google" size={19} color={T.ink} />
-            <Text style={{ fontSize: 15, fontFamily: UI_BOLD, color: T.ink }}>Continue with Google</Text></>
-          )}
+          <DoveLoader active={busy === 'google'} />
+          <Ionicons name="logo-google" size={19} color={T.ink} />
+          <Text style={{ fontSize: 15, fontFamily: UI_BOLD, color: T.ink }}>Continue with Google</Text>
         </Pressable>
       </View>
 

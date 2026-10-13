@@ -18,7 +18,8 @@
 // =============================================================================
 
 import React, { useState } from 'react';
-import { View, Text, ScrollView, Pressable, ActivityIndicator, TextInput } from 'react-native';
+import { View, Text, ScrollView, Pressable, TextInput } from 'react-native';
+import { DoveLoader } from '../../components/CameraDove';
 import { Alert } from '../../utils/appAlert';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -295,13 +296,10 @@ export default function PaywallScreen() {
             start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
             style={{ height: 56, borderRadius: 17, alignItems: 'center', justifyContent: 'center' }}
           >
-            {isPurchasing ? (
-              <ActivityIndicator color="#FFFFFF" />
-            ) : (
-              <Text style={{ fontSize: 15, fontFamily: UI_BOLD, color: '#FFFFFF' }}>
-                Start your free 7-day trial
-              </Text>
-            )}
+            <DoveLoader active={isPurchasing} />
+            <Text style={{ fontSize: 15, fontFamily: UI_BOLD, color: '#FFFFFF' }}>
+              Start your free 7-day trial
+            </Text>
           </LinearGradient>
         </Pressable>
 
@@ -358,22 +356,16 @@ export default function PaywallScreen() {
                 opacity: isRedeeming || !devCode.trim() ? 0.5 : 1,
               }}
             >
-              {isRedeeming ? (
-                <ActivityIndicator color="#FFFFFF" size="small" />
-              ) : (
-                <Text style={{ fontSize: 13, fontFamily: UI_SEMI, color: '#FFFFFF' }}>Unlock</Text>
-              )}
+              <DoveLoader active={isRedeeming} />
+              <Text style={{ fontSize: 13, fontFamily: UI_SEMI, color: '#FFFFFF' }}>Unlock</Text>
             </Pressable>
           </View>
         )}
 
         <View style={{ flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 14, marginTop: 14 }}>
-          <Pressable onPress={handleRestore} disabled={busy} hitSlop={8}>
-            {isRestoring ? (
-              <ActivityIndicator size="small" color={INK_MUTED} />
-            ) : (
-              <Text style={{ fontSize: 12, color: INK_MUTED, textDecorationLine: 'underline' }}>Restore purchase</Text>
-            )}
+          <Pressable onPress={handleRestore} disabled={busy} hitSlop={8} style={{ opacity: isRestoring ? 0.6 : 1 }}>
+            <DoveLoader active={isRestoring} />
+            <Text style={{ fontSize: 12, color: INK_MUTED, textDecorationLine: 'underline' }}>Restore purchase</Text>
           </Pressable>
         </View>
 

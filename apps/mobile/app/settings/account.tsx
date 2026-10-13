@@ -26,7 +26,8 @@
 // =============================================================================
 
 import React, { useState } from 'react';
-import { View, Text, ScrollView, Pressable, ActivityIndicator, Share } from 'react-native';
+import { View, Text, ScrollView, Pressable, Share } from 'react-native';
+import { DoveLoader } from '../../components/CameraDove';
 import { Alert } from '../../utils/appAlert';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -176,12 +177,9 @@ export default function AccountDetailsScreen() {
           Your data
         </Text>
 
-        <Pressable onPress={handleExport} disabled={busy !== null} style={rowStyle}>
-          {busy === 'export' ? (
-            <ActivityIndicator color={colors.text} />
-          ) : (
-            <Ionicons name="download-outline" size={22} color={colors.text} />
-          )}
+        <Pressable onPress={handleExport} disabled={busy !== null} style={[rowStyle, busy === 'export' && { opacity: 0.6 }]}>
+          <DoveLoader active={busy === 'export'} />
+          <Ionicons name="download-outline" size={22} color={colors.text} />
           <View style={{ flex: 1, marginLeft: 12 }}>
             <Text style={{ fontSize: 16, fontWeight: '600', color: colors.text }}>
               Download your data
@@ -192,12 +190,9 @@ export default function AccountDetailsScreen() {
           </View>
         </Pressable>
 
-        <Pressable onPress={handleDelete} disabled={busy !== null} style={rowStyle}>
-          {busy === 'delete' ? (
-            <ActivityIndicator color={colors.danger} />
-          ) : (
-            <Ionicons name="trash-outline" size={22} color={colors.danger} />
-          )}
+        <Pressable onPress={handleDelete} disabled={busy !== null} style={[rowStyle, busy === 'delete' && { opacity: 0.6 }]}>
+          <DoveLoader active={busy === 'delete'} />
+          <Ionicons name="trash-outline" size={22} color={colors.danger} />
           <View style={{ flex: 1, marginLeft: 12 }}>
             <Text style={{ fontSize: 16, fontWeight: '600', color: colors.danger }}>
               Delete your account

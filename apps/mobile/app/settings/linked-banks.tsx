@@ -12,7 +12,8 @@
 // =============================================================================
 
 import React, { useCallback, useState } from 'react';
-import { View, Text, Pressable, ScrollView, StyleSheet, ActivityIndicator } from 'react-native';
+import { View, Text, Pressable, ScrollView, StyleSheet } from 'react-native';
+import { DoveLoader } from '../../components/CameraDove';
 import { router, useFocusEffect } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -83,7 +84,7 @@ export default function LinkedBanksScreen() {
           */}
           <SectionHeader style={styles.section}>Pay in 4 pays from</SectionHeader>
           {loadingBanks ? (
-            <ActivityIndicator style={{ marginTop: 10 }} color={colors.gold} />
+            <DoveLoader />
           ) : (
             (() => {
               const p4Item = linkedBanks?.items.find(i => payIn4AccountFor(i));

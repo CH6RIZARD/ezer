@@ -8,11 +8,11 @@ import {
   TouchableOpacity,
   Text,
   StyleSheet,
-  ActivityIndicator,
   ViewStyle,
   TextStyle,
 } from 'react-native';
 import { useTheme } from '../utils/ThemeContext';
+import { useCameraDove } from './CameraDove';
 
 export type ButtonVariant = 'primary' | 'secondary' | 'danger' | 'success' | 'gold';
 
@@ -38,6 +38,8 @@ export function Button({
   fullWidth = true,
 }: ButtonProps) {
   const { colors, isDark } = useTheme();
+  // Loading: the label stays, the button dims and the camera dove shows the wait.
+  useCameraDove(loading);
 
   const getButtonStyle = (): ViewStyle => {
     switch (variant) {
@@ -81,21 +83,14 @@ export function Button({
         styles.button,
         getButtonStyle(),
         fullWidth && styles.fullWidth,
-        disabled && styles.disabled,
+        (disabled || loading) && styles.disabled,
         style,
       ]}
       onPress={onPress}
       disabled={disabled || loading}
       activeOpacity={0.8}
     >
-      {loading ? (
-        <ActivityIndicator
-          color={variant === 'secondary' ? colors.text : (variant === 'gold' ? (isDark ? '#1A1A1A' : '#1F2933') : '#FFFFFF')}
-          size="small"
-        />
-      ) : (
-        <Text style={[styles.text, getTextStyle(), textStyle]}>{title}</Text>
-      )}
+      <Text style={[styles.text, getTextStyle(), textStyle]}>{title}</Text>
     </TouchableOpacity>
   );
 }

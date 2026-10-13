@@ -12,7 +12,8 @@
 // =============================================================================
 
 import React, { useEffect, useState } from 'react';
-import { View, Text, Modal, Pressable, ScrollView, StyleSheet, ActivityIndicator } from 'react-native';
+import { View, Text, Modal, Pressable, ScrollView, StyleSheet } from 'react-native';
+import { CameraDoveHost, DoveLoader } from '../CameraDove';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../utils/ThemeContext';
 import { fontFamily, radius, motion } from '../../theme/type';
@@ -167,15 +168,14 @@ export default function PayIn4AccountPicker({
 
           <PressScale onPress={handleSave} scaleTo={motion.pressScale} disabled={saving} style={{ marginTop: 18 }}>
             <View style={[styles.cta, { backgroundColor: colors.ink, opacity: saving ? 0.6 : 1 }]}>
-              {saving ? (
-                <ActivityIndicator color="#FFFFFF" />
-              ) : (
-                <Text style={styles.ctaText}>{changed ? 'Save · re-check spending power' : 'Keep current account'}</Text>
-              )}
+              <DoveLoader active={saving} />
+              <Text style={styles.ctaText}>{changed ? 'Save · re-check spending power' : 'Keep current account'}</Text>
             </View>
           </PressScale>
         </View>
       </View>
+      {/* Sheets draw above the root view on Android: the camera dove draws here while one is open. */}
+      <CameraDoveHost nested />
     </Modal>
   );
 }
