@@ -11,9 +11,9 @@
 //
 // RN -> SwiftUI notes:
 //   · The RN web-only carousel paths (CSS scroll-snap, onScroll index tracking) are not ported.
-//   · snapToOffsets -> WalletSnapBehavior, a ScrollTargetBehavior that runs RN's own iOS
-//     snapToOffsets algorithm (RCTScrollView scrollViewWillEndDragging); decelerationRate="fast"
-//     -> WalletFastDeceleration sets the backing UIScrollView's rate.
+//   · snapToOffsets -> SwiftUI's own .viewAligned snapping (WalletSnapBehavior wraps it only to
+//     learn that a drag ended), with the centring padding as safe-area padding so every card
+//     rests at the same left inset.
 //   · onScrollEndDrag / onMomentumScrollEnd -> scheduleCommit: the drag end (updateTarget) and
 //     every offset change after it reset one 100ms clock; the index commits once it runs out.
 //   · useFocusEffect -> .onChange(of: focus key, initial: true); tabs stay mounted.
@@ -21,7 +21,6 @@
 //     observes, exactly like useRef.
 
 import SwiftUI
-import UIKit
 
 /** How long a cached per-range breakdown stands without a re-fetch behind it. */
 private let BREAKDOWN_FRESH_MS: Double = 60_000
@@ -34,33 +33,13 @@ private let CARD_GAP: CGFloat = 14
 
 // --- carousel snap maths -----------------------------------------------------
 //
-// Card i sits at content-x = SIDE_PAD + i * CARD_STEP (the contentContainer's left padding plus
-// i cards and i gaps). To park that card in the middle of the viewport the scroll offset must be
-// cardLeft - (SCREEN_W - CARD_W) / 2, i.e.
-//
-//   offset(i) = SIDE_PAD - CENTER_PAD + i * CARD_STEP
-//
-// With the usual SIDE_PAD === CENTER_PAD that collapses to i * CARD_STEP. snapToOffsets states
-// the exact offsets and is immune to the padding maths entirely.
+// The cards sit in a .scrollTargetLayout() HStack with CENTER_PAD of safe-area padding on both
+// sides, and .viewAligned snaps a card's leading edge to that padding: every card rests at
+// exactly CENTER_PAD from the left, with equal peeks either side. Scroll x (0 at card 0) for card
+// i is i * CARD_STEP. There is deliberately no hand-computed snap target: the old one (RN's
+// snapToOffsets maths fed through a custom ScrollTargetBehavior) and the post-settle
+// scrollTo(.center) disagreed, so every settle ended in a second, visible jump.
 private let CARD_STEP: CGFloat = WALLET_CARD_W + CARD_GAP
-
-/// SCREEN_W / CENTER_PAD / SIDE_PAD / FIRST_OFFSET, from the window width (RN read
-/// Dimensions.get('window') once at module load).
-private struct WalletCarouselMetrics {
-    let screenW: CGFloat
-    var centerPad: CGFloat { (screenW - WALLET_CARD_W) / 2 }
-    /** Never let the cards run under the screen gutter on very narrow devices. */
-    var sidePad: CGFloat { max(Layout.screenX, centerPad) }
-    var firstOffset: CGFloat { sidePad - centerPad }
-
-    func cardOffset(_ i: Int) -> CGFloat { firstOffset + CGFloat(i) * CARD_STEP }
-
-    /// The scroll view's furthest offset (contentWidth - viewport).
-    func maximumOffset(_ count: Int) -> CGFloat {
-        let content = sidePad * 2 + CGFloat(count) * WALLET_CARD_W + CGFloat(max(0, count - 1)) * CARD_GAP
-        return max(0, content - screenW)
-    }
-}
 
 private let WALLET_PAGE_TOP = "wallet-page-top"
 private let WALLET_CAROUSEL_SPACE = "wallet-carousel"
@@ -146,7 +125,6 @@ private struct WalletChipDef {
 private struct WalletFocusKey: Equatable {
     let focused: Bool
     let count: Int
-    let index: Int
 }
 
 /// useRef values. A plain class nothing observes: writing these never re-renders.
@@ -172,114 +150,16 @@ private final class WalletRefs {
 @Observable
 private final class WalletCarouselSignals: @unchecked Sendable {
     @ObservationIgnored var x: CGFloat = 0
-    /// True once WalletFastDeceleration has put the carousel's UIScrollView on .fast.
-    @ObservationIgnored var fastRate = false
     var dragEnds = 0
 }
 
-/// UIKit projects a fling with decelerationRate .normal (0.998): distance = v·d/(1−d) = 499·v.
-/// RN's decelerationRate="fast" (0.99) projects the same release 99·v, i.e. 99/499 as far. Only
-/// used if the scroll view could not be switched to .fast (see WalletFastDeceleration).
-private let FAST_PROJECTION: CGFloat = 99.0 / 499.0
-
-/// RN `decelerationRate="fast"` on the carousel: SwiftUI has no modifier for it, so this finds
-/// the UIScrollView behind the SwiftUI ScrollView (the first one above the carousel content) and
-/// sets it, which makes both the projected snap target and the glide to it RN's.
-private struct WalletFastDeceleration: UIViewRepresentable {
-    let signals: WalletCarouselSignals
-
-    func makeUIView(context: Context) -> Probe {
-        let v = Probe()
-        v.isUserInteractionEnabled = false
-        v.signals = signals
-        return v
-    }
-
-    func updateUIView(_ v: Probe, context: Context) {
-        v.signals = signals
-        v.apply()
-    }
-
-    final class Probe: UIView {
-        var signals: WalletCarouselSignals?
-
-        override func didMoveToWindow() {
-            super.didMoveToWindow()
-            apply()
-        }
-
-        override func layoutSubviews() {
-            super.layoutSubviews()
-            apply()
-        }
-
-        func apply() {
-            var v: UIView? = superview
-            while let s = v, !(s is UIScrollView) { v = s.superview }
-            guard let sv = v as? UIScrollView else { return }
-            if sv.decelerationRate != .fast { sv.decelerationRate = .fast }
-            signals?.fastRate = true
-        }
-    }
-}
-
-/**
- * RN iOS `snapToOffsets` (RCTScrollView scrollViewWillEndDragging), snapToStart={false},
- * snapToEnd={false}, decelerationRate="fast": pick the snap offsets on either side of the
- * projected target, then go with the velocity (or to the nearer one when there is none).
- */
+/// SwiftUI's .viewAligned snapping, unchanged; wrapped only so a drag end (onScrollEndDrag) can
+/// start the settle clock.
 private struct WalletSnapBehavior: ScrollTargetBehavior {
-    let offsets: [CGFloat]
-    let maximumOffset: CGFloat
     let signals: WalletCarouselSignals
 
     func updateTarget(_ target: inout ScrollTarget, context: TargetContext) {
-        let offsetAlongAxis = signals.x
-        let natural = target.rect.origin.x
-        // sign(natural - release) == sign(velocity): UIKit's natural target is release + 499·v.
-        let velocityAlongAxis = natural - offsetAlongAxis
-        // UIKit's targetContentOffset: already the fast-rate projection when the scroll view is on
-        // .fast; otherwise scale the normal-rate projection down to the fast one.
-        let projection: CGFloat = signals.fastRate ? 1 : FAST_PROJECTION
-        var targetOffset = offsetAlongAxis + velocityAlongAxis * projection
-
-        if !offsets.isEmpty {
-            // Calculate the snap offsets adjacent to the initial offset target
-            var smallerOffset: CGFloat = 0
-            var largerOffset = maximumOffset
-            for offset in offsets {
-                if offset <= targetOffset, targetOffset - offset < targetOffset - smallerOffset {
-                    smallerOffset = offset
-                }
-                if offset >= targetOffset, offset - targetOffset < largerOffset - targetOffset {
-                    largerOffset = offset
-                }
-            }
-            // Calculate the nearest offset
-            let nearestOffset = targetOffset - smallerOffset < largerOffset - targetOffset ? smallerOffset : largerOffset
-            let firstOffset = offsets[0]
-            let lastOffset = offsets[offsets.count - 1]
-
-            if targetOffset >= lastOffset {
-                // snapToEnd false: free scrolling past the last snap offset
-                if offsetAlongAxis < lastOffset { targetOffset = lastOffset }
-            } else if targetOffset <= firstOffset {
-                // snapToStart false: free scrolling before the first snap offset
-                if offsetAlongAxis > firstOffset { targetOffset = firstOffset }
-            } else if velocityAlongAxis > 0 {
-                targetOffset = largerOffset
-            } else if velocityAlongAxis < 0 {
-                targetOffset = smallerOffset
-            } else {
-                targetOffset = nearestOffset
-            }
-        }
-
-        // Make sure the new offset isn't out of bounds
-        targetOffset = min(max(0, targetOffset), maximumOffset)
-        target.rect.origin.x = targetOffset
-
-        // onScrollEndDrag -> scheduleCommit (on the screen, next run-loop turn).
+        ViewAlignedScrollTargetBehavior(limitBehavior: .always).updateTarget(&target, context: context)
         let sig = self.signals
         onNextRunLoop { sig.dragEnds += 1 }
     }
@@ -531,8 +411,7 @@ struct WalletView: View {
     }
 
     private func carousel(_ all: [WalletCard], _ colors: ThemeColors) -> some View {
-        let m = WalletCarouselMetrics(screenW: win.width)
-        let snapOffsets = all.indices.map { m.cardOffset($0) }
+        let centerPad = max(0, (win.width - WALLET_CARD_W) / 2)
         // Resolved per (cards, prefs): same inputs, same `art` value for BankCardFace.
         let arts = all.map { resolveCardArt($0.input, artPrefs.prefs[$0.id] ?? CardArtPrefs(), $0.fallback) }
         let holder = holderName
@@ -556,11 +435,10 @@ struct WalletView: View {
                             .id(c.id)
                         }
                     }
-                    .padding(.horizontal, m.sidePad)
+                    .scrollTargetLayout()
                     .padding(.top, 18)
-                    .background(WalletFastDeceleration(signals: signals).allowsHitTesting(false))
                     .onGeometryChange(for: CGFloat.self) { proxy in
-                        -proxy.frame(in: .named(WALLET_CAROUSEL_SPACE)).minX
+                        centerPad - proxy.frame(in: .named(WALLET_CAROUSEL_SPACE)).minX
                     } action: { x in
                         signals.x = x
                         // onMomentumScrollEnd: while the release settles, every move resets the clock.
@@ -568,14 +446,9 @@ struct WalletView: View {
                     }
                 }
                 .coordinateSpace(.named(WALLET_CAROUSEL_SPACE))
+                .safeAreaPadding(.horizontal, centerPad)
                 .scrollIndicators(.hidden)
-                .scrollTargetBehavior(
-                    WalletSnapBehavior(
-                        offsets: snapOffsets,
-                        maximumOffset: m.maximumOffset(all.count),
-                        signals: signals
-                    )
-                )
+                .scrollTargetBehavior(WalletSnapBehavior(signals: signals))
                 .onChange(of: signals.dragEnds) {
                     // onScrollEndDrag: "maybe settled, reset the clock".
                     refs.settling = true
@@ -604,13 +477,15 @@ struct WalletView: View {
                 .frame(maxWidth: .infinity)
                 .padding(.top, 14)
             }
-            // useFocusEffect([cards.length, index]): re-assert the carousel position for `index`
-            // whenever the screen regains focus (and whenever index changes while focused), two
-            // frames later so the scroll view has committed its layout. Not animated.
-            .onChange(of: WalletFocusKey(focused: focused, count: all.count, index: index), initial: true) { _, k in
+            // useFocusEffect([cards.length]): re-assert the carousel position for `index` whenever
+            // the screen regains focus, two frames later so the scroll view has committed its
+            // layout. Not animated. NOT keyed on index: an index commit lands after the snap has
+            // already settled (or while a dot's animated scroll is running), and a second scroll
+            // there is the jump the owner reported.
+            .onChange(of: WalletFocusKey(focused: focused, count: all.count), initial: true) { _, k in
                 refs.focusGen += 1 // cleanup: cancelAnimationFrame
                 guard k.focused, k.count > 0 else { return }
-                let id = all[min(k.index, k.count - 1)].id
+                let id = all[min(index, k.count - 1)].id
                 let gen = refs.focusGen
                 let rf = self.refs
                 onNextRunLoop {
@@ -800,10 +675,9 @@ struct WalletView: View {
 
     // MARK: - Index tracking
 
-    /** Inverse of cardOffset(): undo the leading offset before dividing. */
+    /** Card under scroll x (0 at card 0, i * CARD_STEP at card i). */
     private func nearestIndex(_ x: CGFloat) -> Int {
-        let m = WalletCarouselMetrics(screenW: win.width)
-        let i = Int(jsRound(Double((x - m.firstOffset) / CARD_STEP)))
+        let i = Int(jsRound(Double(x / CARD_STEP)))
         return max(0, min(i, cards.count - 1))
     }
 
