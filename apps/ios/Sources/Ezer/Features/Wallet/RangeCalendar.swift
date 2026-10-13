@@ -102,6 +102,10 @@ struct RangeCalendar: View {
     @State private var p: Double = 0
     @State private var sheetH: CGFloat = 600
     @State private var closing = false
+    /// When the entrance started. The scrim ignores taps for IN_MS after it: a second tap on the
+    /// Custom chip, made while the sheet was still being presented, lands on the scrim and used
+    /// to close what the first tap had just opened ("takes like 10 taps to open", Oct 12 2026).
+    @State private var shownAt = Date.distantPast
 
     init(
         initialStart: Date?,
@@ -194,7 +198,10 @@ struct RangeCalendar: View {
             colors.scrim
                 .opacity(p)
                 .contentShape(Rectangle())
-                .onTapGesture { close(apply: false) }
+                .onTapGesture {
+                    if Date().timeIntervalSince(shownAt) * 1000 < IN_MS { return }
+                    close(apply: false)
+                }
 
             VStack(alignment: .leading, spacing: 0) {
                 rnRect(2.5)
@@ -297,6 +304,7 @@ struct RangeCalendar: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .ignoresSafeArea()
         .onAppear {
+            shownAt = Date()
             withAnimation(.rn(EASE_SHEET, IN_MS)) { p = 1 }
         }
         // Footer total for a complete range. Keyed, so a late answer for an older pick can never

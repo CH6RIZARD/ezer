@@ -84,6 +84,45 @@ private let BANK_CARD_SKINS: [CardArtFallback] = [
     ),
 ]
 
+/// One "Where it goes" row; equatable on its data so an unrelated Wallet update skips it.
+private struct WalletMerchantRow: View, Equatable {
+    let m: WalletBreakdownRow
+    let ink: Color
+    let mut: Color
+    let red: Color
+    let onTap: () -> Void
+
+    static func == (a: Self, b: Self) -> Bool {
+        a.m == b.m && a.ink == b.ink && a.mut == b.mut && a.red == b.red
+    }
+
+    var body: some View {
+        PressScale(action: onTap) {
+            Surface {
+                HStack(alignment: .center, spacing: 12) {
+                    MerchantMark(name: m.merchantName, merchantId: m.merchantId, size: 40)
+                    VStack(alignment: .leading, spacing: 0) {
+                        Text(m.merchantName)
+                            .font(.custom(FontFamily.bold, size: 14.5))
+                            .foregroundStyle(ink)
+                            .lineLimit(1)
+                        Text("\(m.count) charge\(m.count == 1 ? "" : "s") in range")
+                            .font(.custom(FontFamily.regular, size: 11.5))
+                            .foregroundStyle(mut)
+                            .padding(.top, 2)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    Text(formatCents(m.totalCents))
+                        .font(.custom(FontFamily.bold, size: 14))
+                        .foregroundStyle(red)
+                }
+                .padding(12)
+                .padding(1)
+            }
+        }
+    }
+}
+
 private struct WalletBreakdownRow: Equatable {
     let merchantId: String
     let merchantName: String
@@ -135,6 +174,10 @@ private final class WalletRefs {
     /// breakdownCache (a Map): entries plus insertion order.
     var cache: [String: WalletCacheEntry] = [:]
     var cacheOrder: [String] = []
+    /// One request per (card, days) at a time: a swipe onto a card whose prefetch is still in
+    /// flight joins it instead of queueing a duplicate behind the other prefetches (the "4 seconds
+    /// to show the numbers after switching card" report, Oct 12 2026).
+    var inflight: [String: Task<(b: WalletBreakdown, ok: Bool), Never>] = [:]
     var effectTask: Task<Void, Never>?
     var lastEffectKey: WalletFetchKey?
     var settleTask: Task<Void, Never>?
@@ -347,6 +390,7 @@ struct WalletView: View {
                 .scrollIndicators(.hidden)
                 .onChange(of: fetchKey, initial: true) { _, key in
                     runBreakdownEffect(key, page: page)
+                    prefetch() // a new range (e.g. a custom one) warms every card too
                 }
             }
         }
@@ -441,6 +485,11 @@ struct WalletView: View {
                         centerPad - proxy.frame(in: .named(WALLET_CAROUSEL_SPACE)).minX
                     } action: { x in
                         signals.x = x
+                        // Commit the moment the offset crosses the midpoint between two cards, not
+                        // after the glide settles: with every card prefetched, the numbers change
+                        // while the card is still moving. The settle commit stays as the backstop.
+                        let mid = nearestIndex(x)
+                        if mid != index { index = mid }
                         // onMomentumScrollEnd: while the release settles, every move resets the clock.
                         if refs.settling { scheduleCommit(x) }
                     }
@@ -618,34 +667,15 @@ struct WalletView: View {
 
             VStack(alignment: .leading, spacing: 8) {
                 ForEach(merchants, id: \.merchantId) { m in
-                    PressScale(action: {
+                    // Equatable: a card swipe re-renders the Wallet, and the rows whose numbers did
+                    // not change must not re-render with it.
+                    WalletMerchantRow(m: m, ink: colors.ink, mut: colors.mut, red: colors.red) {
                         // No active/trial Subscription row for this merchant — e.g. it was since
                         // cancelled. Nothing to open rather than a 404.
                         guard let sid = m.subscriptionId, !sid.isEmpty else { return }
                         router.push("/screens/SubscriptionDetail", ["id": sid])
-                    }) {
-                        Surface {
-                            HStack(alignment: .center, spacing: 12) {
-                                MerchantMark(name: m.merchantName, merchantId: m.merchantId, size: 40)
-                                VStack(alignment: .leading, spacing: 0) {
-                                    Text(m.merchantName)
-                                        .font(.custom(FontFamily.bold, size: 14.5))
-                                        .foregroundStyle(colors.ink)
-                                        .lineLimit(1)
-                                    Text("\(m.count) charge\(m.count == 1 ? "" : "s") in range")
-                                        .font(.custom(FontFamily.regular, size: 11.5))
-                                        .foregroundStyle(colors.mut)
-                                        .padding(.top, 2)
-                                }
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                Text(formatCents(m.totalCents))
-                                    .font(.custom(FontFamily.bold, size: 14))
-                                    .foregroundStyle(colors.red)
-                            }
-                            .padding(12)
-                            .padding(1)
-                        }
                     }
+                    .equatable()
                 }
 
                 if merchants.isEmpty && !breakdownError {
@@ -724,6 +754,16 @@ struct WalletView: View {
     }
 
     private func fetchBreakdown(_ cardId: String, _ r: (start: Date, end: Date)) async -> (b: WalletBreakdown, ok: Bool) {
+        let k = keyFor(cardId, r)
+        if let running = refs.inflight[k] { return await running.value }
+        let task = Task { @MainActor in await loadBreakdown(cardId, r) }
+        refs.inflight[k] = task
+        let out = await task.value
+        refs.inflight[k] = nil
+        return out
+    }
+
+    private func loadBreakdown(_ cardId: String, _ r: (start: Date, end: Date)) async -> (b: WalletBreakdown, ok: Bool) {
         let res = await data.getMerchants(cardId, "custom", (startDate: toISOString(r.start), endDate: toISOString(r.end)))
         let b = WalletBreakdown(
             merchants: res.merchants.map { m in
@@ -822,16 +862,16 @@ struct WalletView: View {
         }
     }
 
-    // Warm the cache for every card × fixed preset as soon as the cards are known (2 cards × 3
-    // presets = 6 small requests, once). After this, every preset tap and every card swipe is a
-    // cache hit. 'custom' is skipped — its range is whatever the picker says.
-    // (RN re-ran this on every new `instruments` array; SwiftUI's onChange only fires when the
-    // instruments actually differ.)
+    // Warm the cache for every card as soon as the cards are known, and again for the range on
+    // screen whenever it changes (a custom range included). The range ON SCREEN goes out first
+    // for EVERY card, so a swipe is a cache hit, and only then the other presets, so the requests
+    // that matter are not queued behind ones that might never be looked at. fetchBreakdown dedupes
+    // against the breakdown effect.
     private func prefetch() {
-        for c in cards {
-            for p in [RangePreset.thisMonth, .lastMonth, .ytd] {
-                let r = presetRange(p)
-                if refs.cache[keyFor(c.id, r)] != nil { continue }
+        let ranges = [range] + [RangePreset.thisMonth, .lastMonth, .ytd].map { presetRange($0) }
+        for r in ranges {
+            for c in cards {
+                if refs.cache[keyFor(c.id, r)] != nil || refs.inflight[keyFor(c.id, r)] != nil { continue }
                 let id = c.id
                 Task { @MainActor in _ = await fetchBreakdown(id, r) }
             }
