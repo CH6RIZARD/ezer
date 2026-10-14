@@ -882,6 +882,33 @@ style problem.
   the status bar down. Short bands use path.json's fit rule. Reduced Motion: a
   still dove fades in and out near the camera point. Backgrounded or locked:
   gone at once, back (after the wait) if something is still loading.
+- **The exit leaves from wherever the dove is** (owner, Oct 14 2026: "can the
+  bird stop its loop and seamlessly go back if load finishes short?"). No
+  finishing the lap: the out clip is carried over to start at the current
+  loop frame (`exitL`) and drawn in to the camera as it goes, blended from
+  the still-running loop over `EXIT_BLEND` frames with two sprite windows
+  (P1's exit, same maths). Don't go back to waiting for the lap.
+- **The camera forms a black droplet that releases the dove (`SPAWN` frames,
+  `dropPath` / Swift `Droplet`), and the return ends in a small liquid bump
+  at the cut-out (`ENTRY`).** Owner's ask ("the droplet like animation you
+  had, just no pill"). It hangs from the cut-out's bottom (island: top 11 +
+  37; notch: 0.66 × inset; Android hole: camera + 4.5). Black theme strokes
+  it in `darkTokens.line` under the fill. Don't bring back the pill/card.
+- **Only waits someone can see fly it.** Savings registers
+  `isLoading && (!hydrated || asked)`: the first load, or a refresh they
+  asked for (pull, Retry). The silent refresh behind already-shown data
+  flew it at every launch ("looping for no reason, everything is already
+  loaded"). New registrations follow the same rule.
+- **v3 flights (Oct 14 2026)**: the bird is 8.5% bigger (`SPAN_DP` 39, owner:
+  "8/9 percent bigger"); `camera_flight.py` keeps the loop within ±85 dp of
+  the camera (`xmax`), the nearest scale ≤ 0.92 and screen y inside a band
+  (`ylo*`/`yhi*`) so wings never enter the island and feet never reach the
+  header. That is "away from the time and battery", NOT a tight orbit: the
+  owner corrected "hug the camera" ("I didn't even say that... just away
+  from the other icons... can go anywhere around them").
+- **Skeleton screens** (`Skeleton` / `SkeletonRows` in Primitives, both
+  apps): grey shapes in the layout of the content that is loading, next to
+  the camera dove. Wallet shows them only when there are no rows yet.
 - **Android sheets are Modals, which draw above the root view**, so each sheet
   that waits mounts `<CameraDoveHost nested />`; the last-mounted host draws and
   the animation state is module-level, so the flight continues across hosts.
