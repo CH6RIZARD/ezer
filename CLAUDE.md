@@ -871,9 +871,12 @@ style problem.
   never the same twice in a row; it only comes out if the wait passes ~300 ms;
   once out it always completes: in, loop while any registration is active,
   then it finishes the current lap and plays `out` FULLY into the camera (no
-  sliver at the island's edge, ever). Only the exit enters the camera: F's
-  mid-loop pop up into it was removed at the owner's request (it looked
-  unnatural and glitchy) and F's bird was enlarged to A-C's size (k 0.86).
+  sliver at the island's edge, ever). Only the exit enters the camera: every
+  letter's mid-loop climb into it (`dips` / `DIPS` in each `path.py`) is gone
+  (F first, then A-C on Oct 14 2026: "it seems like the loading animation is
+  canceling... the dove should always be visible, it only comes into the
+  camera when done loading", and the dips left its tail showing). The loop
+  QA's island string must be all `C`. F's bird was enlarged to A-C's size (k 0.86).
   The dove hovers in the ~21 dp band between the camera and the header
   (iPhone: island bottom 48, content top 69). Camera point: top-centre, half
   the status bar down. Short bands use path.json's fit rule. Reduced Motion: a
