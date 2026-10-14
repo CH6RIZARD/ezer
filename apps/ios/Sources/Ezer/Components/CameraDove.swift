@@ -23,6 +23,10 @@ private let WAIT_MS: Double = 300
 private let FPS: Double = 30
 /// Reduce Motion: frames of fade in and out around the still dove.
 private let RM_FADE: Double = 8
+/// RN SPAWN / ENTRY / EXIT_BLEND.
+private let SPAWN: Double = 6
+private let ENTRY: Double = 12
+private let EXIT_BLEND: Double = 6
 
 /// WebP sprite sheets in Bundle.module (UIImage(named:) only finds PNG/JPEG; ImageIO decodes WebP).
 @MainActor
@@ -69,6 +73,8 @@ final class CameraDoveCenter {
     @ObservationIgnored private var phase = 3
     @ObservationIgnored private var t: Double = 0
     @ObservationIgnored private var lastTick: Date?
+    /// The loop frame an exit left from.
+    @ObservationIgnored private var exitL = 0
 
     private var gate: Bool { lockOpen && active }
     private var want: Bool { !regs.isEmpty && gate }
@@ -158,36 +164,131 @@ final class CameraDoveCenter {
         update() // still loading: it comes out again (after the wait)
     }
 
-    /// Advances the clock to `now` (RN: the UI-thread frame callback) and returns the frame to draw:
-    /// the index into the path's in + loop + out frames, and the opacity.
-    func tick(_ now: Date, path P: CameraDovePath, reduced: Bool) -> (i: Int, o: Double) {
-        let NI = reduced ? RM_FADE : Double(P.ni)
+    /// Where the bird is and which cells show: a = the running clip's cell, b = the out clip's (exit blend).
+    struct Pose {
+        var x = 0.0, y = 0.0, s = 1.0
+        var ca = 0, oa = 0.0, cb = 0, ob = 0.0
+        /// The droplet: depth below the cut-out, radius, neck half-width (r 0 = none), and the x offsets
+        /// (from the camera) of the drop's centre and of where its neck leaves the cut-out.
+        var dd = 0.0, dr = 0.0, dn = 0.0, dx = 0.0, nx = 0.0
+    }
+
+    /// Advances the clock to `now` (RN: the UI-thread frame callback) and returns the pose to draw.
+    /// RN CameraDove.tsx Sprite: SPAWN droplet frames before the in clip, an exit that leaves from the
+    /// current loop frame (no finishing the lap) blended over EXIT_BLEND frames, and ENTRY frames of
+    /// liquid bump after the bird is in.
+    /// `em`: where the bird comes out of the drop (RN useMemo): its in-clip frame, x offset (pt) and depth
+    /// below the cut-out (pt); `edgeW`: half-width of the cut-out's bottom edge the neck may leave from.
+    func tick(_ now: Date, path P: CameraDovePath, reduced: Bool,
+              em: (k: Int, x: Double, y: Double) = (0, 0, 10), edgeW: Double = 50) -> Pose {
+        let SP = reduced ? 0 : SPAWN
+        let NI = (reduced ? RM_FADE : Double(P.ni)) + SP
         let NL = reduced ? 1 : Double(P.nl)
         let NO = reduced ? RM_FADE : Double(P.no)
+        let NE = reduced ? 0 : ENTRY
         if phase != 3 {
             // Capped: after a long stall it skips at most a few frames, never a whole clip.
             let dt = lastTick.map { min(0.1, max(0, now.timeIntervalSince($0))) } ?? 0
             lastTick = now
             var x = t + dt * FPS
             if phase == 0 && x >= NI { phase = 1; x -= NI }
-            if phase == 1 && x >= NL {
-                x -= NL
-                if !want { phase = 2 }
+            if phase == 1 {
+                if !want {
+                    // Loading is done: leave from THIS loop frame (owner, Oct 14 2026).
+                    exitL = Int(x) % Int(NL)
+                    phase = 2
+                    x -= floor(x)
+                } else if x >= NL { x -= NL }
             }
-            if phase == 2 && x >= NO {
+            if phase == 2 && x >= NO + NE {
                 phase = 3
-                x = NO - 0.001
+                x = NO + NE - 0.001
                 if let s = run?.serial { DispatchQueue.main.async { self.done(s) } }
             }
             t = x
         }
+        let f = P.f, ni = P.ni, nl = P.nl, no = P.no
+        func at(_ c: Int) -> (Double, Double, Double, Double) { (f[c * 4], f[c * 4 + 1], f[c * 4 + 2], f[c * 4 + 3]) }
+        var q = Pose()
         if reduced {
-            let o = phase == 0 ? t / RM_FADE : phase == 1 ? 1 : phase == 2 ? 1 - t / RM_FADE : 0
-            return (P.ni, o) // loop frame 0, under the camera
+            let o = phase == 0 ? t / RM_FADE : phase == 1 ? 1 : phase == 2 ? max(0, 1 - t / RM_FADE) : 0
+            let a = at(ni)
+            q.x = a.0; q.y = a.1; q.s = a.2; q.ca = ni; q.oa = o
+            return q
         }
-        let k = Int(t)
-        let i = phase == 0 ? min(k, P.ni - 1) : phase == 1 ? P.ni + k % P.nl : P.ni + P.nl + min(k, P.no - 1)
-        return (i, phase == 3 ? 0 : P.f[i * 4 + 3])
+        let i = Int(t)
+        if phase == 0 {
+            let k = i - Int(SP)
+            let c = min(max(k, 0), ni - 1)
+            let a = at(c)
+            q.x = a.0; q.y = a.1; q.s = a.2; q.ca = c
+            q.oa = sm((t - SP - Double(em.k)) / 3) * a.3 // fades in out of the drop
+            let tp = SP + Double(em.k) // the pinch
+            let u = sm(t / tp)
+            q.dr = 10 * sm(t / (0.55 * tp)) * (1 - sm((t - tp) / 5))
+            q.dd = 3 + (em.y - 3) * u
+            q.dx = em.x * u
+            q.nx = max(-edgeW, min(edgeW, em.x * u * 0.5))
+            q.dn = min(q.dr, 6) * (1 - sm((t - (tp - 4)) / 4))
+            return q
+        }
+        if phase == 1 {
+            let c = ni + i % nl
+            let a = at(c)
+            q.x = a.0; q.y = a.1; q.s = a.2; q.ca = c; q.oa = a.3
+            return q
+        }
+        let ie = min(i, no - 1)
+        let li = ni + (exitL + ie) % nl, lL = ni + exitL, e = ni + nl + ie, e0 = ni + nl
+        let A = at(li), LL = at(lL), E = at(e), E0 = at(e0)
+        let c = sm(Double(ie) / Double(no - 1))
+        let px = (1 - c) * (LL.0 + E.0 - E0.0) + c * E.0
+        let py = (1 - c) * (LL.1 + E.1 - E0.1) + c * E.1
+        let ps = (1 - c) * (LL.2 * E.2 / E0.2) + c * E.2
+        let b = sm(t / EXIT_BLEND)
+        let o = phase == 3 || i >= no ? 0 : E.3
+        q.x = A.0 + (px - A.0) * b; q.y = A.1 + (py - A.1) * b; q.s = A.2 + (ps - A.2) * b
+        q.ca = li; q.oa = (1 - b) * o; q.cb = e; q.ob = b * o
+        let ee = t - (NO - 3)
+        if phase == 2 && ee >= 0 && ee <= NE {
+            let amp = exp(-ee / 3.5) * cos(ee * 0.75)
+            if amp > 0 { q.dr = 5 * (1 - ee / NE); q.dd = 4.5 * amp; q.dn = q.dr * 0.8 }
+        }
+        return q
+    }
+}
+
+private func sm(_ v: Double) -> Double {
+    let x = min(1, max(0, v))
+    return x * x * (3 - 2 * x)
+}
+
+/// RN dropPath: a circle (centre d below the cut-out's bottom y0, radius r) hanging from the cut-out by a
+/// neck of half-width nw with small fillets; nw 0 = pinched off.
+private struct Droplet: Shape {
+    var cx: Double, nx: Double, y0: Double, d: Double, r: Double, nw: Double
+
+    func path(in rect: CGRect) -> Path {
+        var p = Path()
+        guard r >= 0.3 else { return p }
+        let cy = y0 + d
+        p.addEllipse(in: CGRect(x: cx - r, y: cy - r, width: 2 * r, height: 2 * r))
+        if nw > 0.4 {
+            let f = min(3, nw)
+            let yt = nw >= r ? cy : cy - (r * r - nw * nw).squareRoot()
+            var n = Path()
+            n.move(to: CGPoint(x: nx - nw - f, y: y0 - 4))
+            n.addLine(to: CGPoint(x: nx + nw + f, y: y0 - 4))
+            n.addLine(to: CGPoint(x: nx + nw + f, y: y0))
+            n.addQuadCurve(to: CGPoint(x: nx + nw, y: y0 + f), control: CGPoint(x: nx + nw, y: y0))
+            n.addLine(to: CGPoint(x: cx + nw, y: yt))
+            n.addLine(to: CGPoint(x: cx - nw, y: yt))
+            n.addLine(to: CGPoint(x: nx - nw, y: y0 + f))
+            n.addQuadCurve(to: CGPoint(x: nx - nw - f, y: y0), control: CGPoint(x: nx - nw, y: y0))
+            n.closeSubpath()
+            p = p.union(n)
+        }
+        return p
     }
 }
 
@@ -220,13 +321,32 @@ private struct CameraDoveView: View {
                 let fp = min(1, max(CameraDoveFrames.posMin, (bar + 10 - bar / 2) / CameraDoveFrames.bandRef))
                 let fs = 0.4 + 0.6 * fp
                 let sd = Double(win.width) / 390 * fp
+                // Bottom of the cut-out the droplet hangs from: the Dynamic Island (top 11, 37 tall) or a notch.
+                let y0 = bar >= 51 ? bar - 11 : bar * 0.66
+                let cx = Double(win.width) / 2
+                // Where the bird comes out: the first in-clip frame whose body is below the cut-out.
+                let em: (k: Int, x: Double, y: Double) = {
+                    var k = 0
+                    while k < P.ni - 1 && bar / 2 + P.f[k * 4 + 1] * sd < y0 + 4 { k += 1 }
+                    return (k, P.f[k * 4] * sd, bar / 2 + P.f[k * 4 + 1] * sd - y0)
+                }()
+                let edgeW: Double = bar >= 51 ? 50 : 70
                 TimelineView(.animation) { tl in
-                    let q = center.tick(tl.date, path: P, reduced: reduced)
-                    SpriteCell(image: DoveSheets.image(P.sheet), cellW: P.cell, cellH: P.cell, cols: P.cols, rows: P.rows,
-                               i: q.i, edge: EdgeReader.edge(theme))
-                        .scaleEffect(P.f[q.i * 4 + 2] * fs)
-                        .opacity(q.o)
-                        .position(x: Double(win.width) / 2 + P.f[q.i * 4] * sd, y: bar / 2 + P.f[q.i * 4 + 1] * sd)
+                    let q = center.tick(tl.date, path: P, reduced: reduced, em: em, edgeW: edgeW)
+                    ZStack(alignment: .topLeading) {
+                        ForEach(0..<2, id: \.self) { w in
+                            SpriteCell(image: DoveSheets.image(P.sheet), cellW: P.cell, cellH: P.cell, cols: P.cols, rows: P.rows,
+                                       i: w == 0 ? q.ca : q.cb, edge: EdgeReader.edge(theme))
+                                .scaleEffect(q.s * fs)
+                                .opacity(w == 0 ? q.oa : q.ob)
+                                .position(x: cx + q.x * sd, y: bar / 2 + q.y * sd)
+                        }
+                        // Above the bird (it is inside the drop until the neck pinches). On black the drop gets a
+                        // 1 pt hairline in the line colour, stroked under the fill so the neck's seam never shows.
+                        let drop = Droplet(cx: cx + q.dx, nx: cx + q.nx, y0: y0, d: q.dd, r: q.dr, nw: q.dn)
+                        if theme.mode == .black { drop.stroke(ThemeColors.dark.line, lineWidth: 2) }
+                        drop.fill(Color.black)
+                    }
                 }
                 .id(run.serial)
             }
