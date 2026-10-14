@@ -680,6 +680,8 @@ struct WalletView: View {
                 .padding(.bottom, 10)
 
             VStack(alignment: .leading, spacing: 8) {
+                // Only when there is nothing to show yet: a card switch is a cache hit and must not flash them.
+                if loadingBreakdown && merchants.isEmpty { SkeletonRows(count: 4) }
                 ForEach(merchants, id: \.merchantId) { m in
                     // Equatable: a card swipe re-renders the Wallet, and the rows whose numbers did
                     // not change must not re-render with it.
@@ -692,7 +694,7 @@ struct WalletView: View {
                     .equatable()
                 }
 
-                if merchants.isEmpty && !breakdownError {
+                if merchants.isEmpty && !breakdownError && !loadingBreakdown {
                     BodyText("No charges on this card in the selected range.")
                         .multilineTextAlignment(.center)
                         .frame(maxWidth: .infinity)

@@ -113,9 +113,14 @@ struct BankDetailView: View {
                     header(colors)
 
                     if loading {
-                        DoveLoader()
-                            .frame(maxWidth: .infinity)
-                            .padding(.top, 40)
+                        VStack(alignment: .leading, spacing: 10) {
+                            DoveLoader()
+                            Skeleton(w: 150, h: 12)
+                            SkeletonRows(count: 3)
+                            Skeleton(w: 110, h: 16).padding(.top, 14)
+                            SkeletonRows(count: 1)
+                        }
+                        .padding(.top, 18)
                     } else if let item {
                         content(colors, item)
                     } else {

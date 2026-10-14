@@ -150,11 +150,24 @@ struct SubscriptionDetailView: View {
         let colors = theme.colors
         Group {
             if loading {
-                ZStack {
-                    colors.bg.ignoresSafeArea()
+                VStack(alignment: .leading, spacing: 12) {
                     DoveLoader()
+                    Skeleton(w: 36, h: 36, r: 18)
+                    VStack(spacing: 10) {
+                        Skeleton(w: 64, h: 64, r: 18)
+                        Skeleton(w: 170, h: 20)
+                        Skeleton(w: 110, h: 34)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.top, 8)
+                    Skeleton(h: 120, r: 18).padding(.top, 10)
+                    SkeletonRows(count: 3)
+                    Spacer(minLength: 0)
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .padding(.horizontal, Layout.screenX)
+                .padding(.top, 10)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                .background(colors.bg.ignoresSafeArea())
             } else if let sub = detail {
                 content(sub, colors)
             } else {

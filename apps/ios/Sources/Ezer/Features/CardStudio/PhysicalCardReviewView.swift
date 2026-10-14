@@ -43,9 +43,19 @@ struct PhysicalCardReviewView: View {
         let c = theme.colors
         Group {
             if loading {
-                DoveLoader()
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .background(c.bg)
+                VStack(alignment: .leading, spacing: 0) {
+                    DoveLoader()
+                    Skeleton(w: 200, h: 26)
+                    Skeleton(w: 280, h: 12).padding(.top, 10)
+                    Skeleton(w: 300, h: 190, r: Radius.virtualCard).frame(maxWidth: .infinity).padding(.top, 28)
+                    Skeleton(h: 88, r: 18).padding(.top, 28)
+                    Skeleton(h: 52, r: 26).padding(.top, 18)
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, Layout.screenX)
+                .padding(.top, 10)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                .background(c.bg)
             } else {
                 content(c)
             }

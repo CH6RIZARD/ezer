@@ -168,6 +168,53 @@ extension View {
 
 // MARK: - Surfaces
 
+/// Skeleton screens (owner, Oct 14 2026; RN `Skeleton` / `SkeletonRows` in Primitives.tsx): light grey
+/// shapes in the layout of the content that is loading, next to the camera dove. One slow breathing
+/// pulse; Reduce Motion: still.
+struct Skeleton: View {
+    @Environment(ThemeStore.self) private var theme
+    @Environment(\.accessibilityReduceMotion) private var reduced
+    var w: CGFloat? = nil
+    var h: CGFloat = 14
+    var r: CGFloat = 8
+    @State private var dim = false
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: r, style: .circular)
+            .fill(theme.colors.ink.opacity(0.08))
+            .frame(width: w, height: h)
+            .frame(maxWidth: w == nil ? .infinity : nil, alignment: .leading)
+            .opacity(dim ? 0.55 : 1)
+            .onAppear {
+                guard !reduced else { return }
+                withAnimation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true)) { dim = true }
+            }
+    }
+}
+
+/// `count` list rows: a round mark, a title line and a shorter detail line, an amount on the right.
+struct SkeletonRows: View {
+    var count = 4
+    var card = true
+
+    var body: some View {
+        VStack(spacing: 8) {
+            ForEach(0..<count, id: \.self) { i in
+                let row = HStack(spacing: 12) {
+                    Skeleton(w: 36, h: 36, r: 18)
+                    VStack(alignment: .leading, spacing: 7) {
+                        Skeleton(w: CGFloat(150 - (i % 3) * 30), h: 12)
+                        Skeleton(w: CGFloat(90 - (i % 2) * 20), h: 10)
+                    }
+                    Spacer(minLength: 0)
+                    Skeleton(w: 52, h: 14)
+                }
+                if card { Surface { row.padding(14) } } else { row.padding(.vertical, 8) }
+            }
+        }
+    }
+}
+
 /** Standard card surface: `card` bg, `line` border 1, r18. Put RN `padding` inside the content.
  *  `borderColor` / `background` stand in for an RN `style` override of those two (e.g. the error
  *  banner's `borderColor: colors.red + '55'`). */

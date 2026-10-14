@@ -26,8 +26,15 @@ struct SavingsView: View {
 
     @State private var moveMode: SavingsMoveMode?
     @State private var creating = false
+    /// A refresh the user asked for (pull, Retry): the only refresh that flies the camera dove.
+    @State private var asked = false
     /// `handledCreateParam` ref.
     @State private var handledCreateParam: String?
+
+    private func userRefresh() {
+        asked = true
+        Task { await savings.refresh(); asked = false }
+    }
 
     var body: some View {
         let c = theme.colors
@@ -51,11 +58,13 @@ struct SavingsView: View {
             // RN: an invisible RefreshControl (refreshing={false}, transparent tint). The pull only
             // starts the refresh; the camera dove below is what shows the wait. `.refreshable` drew
             // the system spinner circle instead, which the owner reported (Oct 13 2026).
-            .pullToRefresh { Task { await savings.refresh() } }
+            .pullToRefresh { userRefresh() }
         }
         .scrollIndicators(.hidden)
-        // The one loader: any savings refresh (pulled or not) flies the camera dove.
-        .cameraDove(savings.isLoading)
+        // The one loader, only for a wait someone can see: the first load or a refresh they asked
+        // for. The silent refresh behind shown data does not fly it (owner, Oct 14 2026: "looping for
+        // no reason, everything is already loaded"). RN: useCameraDove(isLoading && (!hydrated || asked)).
+        .cameraDove(savings.isLoading && (!savings.hydrated || asked))
         .rnScreen()
         .background(c.bg.ignoresSafeArea())
         .background {
@@ -100,7 +109,7 @@ struct SavingsView: View {
                             .font(.ezer(FontFamily.medium, 12))
                             .foregroundStyle(c.red)
                             .frame(maxWidth: .infinity, alignment: .leading)
-                        SavingsPressable(hitSlop: 8, action: { Task { await savings.refresh() } }) {
+                        SavingsPressable(hitSlop: 8, action: { userRefresh() }) {
                             Text("Retry").font(.ezer(FontFamily.bold, 12)).foregroundStyle(c.accInk)
                         }
                     }
@@ -179,6 +188,19 @@ struct SavingsView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     ForEach(goals) { g in goalRow(g, c) }
                 }
+            } else if !savings.hydrated {
+                VStack(spacing: 8) {
+                    ForEach(0..<2, id: \.self) { i in
+                        Surface {
+                            VStack(alignment: .leading, spacing: 10) {
+                                Skeleton(w: i == 0 ? 170 : 120, h: 14)
+                                Skeleton(h: 8, r: 4)
+                                Skeleton(w: 90, h: 10)
+                            }
+                            .padding(14)
+                        }
+                    }
+                }
             } else {
                 Surface {
                     VStack(alignment: .center, spacing: 0) {
@@ -215,6 +237,8 @@ struct SavingsView: View {
                     .padding(.horizontal, 14 + 1)
                     .padding(.vertical, 1)
                 }
+            } else if !savings.hydrated {
+                Surface { SkeletonRows(count: 3, card: false).padding(.horizontal, 14 + 1) }
             } else {
                 Surface {
                     BodyText("No movements yet.")

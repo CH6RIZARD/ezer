@@ -116,9 +116,12 @@ struct LinkedBanksView: View {
     @ViewBuilder
     private func payIn4Card(_ colors: ThemeColors) -> some View {
         if loadingBanks {
-            DoveLoader()
-                .frame(maxWidth: .infinity)
-                .padding(.top, 10)
+            VStack(alignment: .leading, spacing: 10) {
+                DoveLoader()
+                Skeleton(h: 96, r: 18)
+                Skeleton(w: 120, h: 16).padding(.top, 14)
+                SkeletonRows(count: 2)
+            }
         } else {
             let p4Item = linkedBanks?.items.first { SettingsLinkedBanks.payIn4AccountFor($0) != nil }
             let p4Account = p4Item.flatMap { SettingsLinkedBanks.payIn4AccountFor($0) }
