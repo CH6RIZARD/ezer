@@ -44,6 +44,7 @@ import {
   PressScale,
   ScreenBody,
   TabMark,
+  SkeletonRows,
 } from '../../components/redesign/Primitives';
 import MerchantMark from '../../components/redesign/MerchantMark';
 import BankCardFace from '../../components/redesign/BankCardFace';
@@ -969,6 +970,9 @@ export default function WalletScreen() {
             <SectionHeader style={{ marginTop: 24, marginBottom: 10 }}>Where it goes</SectionHeader>
 
             <View style={{ gap: 8 }}>
+              {/* Skeleton rows only when there is nothing to show yet: a card
+                  switch is a cache hit and must not flash them. */}
+              {loadingBreakdown && merchants.length === 0 && <SkeletonRows count={4} />}
               {merchants.map(m => (
                 <MerchantRow
                   key={m.merchantId}
@@ -983,7 +987,7 @@ export default function WalletScreen() {
                 />
               ))}
 
-              {merchants.length === 0 && !breakdownError && (
+              {merchants.length === 0 && !breakdownError && !loadingBreakdown && (
                 <Body style={{ textAlign: 'center', marginTop: 12 }}>
                   No charges on this card in the selected range.
                 </Body>

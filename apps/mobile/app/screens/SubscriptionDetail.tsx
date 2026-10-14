@@ -35,7 +35,7 @@ import {
 import type { Subscription } from '../../types';
 import { gradients, chartColors } from '../../theme/tokens';
 import { fontFamily, typeScale, radius, layout } from '../../theme/type';
-import { Body, Surface, PressScale, ScreenBody } from '../../components/redesign/Primitives';
+import { Body, Surface, PressScale, ScreenBody, Skeleton, SkeletonRows } from '../../components/redesign/Primitives';
 import MerchantMark from '../../components/redesign/MerchantMark';
 import PriceChart, { type PricePoint } from '../../components/redesign/PriceChart';
 import { api } from '../../utils/api';
@@ -180,8 +180,16 @@ export default function SubscriptionDetailScreen() {
   // All hooks have run; safe to bail out.
   if (loading) {
     return (
-      <View style={{ flex: 1, backgroundColor: colors.bg, alignItems: 'center', justifyContent: 'center' }}>
+      <View style={{ flex: 1, backgroundColor: colors.bg, paddingTop: insets.top + 10, paddingHorizontal: layout.screenX, gap: 12 }}>
         <DoveLoader />
+        <Skeleton w={36} h={36} r={18} />
+        <View style={{ alignItems: 'center', gap: 10, marginTop: 8 }}>
+          <Skeleton w={64} h={64} r={18} />
+          <Skeleton w="50%" h={20} />
+          <Skeleton w="30%" h={34} />
+        </View>
+        <Skeleton h={120} r={18} style={{ marginTop: 10 }} />
+        <SkeletonRows count={3} />
       </View>
     );
   }

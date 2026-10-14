@@ -306,6 +306,48 @@ export function PulseRing({ radius: r = radius.card }: { radius?: number }) {
   );
 }
 
+/**
+ * Skeleton screens (owner, Oct 14 2026): while a page's content loads it shows
+ * light grey shapes in the layout of what is coming, next to the camera dove
+ * (the dove says "loading", the shapes keep the page's structure so nothing
+ * jumps when the data lands). One slow breathing pulse; Reduced Motion: still.
+ */
+export function Skeleton({ w = '100%', h = 14, r = 8, style }: {
+  w?: number | `${number}%`; h?: number; r?: number; style?: StyleProp<ViewStyle>;
+}) {
+  const { colors } = useTheme();
+  const reduced = useReduceMotion();
+  const pulse = useSharedValue(0);
+  useEffect(() => {
+    if (reduced) return;
+    pulse.set(withRepeat(withTiming(1, { duration: 900, easing: Easing.inOut(Easing.ease) }), -1, true));
+    return () => cancelAnimation(pulse);
+  }, [pulse, reduced]);
+  const a = useAnimatedStyle(() => ({ opacity: 1 - 0.45 * pulse.get() }));
+  return <Animated.View style={[{ width: w, height: h, borderRadius: r, backgroundColor: colors.ink + '14' }, a, style]} />;
+}
+
+/** `count` list rows: a round mark, a title line and a shorter detail line, an amount on the right. */
+export function SkeletonRows({ count = 4, card = true }: { count?: number; card?: boolean }) {
+  return (
+    <View style={{ gap: 8 }}>
+      {Array.from({ length: count }, (_, i) => {
+        const row = (
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: card ? 14 : 0, paddingVertical: card ? 14 : 8 }}>
+            <Skeleton w={36} h={36} r={18} />
+            <View style={{ flex: 1, gap: 7 }}>
+              <Skeleton w={`${60 - (i % 3) * 12}%`} h={12} />
+              <Skeleton w={`${35 - (i % 2) * 8}%`} h={10} />
+            </View>
+            <Skeleton w={52} h={14} />
+          </View>
+        );
+        return card ? <Surface key={i}>{row}</Surface> : <View key={i}>{row}</View>;
+      })}
+    </View>
+  );
+}
+
 /** Screen wrapper: fade + rise entrance, 20px gutters, tab-bar clearance. */
 export function ScreenBody({
   children,

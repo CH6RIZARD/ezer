@@ -20,7 +20,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../../utils/ThemeContext';
 import { fontFamily, typeScale, radius, layout } from '../../theme/type';
-import { Body, Label, SectionHeader, Surface, PressScale, ScreenBody } from '../../components/redesign/Primitives';
+import { Body, Label, SectionHeader, Surface, PressScale, ScreenBody, Skeleton, SkeletonRows } from '../../components/redesign/Primitives';
 import { useData } from '../../contexts/DataContext';
 import { fetchLinkedBanks, type LinkedBankItem } from '../../utils/linkedBanks';
 import BankTile from '../../components/redesign/BankTile';
@@ -140,7 +140,13 @@ export default function BankDetailScreen() {
           </View>
 
           {loading ? (
-            <DoveLoader />
+            <View style={{ marginTop: 18, gap: 10 }}>
+              <DoveLoader />
+              <Skeleton w="45%" h={12} />
+              <SkeletonRows count={3} />
+              <Skeleton w="30%" h={16} style={{ marginTop: 14 }} />
+              <SkeletonRows count={1} />
+            </View>
           ) : !item ? (
             <Body style={{ marginTop: 24 }}>This bank is no longer connected.</Body>
           ) : (

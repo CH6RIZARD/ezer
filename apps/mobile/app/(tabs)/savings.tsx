@@ -39,6 +39,8 @@ import {
   PressScale,
   ScreenBody,
   TabMark,
+  Skeleton,
+  SkeletonRows,
 } from '../../components/redesign/Primitives';
 import ProgressRing from '../../components/redesign/ProgressRing';
 import MoveMoneySheet, { type MoveMode } from '../../components/redesign/MoveMoneySheet';
@@ -72,9 +74,17 @@ export default function SavingsScreen() {
     error,
   } = useSavingsGoals();
 
-  // The camera dove is the only loader: a refresh (pull or otherwise) shows
-  // it, and the RefreshControl below is invisible (iOS drew its grey circle).
-  useCameraDove(isLoading);
+  // The camera dove is the only loader, and only for a wait someone can see:
+  // the first load (nothing to show yet) or a refresh they asked for (pull,
+  // Retry). The silent refresh behind already-shown data does not fly it
+  // (owner, Oct 14 2026: "looping for no reason, everything is already
+  // loaded"). The RefreshControl below is invisible (iOS drew its grey circle).
+  const [asked, setAsked] = useState(false);
+  const userRefresh = () => {
+    setAsked(true);
+    void Promise.resolve(refresh()).finally(() => setAsked(false));
+  };
+  useCameraDove(isLoading && (!hydrated || asked));
 
   const [moveMode, setMoveMode] = useState<MoveMode | null>(null);
   const [creating, setCreating] = useState(false);
@@ -263,7 +273,7 @@ export default function SavingsScreen() {
           // holding an empty gap where the hidden spinner would be.
           <RefreshControl
             refreshing={false}
-            onRefresh={() => { void refresh(); }}
+            onRefresh={userRefresh}
             tintColor="transparent"
             colors={['transparent']}
             progressBackgroundColor="transparent"
@@ -279,7 +289,7 @@ export default function SavingsScreen() {
             <Surface style={[styles.errorBanner, { borderColor: colors.red + '55' }]}>
               <Ionicons name="cloud-offline-outline" size={16} color={colors.red} />
               <Text style={[styles.errorText, { color: colors.red }]}>{error}</Text>
-              <Pressable onPress={() => { void refresh(); }} hitSlop={8}>
+              <Pressable onPress={userRefresh} hitSlop={8}>
                 <Text style={[styles.retryText, { color: colors.accInk }]}>Retry</Text>
               </Pressable>
             </Surface>
@@ -463,6 +473,16 @@ export default function SavingsScreen() {
 
           {hasGoals ? (
             <View style={{ gap: 8 }}>{goals.map(renderGoal)}</View>
+          ) : !hydrated ? (
+            <View style={{ gap: 8 }}>
+              {[0, 1].map(i => (
+                <Surface key={i} style={{ padding: 14, gap: 10 }}>
+                  <Skeleton w={i ? '40%' : '55%'} h={14} />
+                  <Skeleton h={8} r={4} />
+                  <Skeleton w="30%" h={10} />
+                </Surface>
+              ))}
+            </View>
           ) : (
             <Surface style={styles.empty}>
               <Ionicons name="flag-outline" size={22} color={colors.mut2} />
@@ -483,6 +503,8 @@ export default function SavingsScreen() {
             <Surface style={{ paddingHorizontal: 14 }}>
               {transactions.slice(0, 10).map(renderTx)}
             </Surface>
+          ) : !hydrated ? (
+            <Surface style={{ paddingHorizontal: 14 }}><SkeletonRows count={3} card={false} /></Surface>
           ) : (
             <Surface style={styles.empty}>
               <Body style={{ textAlign: 'center' }}>No movements yet.</Body>

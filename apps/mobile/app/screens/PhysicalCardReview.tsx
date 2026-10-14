@@ -26,7 +26,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../../utils/ThemeContext';
 import { fontFamily, typeScale, radius, layout } from '../../theme/type';
-import { Body, Label, SectionHeader, Surface, PressScale, ScreenBody } from '../../components/redesign/Primitives';
+import { Body, Label, SectionHeader, Surface, PressScale, ScreenBody, Skeleton } from '../../components/redesign/Primitives';
 import { CardFrontFace, CardBackFace } from '../../components/redesign/CardCanvas';
 import SpinCard from '../../components/redesign/SpinCard';
 import { cardFinishes, type CardFinish } from '../../theme/tokens';
@@ -100,8 +100,13 @@ export default function PhysicalCardReviewScreen() {
 
   if (loading) {
     return (
-      <View style={[styles.loadingScreen, { backgroundColor: colors.bg }]}>
+      <View style={[styles.loadingScreen, { backgroundColor: colors.bg, paddingTop: insets.top + 10 }]}>
         <DoveLoader />
+        <Skeleton w="55%" h={26} />
+        <Skeleton w="80%" h={12} style={{ marginTop: 10 }} />
+        <Skeleton w={300} h={190} r={radius.virtualCard} style={{ marginTop: 28, alignSelf: 'center' }} />
+        <Skeleton h={88} r={18} style={{ marginTop: 28 }} />
+        <Skeleton h={52} r={26} style={{ marginTop: 18 }} />
       </View>
     );
   }
@@ -235,8 +240,7 @@ export default function PhysicalCardReviewScreen() {
 const styles = StyleSheet.create({
   loadingScreen: {
     flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
+    paddingHorizontal: layout.screenX,
   },
   header: {
     flexDirection: 'row',

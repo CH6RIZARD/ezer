@@ -20,7 +20,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../../utils/ThemeContext';
 import { fontFamily, typeScale, radius, layout } from '../../theme/type';
-import { Body, SectionHeader, Surface, PressScale, ScreenBody } from '../../components/redesign/Primitives';
+import { Body, SectionHeader, Surface, PressScale, ScreenBody, Skeleton, SkeletonRows } from '../../components/redesign/Primitives';
 import { useConnectBank } from '../../utils/useConnectBank';
 import { fetchLinkedBanks, payIn4AccountFor, type LinkedBanksData } from '../../utils/linkedBanks';
 import { formatCents } from '../../utils/calculations';
@@ -84,7 +84,12 @@ export default function LinkedBanksScreen() {
           */}
           <SectionHeader style={styles.section}>Pay in 4 pays from</SectionHeader>
           {loadingBanks ? (
-            <DoveLoader />
+            <View style={{ gap: 10 }}>
+              <DoveLoader />
+              <Skeleton h={96} r={18} />
+              <Skeleton w="35%" h={16} style={{ marginTop: 14 }} />
+              <SkeletonRows count={2} />
+            </View>
           ) : (
             (() => {
               const p4Item = linkedBanks?.items.find(i => payIn4AccountFor(i));
