@@ -30,6 +30,10 @@ struct SavingsView: View {
     @State private var asked = false
     /// Pause/Resume is saving (RN toggling): the button dims, ignores taps and flies the camera dove.
     @State private var toggling = false
+    /// RN `useSlow`: true once the asked-for refresh / the toggle has run 300 ms (the camera dove's
+    /// grace), so skeletons show what is loading without flashing over data for a quick one.
+    @State private var slow = false
+    @State private var slowToggle = false
     /// `handledCreateParam` ref.
     @State private var handledCreateParam: String?
 
@@ -67,6 +71,18 @@ struct SavingsView: View {
         // for. The silent refresh behind shown data does not fly it (owner, Oct 14 2026: "looping for
         // no reason, everything is already loaded"). RN: useCameraDove(isLoading && (!hydrated || asked)).
         .cameraDove((savings.isLoading && (!savings.hydrated || asked)) || toggling)
+        .task(id: savings.isLoading && asked) {
+            slow = false
+            guard savings.isLoading && asked else { return }
+            try? await Task.sleep(for: .milliseconds(300))
+            if !Task.isCancelled { slow = true }
+        }
+        .task(id: toggling) {
+            slowToggle = false
+            guard toggling else { return }
+            try? await Task.sleep(for: .milliseconds(300))
+            if !Task.isCancelled { slowToggle = true }
+        }
         .rnScreen()
         .background(c.bg.ignoresSafeArea())
         .background {
@@ -94,6 +110,8 @@ struct SavingsView: View {
         let autoSave = savings.autoSave
         let totalSaved = savings.totalSaved
         let hasGoals = !goals.isEmpty
+        // RN `sk`: skeletons for the first load or a slow refresh the user asked for.
+        let sk = !savings.hydrated || slow
 
         VStack(alignment: .leading, spacing: 0) {
             Text("Savings")
@@ -124,22 +142,30 @@ struct SavingsView: View {
             Surface(radius: Radius.hero) {
                 VStack(alignment: .leading, spacing: 0) {
                     Label("Total saved")
-                    Text(savings.hydrated ? formatCents(savingsDollarsToCents(totalSaved)) : "—")
-                        .typeStyle(TypeScale.totalValue)
-                        .foregroundStyle(c.success)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.5)
-                        .padding(.top, 4)
+                    if sk {
+                        Skeleton(w: 168, h: 44, r: 12).padding(.top, 10).padding(.bottom, 6)
+                    } else {
+                        Text(formatCents(savingsDollarsToCents(totalSaved)))
+                            .typeStyle(TypeScale.totalValue)
+                            .foregroundStyle(c.success)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.5)
+                            .padding(.top, 4)
+                    }
 
                     // One fact, not two. "Typical save" was the mean of past debits — a statistic about
                     // the engine's behaviour. What they came for is the total above and how it moved
                     // this month.
                     HStack(alignment: .center, spacing: 14) {
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(formatCents(savingsDollarsToCents(savings.savedThisMonth)))
-                                .font(.ezer(FontFamily.bold, 15))
-                                .foregroundStyle(c.ink)
-                                .lineLimit(1)
+                            if sk {
+                                Skeleton(w: 72, h: 18, r: 6).padding(.bottom, 4)
+                            } else {
+                                Text(formatCents(savingsDollarsToCents(savings.savedThisMonth)))
+                                    .font(.ezer(FontFamily.bold, 15))
+                                    .foregroundStyle(c.ink)
+                                    .lineLimit(1)
+                            }
                             Text("Saved this month")
                                 .font(.ezer(FontFamily.regular, 11))
                                 .foregroundStyle(c.mut2)
@@ -186,11 +212,7 @@ struct SavingsView: View {
             .padding(.top, 26)
             .padding(.bottom, 10)
 
-            if hasGoals {
-                VStack(alignment: .leading, spacing: 8) {
-                    ForEach(goals) { g in goalRow(g, c) }
-                }
-            } else if !savings.hydrated {
+            if sk {
                 VStack(spacing: 8) {
                     ForEach(0..<2, id: \.self) { i in
                         Surface {
@@ -202,6 +224,10 @@ struct SavingsView: View {
                             .padding(14)
                         }
                     }
+                }
+            } else if hasGoals {
+                VStack(alignment: .leading, spacing: 8) {
+                    ForEach(goals) { g in goalRow(g, c) }
                 }
             } else {
                 Surface {
@@ -229,7 +255,9 @@ struct SavingsView: View {
             SectionHeader("Recent activity")
                 .padding(.top, 26)
                 .padding(.bottom, 10)
-            if !transactions.isEmpty {
+            if sk {
+                Surface { SkeletonRows(count: 3, card: false).padding(.horizontal, 14 + 1) }
+            } else if !transactions.isEmpty {
                 Surface {
                     VStack(alignment: .leading, spacing: 0) {
                         ForEach(Array(transactions.prefix(10).enumerated()), id: \.element.id) { i, t in
@@ -239,8 +267,6 @@ struct SavingsView: View {
                     .padding(.horizontal, 14 + 1)
                     .padding(.vertical, 1)
                 }
-            } else if !savings.hydrated {
-                Surface { SkeletonRows(count: 3, card: false).padding(.horizontal, 14 + 1) }
             } else {
                 Surface {
                     BodyText("No movements yet.")
@@ -303,18 +329,29 @@ struct SavingsView: View {
                     .foregroundStyle(on ? Color(css: "rgba(255,255,255,.72)") : c.mut)
             }
 
-            Text(copy.headline)
-                .font(.ezer(FontFamily.serif, 32))
-                .foregroundStyle(on ? white : c.ink)
-                .lineLimit(1)
-                .minimumScaleFactor(0.5)
-                .padding(.top, 12)
+            // RN `autoSk`: the card's copy skeletons while a slow asked-for refresh or Pause/Resume
+            // runs (owner, Oct 15 2026: "the autopilot section doesn't skeleton, so it's just
+            // confusing"). On the purple card the line colour would vanish, so a white tint.
+            let autoSk = !savings.hydrated || slow || slowToggle
+            let skColor: Color? = on ? Color(css: "rgba(255,255,255,.22)") : nil
+            if autoSk {
+                Skeleton(w: 190, h: 30, r: 9, color: skColor).padding(.top, 14).padding(.bottom, 12)
+                Skeleton(h: 12, color: skColor)
+                Skeleton(w: 230, h: 12, color: skColor).padding(.top, 7).padding(.bottom, 2)
+            } else {
+                Text(copy.headline)
+                    .font(.ezer(FontFamily.serif, 32))
+                    .foregroundStyle(on ? white : c.ink)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.5)
+                    .padding(.top, 12)
 
-            Text(copy.detail)
-                .font(.ezer(FontFamily.regular, 12.5))
-                .foregroundStyle(on ? Color(css: "rgba(255,255,255,.78)") : c.mut)
-                .rnLineHeight(18.5, family: FontFamily.regular, size: 12.5)
-                .padding(.top, 6)
+                Text(copy.detail)
+                    .font(.ezer(FontFamily.regular, 12.5))
+                    .foregroundStyle(on ? Color(css: "rgba(255,255,255,.78)") : c.mut)
+                    .rnLineHeight(18.5, family: FontFamily.regular, size: 12.5)
+                    .padding(.top, 6)
+            }
 
             // The checking balance and the buffer used to sit here. They are inputs to the ENGINE, not
             // to the user. Only the on/off control remains.

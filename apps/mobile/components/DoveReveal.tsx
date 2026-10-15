@@ -258,12 +258,12 @@ export function DoveHover({ width }: { width: number }) {
 // open: takes off from EXACTLY the perched pose on the R; loop: circles the
 // word while LockGate waits; exit: climbs fully up into the camera as Home
 // appears. LockGate decides when (at least FADE_MS * 2, and auth/data ready).
-// The exit starts from the CURRENT loop frame, never waiting for the lap: its
-// path is (1 - c) * (x, y) + c * cam with (x, y) the loop position the dove is
-// at, and over the first EXIT_BLEND frames position, scale and sprite blend
-// from the still-running loop into the exit's own climb.
-
-const EXIT_BLEND = 6;
+// The exit leaves from the next of P1.exit.k anchor frames (L0) ahead of the
+// loop's current frame, at most ~1 s away: each exit is rendered starting
+// EXACTLY on its anchor (position, attitude, wing phase), so there is no blend.
+// One exit blended onto whatever frame the loop was at paused mid-flight and
+// jumped at the sprite switch (owner, Oct 15 2026: "duplicate... unnatural
+// pausing in the middle of the flight").
 const P1_CLIPS = [P1.open, P1.loop, P1.exit];
 
 /** P1's sheets, invisible: mounted while the keypad is up, so they are decoded before the code is accepted. */
@@ -282,7 +282,7 @@ export function DoveP1Preload() {
 type P1Pose = { x: number; y: number; s: number; i: [number, number, number]; a: [number, number, number] };
 
 /** Where the dove is and which cell of which clip shows, for phase ph (0 open, 1 loop, 2 exit, 3 done) at frame time t. */
-function p1Pose(ph: number, t: number, L: number, cx: number, cy: number, fade: boolean): P1Pose {
+function p1Pose(ph: number, t: number, E: number, cx: number, cy: number, fade: boolean): P1Pose {
   'worklet';
   const i = Math.floor(t);
   if (ph === 0) {
@@ -296,33 +296,22 @@ function p1Pose(ph: number, t: number, L: number, cx: number, cy: number, fade: 
     const f = P1.loop.f;
     return { x: f[il * 5], y: f[il * 5 + 1], s: f[il * 5 + 2], i: [0, il, 0], a: [0, 1, 0] };
   }
-  const ie = Math.min(i, P1.exit.n - 1);
-  const il = (L + ie) % nl;
-  const lf = P1.loop.f;
+  const ne = P1.exit.n;
+  const ie = Math.min(i, ne - 1);
+  const j = (E * ne + ie) * 5;
   const ef = P1.exit.f;
-  const b0 = Math.min(1, t / EXIT_BLEND);
-  const b = b0 * b0 * (3 - 2 * b0);
-  // the exit's own climb, carried over to start from loop frame L
-  const ex = lf[L * 5] + ef[ie * 5] - ef[0];
-  const ey = lf[L * 5 + 1] + ef[ie * 5 + 1] - ef[1];
-  const es = (lf[L * 5 + 2] * ef[ie * 5 + 2]) / ef[2];
-  const x = lf[il * 5] + (ex - lf[il * 5]) * b;
-  const y = lf[il * 5 + 1] + (ey - lf[il * 5 + 1]) * b;
-  const c = ef[ie * 5 + 3];
-  const o = ph === 3 ? 0 : fade ? ef[ie * 5 + 4] : 1;
+  const c = ef[j + 3];
+  const o = ph === 3 ? 0 : fade ? ef[j + 4] : 1;
   return {
-    x: (1 - c) * x + c * cx,
-    y: (1 - c) * y + c * cy,
-    s: lf[il * 5 + 2] + (es - lf[il * 5 + 2]) * b,
-    i: [0, il, ie],
-    // ONE sprite at a time: the switch from the loop's cell to the exit's is a single frame at the blend's midpoint.
-    // Cross-fading them drew two translucent doves at once (owner's recording, Oct 14 2026: "2 birds before it
-    // enters camera"). Only the position and scale blend.
-    a: [0, b < 0.5 ? o : 0, b < 0.5 ? 0 : o],
+    x: (1 - c) * ef[j] + c * cx,
+    y: (1 - c) * ef[j + 1] + c * cy,
+    s: ef[j + 2],
+    i: [0, 0, E * ne + ie],
+    a: [0, 0, o],
   };
 }
 
-type P1Shared = { ph: SharedValue<number>; t: SharedValue<number>; L: SharedValue<number> };
+type P1Shared = { ph: SharedValue<number>; t: SharedValue<number>; E: SharedValue<number> };
 
 function P1Window({
   w,
@@ -349,18 +338,18 @@ function P1Window({
   // The window sits at the word's origin; scaling is about its centre, so this puts the cell's pivot on (x, y).
   const dx = P1.px * k - W0 / 2;
   const dy = P1.py * k - H0 / 2;
-  const { ph, t, L } = sv;
+  const { ph, t, E } = sv;
   const cx = cam.x;
   const cy = cam.y;
   const win = useAnimatedStyle(() => {
-    const q = p1Pose(ph.value, t.value, L.value, cx, cy, fade);
+    const q = p1Pose(ph.value, t.value, E.value, cx, cy, fade);
     return {
       opacity: q.a[w],
       transform: [{ translateX: q.x * k - W0 / 2 - q.s * dx }, { translateY: q.y * k - H0 / 2 - q.s * dy }, { scale: q.s }],
     };
   });
   const slide = useAnimatedStyle(() => {
-    const i = p1Pose(ph.value, t.value, L.value, cx, cy, fade).i[w];
+    const i = p1Pose(ph.value, t.value, E.value, cx, cy, fade).i[w];
     return { transform: [{ translateX: -(i % c.cols) * W0 }, { translateY: -Math.floor(i / c.cols) * H0 }] };
   });
   const size = { width: W0 * c.cols, height: H0 * c.rows };
@@ -420,7 +409,7 @@ export function DoveP1({
 
   const ph = useSharedValue(0);
   const t = useSharedValue(0);
-  const L = useSharedValue(0);
+  const E = useSharedValue(0);
   const go = useSharedValue(false);
   useEffect(() => {
     go.value = exit;
@@ -429,21 +418,32 @@ export function DoveP1({
   const no = P1.open.n;
   const nl = P1.loop.n;
   const ne = P1.exit.n;
+  const L0 = P1.exit.L0;
   const fc = useFrameCallback(info => {
     'worklet';
     if (ph.value === 3) return;
-    let x = t.value + (Math.min(info.timeSincePreviousFrame ?? 16.7, 100) * P1.fps) / 1000;
+    let prev = t.value;
+    let x = prev + (Math.min(info.timeSincePreviousFrame ?? 16.7, 100) * P1.fps) / 1000;
     if (ph.value === 0 && x >= no) {
       ph.value = 1;
       x -= no;
+      prev = 0;
     }
     if (ph.value === 1) {
       if (go.value) {
-        // straight into the exit from this frame, no waiting for the lap
-        L.value = Math.floor(x) % nl;
-        ph.value = 2;
-        x -= Math.floor(x);
-      } else if (x >= nl) x -= nl;
+        // leave at the first anchor this frame step reaches (x may have run past nl: a, then a + nl)
+        for (let e = 0; e < L0.length && ph.value === 1; e++) {
+          for (const a of [L0[e], L0[e] + nl]) {
+            if (prev <= a && x >= a) {
+              E.value = e;
+              ph.value = 2;
+              x -= a;
+              break;
+            }
+          }
+        }
+      }
+      if (ph.value === 1 && x >= nl) x -= nl;
     }
     if (ph.value === 2 && x >= ne) {
       ph.value = 3;
@@ -457,7 +457,7 @@ export function DoveP1({
   }, [fc, flying]);
 
   if (reduced) return <Perched k={k} />;
-  const sv = { ph, t, L };
+  const sv = { ph, t, E };
   return (
     <>
       {state !== 'fly' && <Perched k={k} />}

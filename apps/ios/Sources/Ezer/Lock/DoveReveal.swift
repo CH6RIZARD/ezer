@@ -299,12 +299,10 @@ struct DoveHover: View {
 // dove-p1-{open,loop,exit}.webp, both from E:\ezer-dove\loaders\work\export_app_doves.py).
 // open: takes off from EXACTLY the perched pose on the R; loop: circles the word while LockGate
 // waits; exit: climbs fully up into the camera as Home appears. LockGate decides when (at least
-// FADE_MS * 2, and auth/data ready). The exit starts from the CURRENT loop frame, never waiting for
-// the lap: its path is (1 - c) * (x, y) + c * cam with (x, y) the loop position the dove is at, and
-// over the first EXIT_BLEND frames position, scale and sprite blend from the still-running loop
-// into the exit's own climb.
-
-private let EXIT_BLEND: Double = 6
+// FADE_MS * 2, and auth/data ready). The exit leaves from the next of exitK anchor frames (exitL0)
+// ahead of the loop's current frame, at most ~1 s away: each exit is rendered starting EXACTLY on
+// its anchor (position, attitude, wing phase), so there is no blend. One exit blended onto whatever
+// frame the loop was at paused mid-flight and jumped at the sprite switch (owner, Oct 15 2026).
 let P1_SHEETS = ["dove-p1-open", "dove-p1-loop", "dove-p1-exit"]
 private let P1_CLIPS = [DoveP1Frames.open_, DoveP1Frames.loop, DoveP1Frames.exit]
 
@@ -313,7 +311,7 @@ private let P1_CLIPS = [DoveP1Frames.open_, DoveP1Frames.loop, DoveP1Frames.exit
 private final class P1Clock {
     var ph = 0
     var t: Double = 0
-    var L = 0
+    var E = 0
     var last: Date?
     var go = false
     var notified = false
@@ -323,16 +321,21 @@ private final class P1Clock {
         if ph == 3 { return false }
         let dt = last.map { min(0.1, max(0, now.timeIntervalSince($0))) } ?? 0
         last = now
-        var x = t + dt * DoveP1Frames.fps
+        var prev = t
+        var x = prev + dt * DoveP1Frames.fps
         let no = Double(DoveP1Frames.open_.n), nl = Double(DoveP1Frames.loop.n), ne = Double(DoveP1Frames.exit.n)
-        if ph == 0 && x >= no { ph = 1; x -= no }
+        if ph == 0 && x >= no { ph = 1; x -= no; prev = 0 }
         if ph == 1 {
             if go {
-                // straight into the exit from this frame, no waiting for the lap
-                L = Int(x) % DoveP1Frames.loop.n
-                ph = 2
-                x -= floor(x)
-            } else if x >= nl { x -= nl }
+                // leave at the first anchor this frame step reaches (x may have run past nl: a, then a + nl)
+                search: for (e, a0) in DoveP1Frames.exitL0.enumerated() {
+                    for a in [Double(a0), Double(a0) + nl] where prev <= a && x >= a {
+                        E = e; ph = 2; x -= a
+                        break search
+                    }
+                }
+            }
+            if ph == 1 && x >= nl { x -= nl }
         }
         var finished = false
         if ph == 2 && x >= ne {
@@ -362,21 +365,14 @@ private final class P1Clock {
             let il = i % nl
             return Pose(x: lf[il * 5], y: lf[il * 5 + 1], s: lf[il * 5 + 2], i: [0, il, 0], a: [0, 1, 0])
         }
-        let ie = min(i, DoveP1Frames.exit.n - 1)
-        let il = (L + ie) % nl
+        let ne = DoveP1Frames.exit.n
+        let ie = min(i, ne - 1)
+        let j = (E * ne + ie) * 5
         let ef = DoveP1Frames.exit.f
-        let b0 = min(1, t / EXIT_BLEND)
-        let b = b0 * b0 * (3 - 2 * b0)
-        // the exit's own climb, carried over to start from loop frame L
-        let ex = lf[L * 5] + ef[ie * 5] - ef[0]
-        let ey = lf[L * 5 + 1] + ef[ie * 5 + 1] - ef[1]
-        let es = lf[L * 5 + 2] * ef[ie * 5 + 2] / ef[2]
-        let x = lf[il * 5] + (ex - lf[il * 5]) * b
-        let y = lf[il * 5 + 1] + (ey - lf[il * 5 + 1]) * b
-        let c = ef[ie * 5 + 3]
-        let o = ph == 3 ? 0 : fade ? ef[ie * 5 + 4] : 1
-        return Pose(x: (1 - c) * x + c * Double(cam.x), y: (1 - c) * y + c * Double(cam.y),
-                    s: lf[il * 5 + 2] + (es - lf[il * 5 + 2]) * b, i: [0, il, ie], a: [0, b < 0.5 ? o : 0, b < 0.5 ? 0 : o])
+        let c = ef[j + 3]
+        let o = ph == 3 ? 0 : fade ? ef[j + 4] : 1
+        return Pose(x: (1 - c) * ef[j] + c * Double(cam.x), y: (1 - c) * ef[j + 1] + c * Double(cam.y),
+                    s: ef[j + 2], i: [0, 0, E * ne + ie], a: [0, 0, o])
     }
 }
 

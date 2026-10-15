@@ -375,29 +375,40 @@ export async function plaidRoutes(server: FastifyInstance) {
     const plaid = getPlaidClient();
     const accounts: any[] = [];
 
-    for (const item of items) {
-      try {
-        const res = await plaid.accountsBalanceGet({ access_token: decrypt(item.accessTokenEnc) });
-        for (const a of res.data.accounts) {
-          const available = a.balances.available ?? a.balances.current ?? 0;
-          accounts.push({
-            accountId: a.account_id,
-            name: a.name,
-            mask: a.mask,
-            type: a.type,
-            subtype: a.subtype,
-            institutionName: item.institutionName,
-            // Cents on the wire, like every other amount in this API.
-            availableCents: Math.round(available * 100),
-            currentCents: Math.round((a.balances.current ?? 0) * 100),
-            isoCurrencyCode: a.balances.iso_currency_code ?? 'USD',
-          });
+    // Every item at once, each capped at BALANCE_TIMEOUT_MS. Plaid's balance call is a live
+    // request to the bank (seconds each), and one item in error (bank connection lost) sat
+    // on its timeout for ~10 s; sequential awaits added them up, so the Savings tab's pull
+    // to refresh flew the dove for 10 seconds (owner, Oct 15 2026). This call only tells
+    // the app whether a bank exists and the checking figure; a slow item is skipped.
+    const BALANCE_TIMEOUT_MS = 4000;
+    await Promise.all(
+      items.map(async item => {
+        try {
+          const res = await Promise.race([
+            plaid.accountsBalanceGet({ access_token: decrypt(item.accessTokenEnc) }),
+            new Promise<never>((_, rej) => setTimeout(() => rej(new Error('balance timeout')), BALANCE_TIMEOUT_MS)),
+          ]);
+          for (const a of res.data.accounts) {
+            const available = a.balances.available ?? a.balances.current ?? 0;
+            accounts.push({
+              accountId: a.account_id,
+              name: a.name,
+              mask: a.mask,
+              type: a.type,
+              subtype: a.subtype,
+              institutionName: item.institutionName,
+              // Cents on the wire, like every other amount in this API.
+              availableCents: Math.round(available * 100),
+              currentCents: Math.round((a.balances.current ?? 0) * 100),
+              isoCurrencyCode: a.balances.iso_currency_code ?? 'USD',
+            });
+          }
+        } catch (err: any) {
+          // One dead item must not blank out every other linked account.
+          request.log.warn({ err: err?.response?.data || err?.message, itemId: item.plaidItemId }, 'balance fetch failed for item');
         }
-      } catch (err: any) {
-        // One dead item must not blank out every other linked account.
-        request.log.warn({ err: err?.response?.data || err?.message, itemId: item.plaidItemId }, 'balance fetch failed for item');
-      }
-    }
+      })
+    );
 
     // The account the sweep draws from: the first depository/checking account.
     const checking =

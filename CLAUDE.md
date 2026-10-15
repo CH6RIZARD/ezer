@@ -823,10 +823,18 @@ style problem.
   camera while the layer lifts and Home appears. Timing, owner's words: never
   shorter than it is ("one full EZER breath", `FADE_MS * 2` = 1.8 s minimum,
   unchanged), and when that minimum has passed AND auth/data are ready the exit
-  starts from the CURRENT loop frame: no waiting for the lap. If loading takes
-  longer it keeps looping. The exit path is `(1 - c) * (x, y) + c * cam` with
-  `(x, y)` the loop position the dove is at; over the first 6 frames position,
-  scale and sprite cross-blend from the running loop into the exit's climb.
+  starts at the NEXT of 8 anchor frames (`P1.exit.L0` / `exitL0`, at most ~1 s
+  away): no waiting for the lap. If loading takes longer it keeps looping.
+  **The 8 exits are rendered, one per anchor** (`passcode/plan.py`
+  `exit_anchors`, `exit0..7`; the sheet holds `k` exits of `n` frames, cell
+  `e * n + i`), each starting pixel for pixel on its anchor's loop frame, so
+  there is NO blend. The earlier single exit (rendered from loop frame 0) blended
+  onto whatever frame the loop was at paused mid-flight and jumped at the sprite
+  switch (owner, Oct 15 2026: "duplicate... unnatural pausing in the middle of
+  the flight"). Don't go back to one exit clip plus a blend. Anchors are picked
+  per ~NL/8 frames at the smoothest take-off (a frame whose heading opposes the
+  climb would turn on the spot); `python plan.py` prints every exit's join and
+  speed profile.
   The dove is drawn OUTSIDE the faded layer (`layer` is on the background,
   the word and the keypad, not on the sheet root), and `'open'` (which removes
   the lock overlay) waits for `onExited` (`p1Busy`/`openAfterP1`); the sheet
@@ -920,9 +928,19 @@ style problem.
   it is the same bird, and perched + flying read as two ("dupe birds in
   initial load"). Keep that with the lock-open rule above.
 - **Skeletons use `colors.line`** (black theme: `darkTokens.line`), never a
-  neutral grey ("use the app hexes"). They show only while there is nothing
-  yet (first load, no cached data), so with data on the device they are
-  rarely seen; that is correct, not a bug.
+  neutral grey ("use the app hexes"). They show while there is nothing yet
+  (first load, no cached data) AND, on Savings, over the figures, the Autopilot
+  copy, goals and activity while a refresh the user asked for (pull, Retry) or
+  Pause/Resume runs past 300 ms (`useSlow` in Primitives; Swift `slow` /
+  `slowToggle`): the dove alone said nothing about WHAT was loading (owner,
+  Oct 15 2026: "the bird flies for 10 seconds, no skeletons, I'm confused on
+  what's loading... the autopilot section doesn't skeleton"). Over the purple
+  Autopilot card they take a white tint (`color` prop). Silent background
+  refreshes show neither dove nor skeletons.
+- **`GET /plaid/balance` fetches every item in parallel with a 4 s cap each.**
+  Plaid's balance call is live to the bank; one item whose connection is lost
+  sat on its timeout and, awaited in sequence, made Savings' refresh (which
+  calls it only to learn whether a bank exists) take ~10 s. Keep the cap.
 - **Only waits someone can see fly it.** Savings registers
   `isLoading && (!hydrated || asked)`: the first load, or a refresh they
   asked for (pull, Retry). The silent refresh behind already-shown data

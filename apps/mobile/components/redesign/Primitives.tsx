@@ -316,8 +316,10 @@ export function PulseRing({ radius: r = radius.card }: { radius?: number }) {
  * (the dove says "loading", the shapes keep the page's structure so nothing
  * jumps when the data lands). One slow breathing pulse; Reduced Motion: still.
  */
-export function Skeleton({ w = '100%', h = 14, r = 8, style }: {
+export function Skeleton({ w = '100%', h = 14, r = 8, style, color }: {
   w?: number | `${number}%`; h?: number; r?: number; style?: StyleProp<ViewStyle>;
+  /** Over a coloured card (Savings' purple Autopilot) the line colour vanishes; pass one. */
+  color?: string;
 }) {
   const { colors, mode } = useTheme();
   const reduced = useReduceMotion();
@@ -329,7 +331,25 @@ export function Skeleton({ w = '100%', h = 14, r = 8, style }: {
   }, [pulse, reduced]);
   const a = useAnimatedStyle(() => ({ opacity: 1 - 0.45 * pulse.get() }));
   // The app's own line colour, not a neutral grey (black theme: EZER's purple line, its own is near-grey) (owner, Oct 14 2026: "shouldn't be grey, use the app hexes").
-  return <Animated.View style={[{ width: w, height: h, borderRadius: r, backgroundColor: mode === 'black' ? darkTokens.line : colors.line }, a, style]} />;
+  return <Animated.View style={[{ width: w, height: h, borderRadius: r, backgroundColor: color ?? (mode === 'black' ? darkTokens.line : colors.line) }, a, style]} />;
+}
+
+/**
+ * True once `on` has been true for `ms` (300, the same grace the camera dove
+ * gives a wait): skeletons for a refresh the user asked for, without flashing
+ * them over data for a wait that was over before anyone could read them.
+ */
+export function useSlow(on: boolean, ms = 300): boolean {
+  const [slow, setSlow] = useState(false);
+  useEffect(() => {
+    if (!on) {
+      setSlow(false);
+      return;
+    }
+    const id = setTimeout(() => setSlow(true), ms);
+    return () => clearTimeout(id);
+  }, [on, ms]);
+  return slow;
 }
 
 /** `count` list rows: a round mark, a title line and a shorter detail line, an amount on the right. */

@@ -41,6 +41,7 @@ import {
   TabMark,
   Skeleton,
   SkeletonRows,
+  useSlow,
 } from '../../components/redesign/Primitives';
 import ProgressRing from '../../components/redesign/ProgressRing';
 import MoveMoneySheet, { type MoveMode } from '../../components/redesign/MoveMoneySheet';
@@ -94,6 +95,16 @@ export default function SavingsScreen() {
     void setAutoSaveEnabled(!autoSave.enabled).finally(() => setToggling(false));
   };
   useCameraDove((isLoading && (!hydrated || asked)) || toggling);
+  // What the dove is loading, in place: skeletons over the figures, the
+  // Autopilot copy, the goals and the activity for a refresh the user asked
+  // for, and over the Autopilot card for Pause/Resume (owner, Oct 15 2026:
+  // "the bird flies for 10 seconds, no skeletons, I'm confused on what's
+  // loading"). After the same grace the dove gets, so a quick refresh
+  // does not flash them.
+  const slow = useSlow(isLoading && asked);
+  const sk = !hydrated || slow;
+  const slowToggle = useSlow(toggling);
+  const autoSk = sk || slowToggle;
 
   const [moveMode, setMoveMode] = useState<MoveMode | null>(null);
   const [creating, setCreating] = useState(false);
@@ -234,6 +245,8 @@ export default function SavingsScreen() {
   // Every branch is the SERVER's answer, not a local guess. `preview` comes
   // from GET /savings/sweep/preview, which runs the same gate the real sweep
   // runs — so what this card promises is what will actually happen.
+  // Skeletons on the purple (enabled) card: the line colour would vanish there.
+  const autoSkColor = autoSave.enabled ? 'rgba(255,255,255,.22)' : undefined;
   const autopilot = !autoSave.enabled
     ? {
         headline: 'Paused',
@@ -307,13 +320,17 @@ export default function SavingsScreen() {
           {/* --- hero ------------------------------------------------------- */}
           <Surface style={styles.hero} radius={radius.hero}>
             <Label>Total saved</Label>
-            <Text
-              style={[typeScale.totalValue, { color: colors.success, marginTop: 4 }]}
-              numberOfLines={1}
-              adjustsFontSizeToFit
-            >
-              {hydrated ? formatCents(dollarsToCents(totalSaved)) : '—'}
-            </Text>
+            {sk ? (
+              <Skeleton w={168} h={44} r={12} style={{ marginTop: 10, marginBottom: 6 }} />
+            ) : (
+              <Text
+                style={[typeScale.totalValue, { color: colors.success, marginTop: 4 }]}
+                numberOfLines={1}
+                adjustsFontSizeToFit
+              >
+                {formatCents(dollarsToCents(totalSaved))}
+              </Text>
+            )}
 
             {/* One fact, not two. "Typical save" was the mean of past debits —
                 a statistic about the engine's behaviour, not something anyone
@@ -321,9 +338,13 @@ export default function SavingsScreen() {
                 above and how it moved this month. */}
             <View style={styles.statRow}>
               <View style={styles.stat}>
-                <Text style={[styles.statValue, { color: colors.ink }]} numberOfLines={1}>
-                  {formatCents(dollarsToCents(savedThisMonth))}
-                </Text>
+                {sk ? (
+                  <Skeleton w={72} h={18} r={6} style={{ marginBottom: 4 }} />
+                ) : (
+                  <Text style={[styles.statValue, { color: colors.ink }]} numberOfLines={1}>
+                    {formatCents(dollarsToCents(savedThisMonth))}
+                  </Text>
+                )}
                 <Text style={[styles.statLabel, { color: colors.mut2 }]}>Saved this month</Text>
               </View>
             </View>
@@ -413,25 +434,35 @@ export default function SavingsScreen() {
               </Text>
             </View>
 
-            <Text
-              style={[
-                styles.autoHeadline,
-                { color: autoSave.enabled ? '#FFFFFF' : colors.ink },
-              ]}
-              numberOfLines={1}
-              adjustsFontSizeToFit
-            >
-              {autopilot.headline}
-            </Text>
+            {autoSk ? (
+              <>
+                <Skeleton w="62%" h={30} r={9} color={autoSkColor} style={{ marginTop: 14, marginBottom: 12 }} />
+                <Skeleton h={12} color={autoSkColor} />
+                <Skeleton w="72%" h={12} color={autoSkColor} style={{ marginTop: 7, marginBottom: 2 }} />
+              </>
+            ) : (
+              <>
+                <Text
+                  style={[
+                    styles.autoHeadline,
+                    { color: autoSave.enabled ? '#FFFFFF' : colors.ink },
+                  ]}
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                >
+                  {autopilot.headline}
+                </Text>
 
-            <Text
-              style={[
-                styles.autoDetail,
-                { color: autoSave.enabled ? 'rgba(255,255,255,.78)' : colors.mut },
-              ]}
-            >
-              {autopilot.detail}
-            </Text>
+                <Text
+                  style={[
+                    styles.autoDetail,
+                    { color: autoSave.enabled ? 'rgba(255,255,255,.78)' : colors.mut },
+                  ]}
+                >
+                  {autopilot.detail}
+                </Text>
+              </>
+            )}
 
             {/* The checking balance and the buffer used to sit here as "the two
                 inputs to the decision above". They are inputs to the ENGINE,
@@ -482,9 +513,7 @@ export default function SavingsScreen() {
             </Pressable>
           </View>
 
-          {hasGoals ? (
-            <View style={{ gap: 8 }}>{goals.map(renderGoal)}</View>
-          ) : !hydrated ? (
+          {sk ? (
             <View style={{ gap: 8 }}>
               {[0, 1].map(i => (
                 <Surface key={i} style={{ padding: 14, gap: 10 }}>
@@ -494,6 +523,8 @@ export default function SavingsScreen() {
                 </Surface>
               ))}
             </View>
+          ) : hasGoals ? (
+            <View style={{ gap: 8 }}>{goals.map(renderGoal)}</View>
           ) : (
             <Surface style={styles.empty}>
               <Ionicons name="flag-outline" size={22} color={colors.mut2} />
@@ -510,12 +541,12 @@ export default function SavingsScreen() {
 
           {/* --- activity ---------------------------------------------------- */}
           <SectionHeader style={styles.section}>Recent activity</SectionHeader>
-          {transactions.length > 0 ? (
+          {sk ? (
+            <Surface style={{ paddingHorizontal: 14 }}><SkeletonRows count={3} card={false} /></Surface>
+          ) : transactions.length > 0 ? (
             <Surface style={{ paddingHorizontal: 14 }}>
               {transactions.slice(0, 10).map(renderTx)}
             </Surface>
-          ) : !hydrated ? (
-            <Surface style={{ paddingHorizontal: 14 }}><SkeletonRows count={3} card={false} /></Surface>
           ) : (
             <Surface style={styles.empty}>
               <Body style={{ textAlign: 'center' }}>No movements yet.</Body>

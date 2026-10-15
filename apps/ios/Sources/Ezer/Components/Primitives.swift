@@ -180,11 +180,13 @@ struct Skeleton: View {
     var w: CGFloat? = nil
     var h: CGFloat = 14
     var r: CGFloat = 8
+    /// Over a coloured card (Savings' purple Autopilot) the line colour vanishes; pass one.
+    var color: Color? = nil
     @State private var dim = false
 
     var body: some View {
         RoundedRectangle(cornerRadius: r, style: .circular)
-            .fill(theme.mode == .black ? ThemeColors.dark.line : theme.colors.line)
+            .fill(color ?? (theme.mode == .black ? ThemeColors.dark.line : theme.colors.line))
             .frame(width: w, height: h)
             .frame(maxWidth: w == nil ? .infinity : nil, alignment: .leading)
             .opacity(dim ? 0.55 : 1)
