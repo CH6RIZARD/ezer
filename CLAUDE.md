@@ -12,9 +12,15 @@ EZER ships as this RN app (Android) AND a native SwiftUI port for iPhone (built
 in WSL at ~/apps/Ezer with xtool, snapshotted into `apps/ios` here). So:
 - Any change to apps/mobile is ported into the Swift app in the same pass
   (translate the RN code; specs in E:\iphone-ezer\spec).
-- Build with `bash scripts/build-both.sh`: it snapshots apps/ios, commits,
-  pushes, starts the Android build for that SHA and builds + installs iOS from
-  the same SHA. Never trigger only one platform. Install the Android APK only
+- **`apps/ios` in this repo is the Swift source of truth (Oct 15 2026).** iOS
+  builds run on the box from git (`bash scripts/remote-build.sh ios`, ~20 s;
+  then the printed `xtool install` line), Android via
+  `gh workflow run "EAS local Android build" --ref <branch> -f profile=preview`,
+  both from the same pushed SHA. Edit Swift under `apps/ios` directly;
+  `export_app_doves.py` writes there too. The WSL copy (`~/apps/Ezer`) is
+  STALE: `scripts/build-both.sh` still rsyncs WSL → apps/ios and would undo
+  edits, so don't run it until it is rewritten to call the box. Never trigger
+  only one platform. Install the Android APK only
   after the phone has been idle (see the handoff notes).
 
 ## GitHub is the source of truth. Your local copy probably is not.
