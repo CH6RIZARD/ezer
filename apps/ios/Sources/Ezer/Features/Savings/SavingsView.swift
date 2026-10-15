@@ -28,6 +28,8 @@ struct SavingsView: View {
     @State private var creating = false
     /// A refresh the user asked for (pull, Retry): the only refresh that flies the camera dove.
     @State private var asked = false
+    /// Pause/Resume is saving (RN toggling): the button dims, ignores taps and flies the camera dove.
+    @State private var toggling = false
     /// `handledCreateParam` ref.
     @State private var handledCreateParam: String?
 
@@ -64,7 +66,7 @@ struct SavingsView: View {
         // The one loader, only for a wait someone can see: the first load or a refresh they asked
         // for. The silent refresh behind shown data does not fly it (owner, Oct 14 2026: "looping for
         // no reason, everything is already loaded"). RN: useCameraDove(isLoading && (!hydrated || asked)).
-        .cameraDove(savings.isLoading && (!savings.hydrated || asked))
+        .cameraDove((savings.isLoading && (!savings.hydrated || asked)) || toggling)
         .rnScreen()
         .background(c.bg.ignoresSafeArea())
         .background {
@@ -318,7 +320,11 @@ struct SavingsView: View {
             // to the user. Only the on/off control remains.
             HStack(alignment: .center, spacing: 12) {
                 Spacer(minLength: 0)
-                SavingsPressable(hitSlop: 8, action: { Task { _ = await savings.setAutoSaveEnabled(!on) } }) {
+                SavingsPressable(hitSlop: 8, action: {
+                    guard !toggling else { return }
+                    toggling = true
+                    Task { _ = await savings.setAutoSaveEnabled(!on); toggling = false }
+                }) {
                     Text(on ? "Pause" : "Resume")
                         .font(.ezer(FontFamily.bold, 11.5))
                         .foregroundStyle(on ? white : c.accInk)
@@ -326,6 +332,7 @@ struct SavingsView: View {
                         .padding(.vertical, 9 + 1)
                         .background(rnRect(Radius.pill).fill(on ? Color(css: "rgba(255,255,255,.16)") : c.card))
                         .overlay(rnRect(Radius.pill).strokeBorder(on ? Color(css: "transparent") : c.line, lineWidth: 1))
+                        .opacity(toggling ? 0.55 : 1)
                 }
             }
             .padding(.top, 14)
