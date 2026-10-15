@@ -84,7 +84,16 @@ export default function SavingsScreen() {
     setAsked(true);
     void Promise.resolve(refresh()).finally(() => setAsked(false));
   };
-  useCameraDove(isLoading && (!hydrated || asked));
+  // Pause/Resume: the PATCH and the refresh after it. It used to get the dove
+  // through that refresh; now that background refreshes don't fly it, the
+  // button registers its own wait (and dims, ignoring taps, like every button).
+  const [toggling, setToggling] = useState(false);
+  const toggleAuto = () => {
+    if (toggling) return;
+    setToggling(true);
+    void setAutoSaveEnabled(!autoSave.enabled).finally(() => setToggling(false));
+  };
+  useCameraDove((isLoading && (!hydrated || asked)) || toggling);
 
   const [moveMode, setMoveMode] = useState<MoveMode | null>(null);
   const [creating, setCreating] = useState(false);
@@ -440,11 +449,13 @@ export default function SavingsScreen() {
               <View style={{ flex: 1 }} />
 
               <Pressable
-                onPress={() => { void setAutoSaveEnabled(!autoSave.enabled); }}
+                onPress={toggleAuto}
+                disabled={toggling}
                 hitSlop={8}
                 style={[
                   styles.autoToggle,
                   {
+                    opacity: toggling ? 0.55 : 1,
                     backgroundColor: autoSave.enabled ? 'rgba(255,255,255,.16)' : colors.card,
                     borderColor: autoSave.enabled ? 'transparent' : colors.line,
                   },

@@ -910,7 +910,10 @@ style problem.
   `isLoading && (!hydrated || asked)`: the first load, or a refresh they
   asked for (pull, Retry). The silent refresh behind already-shown data
   flew it at every launch ("looping for no reason, everything is already
-  loaded"). New registrations follow the same rule.
+  loaded"). New registrations follow the same rule. A button whose action
+  ends in that refresh (Savings' Pause/Resume) registers its OWN wait
+  (`toggling`): it lost its loader when the refresh stopped flying the dove
+  ("Pause and resume don't have the load it used to"). No spinner, ever.
 - **v3 flights (Oct 14 2026)**: the bird is 8.5% bigger (`SPAN_DP` 39, owner:
   "8/9 percent bigger"); `camera_flight.py` keeps the loop within ±85 dp of
   the camera (`xmax`), the nearest scale ≤ 0.92 and screen y inside a band
