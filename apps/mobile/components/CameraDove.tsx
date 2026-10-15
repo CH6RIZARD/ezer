@@ -130,6 +130,12 @@ export function useCameraDove(active: boolean, label = 'Loading') {
   }, [active, label]);
 }
 
+/** True while the camera dove is out. The tabs' EZER mark leaves its perch empty meanwhile: it is the same bird,
+ *  and a perched dove plus a flying one read as two (owner, Oct 14 2026: "dupe birds in initial load"). */
+export function useCameraDoveOut(): boolean {
+  return useSyncExternalStore(subscribe, () => run !== null);
+}
+
 /** The same as useCameraDove, for JSX. Renders nothing where it is placed. */
 export function DoveLoader({ active = true, label }: { active?: boolean; label?: string }) {
   useCameraDove(active, label);
@@ -138,12 +144,12 @@ export function DoveLoader({ active = true, label }: { active?: boolean; label?:
 
 // ------------------------------------------------------------------ host
 
-const subscribe = (l: () => void) => {
+function subscribe(l: () => void) {
   listeners.add(l);
   return () => {
     listeners.delete(l);
   };
-};
+}
 
 /** Mount once at the root (inside LockGate); `nested` inside an Android sheet's Modal. */
 export function CameraDoveHost({ nested = false }: { nested?: boolean }) {
@@ -186,9 +192,11 @@ export function CameraDoveHost({ nested = false }: { nested?: boolean }) {
 }
 
 /** Frames the droplet forms before the bird's in clip starts (the bird is inside it until it pinches off). */
-const SPAWN = 6;
+const SPAWN = 10;
 /** Frames of the "entered liquid" bump after the bird is in the camera. */
 const ENTRY = 12;
+/** The loading bird drawn 15% over its rendered size (owner, Oct 14 2026: "15 percent bigger"). */
+const BIRD_K = 1.15;
 /** Frames over which an early exit blends from the running loop into the out clip. */
 const EXIT_BLEND = 6;
 const AnimatedPath = Animated.createAnimatedComponent(Path);
@@ -199,19 +207,28 @@ const sm = (v: number) => {
   return x * x * (3 - 2 * x);
 };
 
-/** The droplet: a circle (centre (cx, y0 + d), radius r) hanging from the cut-out's bottom edge y0 by a neck of
- *  half-width nw that leaves the cut-out at x = nx (a drip: it slants when the drop has moved off-centre), with
- *  small fillets; nw 0 = pinched off. Both sub-paths wind the same way (nonzero = union). */
-function dropPath(cx: number, nx: number, y0: number, d: number, r: number, nw: number) {
+/** The droplet: a teardrop hanging from the cut-out's bottom edge y0. Its body is an ellipse (centre (cx, cy),
+ *  radii rx, ry: taller than wide while it stretches); its neck leaves the cut-out at x = nx with half-width bw
+ *  and narrows to a waist of half-width nw before flaring into the body, as one smooth outline (cubic sides, an
+ *  arc round the bottom). nw 0 = pinched off: the body alone, plus `stub`, the neck's remnant retracting into
+ *  the cut-out. Owner, Oct 14 2026: the first version "just looks like a dot". */
+function dropPath(cx: number, cy: number, rx: number, ry: number, nx: number, y0: number, bw: number, nw: number, stub: number) {
   'worklet';
-  if (r < 0.3) return '';
-  const cy = y0 + d;
-  let p = `M ${cx - r} ${cy} A ${r} ${r} 0 1 1 ${cx + r} ${cy} A ${r} ${r} 0 1 1 ${cx - r} ${cy} Z`;
-  if (nw > 0.4) {
-    const f = Math.min(3, nw);
-    const yt = nw >= r ? cy : cy - Math.sqrt(r * r - nw * nw);
-    p += ` M ${nx - nw - f} ${y0 - 4} L ${nx + nw + f} ${y0 - 4} L ${nx + nw + f} ${y0} Q ${nx + nw} ${y0} ${nx + nw} ${y0 + f}` +
-      ` L ${cx + nw} ${yt} L ${cx - nw} ${yt} L ${nx - nw} ${y0 + f} Q ${nx - nw} ${y0} ${nx - nw - f} ${y0} Z`;
+  let p = '';
+  if (rx >= 0.3) {
+    if (nw > 0.3) {
+      const k = cy - y0;
+      p = `M ${nx - bw - 2} ${y0 - 4} L ${nx + bw + 2} ${y0 - 4} L ${nx + bw + 2} ${y0}` +
+        ` C ${nx + nw} ${y0 + 0.25 * k} ${cx + rx} ${cy - 0.75 * ry} ${cx + rx} ${cy}` +
+        ` A ${rx} ${ry} 0 0 1 ${cx - rx} ${cy}` +
+        ` C ${cx - rx} ${cy - 0.75 * ry} ${nx - nw} ${y0 + 0.25 * k} ${nx - bw - 2} ${y0} Z`;
+    } else {
+      p = `M ${cx - rx} ${cy} A ${rx} ${ry} 0 1 1 ${cx + rx} ${cy} A ${rx} ${ry} 0 1 1 ${cx - rx} ${cy} Z`;
+    }
+  }
+  if (stub > 0.3) {
+    const w = 2 + stub * 0.8;
+    p += ` M ${nx - w - 2} ${y0 - 4} L ${nx + w + 2} ${y0 - 4} L ${nx + w + 2} ${y0} Q ${nx} ${y0 + 2 * stub} ${nx - w - 2} ${y0} Z`;
   }
   return p;
 }
@@ -254,6 +271,8 @@ function Sprite({ id, serial: s }: { id: CameraDoveId; serial: number }) {
   }, [f, ni, camY, sd, y0]);
   // Half-width of the cut-out's bottom edge the neck may leave from (island ~50, notch ~70, hole ~3).
   const edgeW = Platform.OS === 'ios' ? (insets.top >= 51 ? 50 : 70) : 3;
+  // Widest the neck's base may be where it leaves the cut-out: a punch hole is ~9 dp, so wider reads as a keyhole.
+  const bwCap = Platform.OS === 'ios' ? 12 : 2.5;
 
   useFrameCallback(info => {
     'worklet';
@@ -332,7 +351,7 @@ function Sprite({ id, serial: s }: { id: CameraDoveId; serial: number }) {
       transform: [
         { translateX: camX + q.x * sd - C / 2 },
         { translateY: camY + q.y * sd - C / 2 },
-        { scale: q.s * fs },
+        { scale: q.s * fs * BIRD_K },
       ],
     };
   };
@@ -358,21 +377,32 @@ function Sprite({ id, serial: s }: { id: CameraDoveId; serial: number }) {
     const ph = phase.value;
     const v = t.value;
     if (ph === 0) {
-      const tp = SP + ke; // the pinch: the bird is out from here
+      // Swells out of the cut-out, stretches down toward where the bird comes out, necks in, pinches off at tp
+      // with a wobble, and the body shrinks away while the bird fades in out of it.
+      const tp = SP + ke;
       const u = sm(v / tp);
-      const r = 10 * sm(v / (0.55 * tp)) * (1 - sm((v - tp) / 5));
-      const d = 3 + (ey - 3) * u;
+      const grow = sm(v / (0.6 * tp));
+      const after = Math.max(0, v - tp);
+      const rx0 = 9.5 * grow * (1 - sm(after / 6));
+      const wob = after > 0 ? 0.28 * Math.exp(-after / 2.5) * Math.cos(after * 1.4) : 0;
+      const rx = rx0 * (1 - wob * 0.5);
+      const ry = rx0 * (1 + 0.45 * u * (1 - sm(after / 3)) + wob);
+      const cy = y0 + 2 + ry * 0.6 + (ey - 2) * u;
       const cx = camX + ex * u;
-      const nx = camX + Math.max(-edgeW, Math.min(edgeW, ex * u * 0.5));
-      const nw = Math.min(r, 6) * (1 - sm((v - (tp - 4)) / 4));
-      return { d: dropPath(cx, nx, y0, d, r, nw) };
+      const nx = camX + Math.max(-edgeW, Math.min(edgeW, ex * u * 0.4));
+      const bw = Math.min(bwCap, 9 * grow * (1 - 0.35 * u));
+      const nw = after > 0 ? 0 : rx * 0.55 * (1 - sm((v - (tp - 5)) / 5));
+      const stub = after > 0 ? Math.min(bwCap + 1, 4) * (1 - sm(after / 5)) : 0;
+      return { d: dropPath(cx, cy, rx, ry, nx, y0, bw, nw, stub) };
     }
     if (ph === 2) {
+      // The bird is in: the surface takes it like liquid, a small drop bulges out, springs back once, settles.
       const e = v - (NO - 3);
       if (e < 0 || e > NE) return { d: '' };
       const amp = Math.exp(-e / 3.5) * Math.cos(e * 0.75);
-      const r = 5 * (1 - e / NE);
-      return { d: amp > 0 ? dropPath(camX, camX, y0, 4.5 * amp, r, r * 0.8) : '' };
+      if (amp <= 0) return { d: '' };
+      const r = 5.5 * amp;
+      return { d: dropPath(camX, y0 + 1 + r * 0.9, r, r * 1.2, camX, y0, Math.min(bwCap, 6 * amp), r * 0.7, 0) };
     }
     return { d: '' };
   });

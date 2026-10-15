@@ -24,7 +24,9 @@ private let FPS: Double = 30
 /// Reduce Motion: frames of fade in and out around the still dove.
 private let RM_FADE: Double = 8
 /// RN SPAWN / ENTRY / EXIT_BLEND.
-private let SPAWN: Double = 6
+private let SPAWN: Double = 10
+/// The loading bird drawn 15% over its rendered size (owner, Oct 14 2026: "15 percent bigger").
+private let BIRD_K = 1.15
 private let ENTRY: Double = 12
 private let EXIT_BLEND: Double = 6
 
@@ -168,9 +170,9 @@ final class CameraDoveCenter {
     struct Pose {
         var x = 0.0, y = 0.0, s = 1.0
         var ca = 0, oa = 0.0, cb = 0, ob = 0.0
-        /// The droplet: depth below the cut-out, radius, neck half-width (r 0 = none), and the x offsets
-        /// (from the camera) of the drop's centre and of where its neck leaves the cut-out.
-        var dd = 0.0, dr = 0.0, dn = 0.0, dx = 0.0, nx = 0.0
+        /// The droplet (Droplet's arguments; x offsets from the camera): body centre, radii, neck x, base and
+        /// waist half-widths, stub. rx 0 = none.
+        var dcx = 0.0, dcy = 0.0, drx = 0.0, dry = 0.0, dnx = 0.0, dbw = 0.0, dnw = 0.0, dstub = 0.0
     }
 
     /// Advances the clock to `now` (RN: the UI-thread frame callback) and returns the pose to draw.
@@ -179,8 +181,9 @@ final class CameraDoveCenter {
     /// liquid bump after the bird is in.
     /// `em`: where the bird comes out of the drop (RN useMemo): its in-clip frame, x offset (pt) and depth
     /// below the cut-out (pt); `edgeW`: half-width of the cut-out's bottom edge the neck may leave from.
+    /// `bwCap`: the widest the neck's base may be where it leaves the cut-out (a punch hole is ~9 pt).
     func tick(_ now: Date, path P: CameraDovePath, reduced: Bool,
-              em: (k: Int, x: Double, y: Double) = (0, 0, 10), edgeW: Double = 50) -> Pose {
+              em: (k: Int, x: Double, y: Double) = (0, 0, 10), edgeW: Double = 50, bwCap: Double = 12, y0: Double = 48) -> Pose {
         let SP = reduced ? 0 : SPAWN
         let NI = (reduced ? RM_FADE : Double(P.ni)) + SP
         let NL = reduced ? 1 : Double(P.nl)
@@ -223,13 +226,22 @@ final class CameraDoveCenter {
             let a = at(c)
             q.x = a.0; q.y = a.1; q.s = a.2; q.ca = c
             q.oa = sm((t - SP - Double(em.k)) / 3) * a.3 // fades in out of the drop
-            let tp = SP + Double(em.k) // the pinch
+            // Swells out of the cut-out, stretches down toward where the bird comes out, necks in, pinches off
+            // at tp with a wobble, and the body shrinks away while the bird fades in out of it (RN, same numbers).
+            let tp = SP + Double(em.k)
             let u = sm(t / tp)
-            q.dr = 10 * sm(t / (0.55 * tp)) * (1 - sm((t - tp) / 5))
-            q.dd = 3 + (em.y - 3) * u
-            q.dx = em.x * u
-            q.nx = max(-edgeW, min(edgeW, em.x * u * 0.5))
-            q.dn = min(q.dr, 6) * (1 - sm((t - (tp - 4)) / 4))
+            let grow = sm(t / (0.6 * tp))
+            let after = max(0, t - tp)
+            let rx0 = 9.5 * grow * (1 - sm(after / 6))
+            let wob = after > 0 ? 0.28 * exp(-after / 2.5) * cos(after * 1.4) : 0
+            q.drx = rx0 * (1 - wob * 0.5)
+            q.dry = rx0 * (1 + 0.45 * u * (1 - sm(after / 3)) + wob)
+            q.dcy = y0 + 2 + q.dry * 0.6 + (em.y - 2) * u
+            q.dcx = em.x * u
+            q.dnx = max(-edgeW, min(edgeW, em.x * u * 0.4))
+            q.dbw = min(bwCap, 9 * grow * (1 - 0.35 * u))
+            q.dnw = after > 0 ? 0 : q.drx * 0.55 * (1 - sm((t - (tp - 5)) / 5))
+            q.dstub = after > 0 ? min(bwCap + 1, 4) * (1 - sm(after / 5)) : 0
             return q
         }
         if phase == 1 {
@@ -251,8 +263,12 @@ final class CameraDoveCenter {
         q.ca = li; q.oa = b < 0.5 ? o : 0; q.cb = e; q.ob = b < 0.5 ? 0 : o // one sprite at a time (P1 exit)
         let ee = t - (NO - 3)
         if phase == 2 && ee >= 0 && ee <= NE {
+            // The bird is in: the surface takes it like liquid, a small drop bulges out, springs back, settles.
             let amp = exp(-ee / 3.5) * cos(ee * 0.75)
-            if amp > 0 { q.dr = 5 * (1 - ee / NE); q.dd = 4.5 * amp; q.dn = q.dr * 0.8 }
+            if amp > 0 {
+                let r = 5.5 * amp
+                q.drx = r; q.dry = r * 1.2; q.dcy = y0 + 1 + r * 0.9; q.dbw = min(bwCap, 6 * amp); q.dnw = r * 0.7
+            }
         }
         return q
     }
@@ -263,30 +279,40 @@ private func sm(_ v: Double) -> Double {
     return x * x * (3 - 2 * x)
 }
 
-/// RN dropPath: a circle (centre d below the cut-out's bottom y0, radius r) hanging from the cut-out by a
-/// neck of half-width nw with small fillets; nw 0 = pinched off.
+/// RN dropPath: a teardrop hanging from the cut-out's bottom edge y0. Body: an ellipse (centre (cx, cy), radii
+/// rx, ry); neck: leaves the cut-out at nx with half-width bw, narrows to nw, flares into the body as one smooth
+/// outline. nw 0 = pinched off (body alone) plus `stub`, the neck's remnant retracting into the cut-out.
 private struct Droplet: Shape {
-    var cx: Double, nx: Double, y0: Double, d: Double, r: Double, nw: Double
+    var cx: Double, cy: Double, rx: Double, ry: Double, nx: Double, y0: Double, bw: Double, nw: Double, stub: Double
 
     func path(in rect: CGRect) -> Path {
         var p = Path()
-        guard r >= 0.3 else { return p }
-        let cy = y0 + d
-        p.addEllipse(in: CGRect(x: cx - r, y: cy - r, width: 2 * r, height: 2 * r))
-        if nw > 0.4 {
-            let f = min(3, nw)
-            let yt = nw >= r ? cy : cy - (r * r - nw * nw).squareRoot()
+        if rx >= 0.3 {
+            if nw > 0.3 {
+                let k = cy - y0
+                p.move(to: CGPoint(x: nx - bw - 2, y: y0 - 4))
+                p.addLine(to: CGPoint(x: nx + bw + 2, y: y0 - 4))
+                p.addLine(to: CGPoint(x: nx + bw + 2, y: y0))
+                p.addCurve(to: CGPoint(x: cx + rx, y: cy), control1: CGPoint(x: nx + nw, y: y0 + 0.25 * k),
+                           control2: CGPoint(x: cx + rx, y: cy - 0.75 * ry))
+                p.addArc(center: CGPoint(x: cx, y: cy), radius: 1, startAngle: .zero, endAngle: .degrees(180), clockwise: false,
+                         transform: CGAffineTransform(translationX: cx, y: cy).scaledBy(x: rx, y: ry).translatedBy(x: -cx, y: -cy))
+                p.addCurve(to: CGPoint(x: nx - bw - 2, y: y0), control1: CGPoint(x: cx - rx, y: cy - 0.75 * ry),
+                           control2: CGPoint(x: nx - nw, y: y0 + 0.25 * k))
+                p.closeSubpath()
+            } else {
+                p.addEllipse(in: CGRect(x: cx - rx, y: cy - ry, width: 2 * rx, height: 2 * ry))
+            }
+        }
+        if stub > 0.3 {
+            let w = 2 + stub * 0.8
             var n = Path()
-            n.move(to: CGPoint(x: nx - nw - f, y: y0 - 4))
-            n.addLine(to: CGPoint(x: nx + nw + f, y: y0 - 4))
-            n.addLine(to: CGPoint(x: nx + nw + f, y: y0))
-            n.addQuadCurve(to: CGPoint(x: nx + nw, y: y0 + f), control: CGPoint(x: nx + nw, y: y0))
-            n.addLine(to: CGPoint(x: cx + nw, y: yt))
-            n.addLine(to: CGPoint(x: cx - nw, y: yt))
-            n.addLine(to: CGPoint(x: nx - nw, y: y0 + f))
-            n.addQuadCurve(to: CGPoint(x: nx - nw - f, y: y0), control: CGPoint(x: nx - nw, y: y0))
+            n.move(to: CGPoint(x: nx - w - 2, y: y0 - 4))
+            n.addLine(to: CGPoint(x: nx + w + 2, y: y0 - 4))
+            n.addLine(to: CGPoint(x: nx + w + 2, y: y0))
+            n.addQuadCurve(to: CGPoint(x: nx - w - 2, y: y0), control: CGPoint(x: nx, y: y0 + 2 * stub))
             n.closeSubpath()
-            p = p.union(n)
+            p.addPath(n)
         }
         return p
     }
@@ -331,19 +357,20 @@ private struct CameraDoveView: View {
                     return (k, P.f[k * 4] * sd, bar / 2 + P.f[k * 4 + 1] * sd - y0)
                 }()
                 let edgeW: Double = bar >= 51 ? 50 : 70
+                let bwCap: Double = 12
                 TimelineView(.animation) { tl in
-                    let q = center.tick(tl.date, path: P, reduced: reduced, em: em, edgeW: edgeW)
+                    let q = center.tick(tl.date, path: P, reduced: reduced, em: em, edgeW: edgeW, bwCap: bwCap, y0: y0)
                     ZStack(alignment: .topLeading) {
                         ForEach(0..<2, id: \.self) { w in
                             SpriteCell(image: DoveSheets.image(P.sheet), cellW: P.cell, cellH: P.cell, cols: P.cols, rows: P.rows,
                                        i: w == 0 ? q.ca : q.cb, edge: EdgeReader.edge(theme))
-                                .scaleEffect(q.s * fs)
+                                .scaleEffect(q.s * fs * BIRD_K)
                                 .opacity(w == 0 ? q.oa : q.ob)
                                 .position(x: cx + q.x * sd, y: bar / 2 + q.y * sd)
                         }
                         // Above the bird (it is inside the drop until the neck pinches). On black the drop gets a
                         // 1 pt hairline in the line colour, stroked under the fill so the neck's seam never shows.
-                        let drop = Droplet(cx: cx + q.dx, nx: cx + q.nx, y0: y0, d: q.dd, r: q.dr, nw: q.dn)
+                        let drop = Droplet(cx: cx + q.dcx, cy: q.dcy, rx: q.drx, ry: q.dry, nx: cx + q.dnx, y0: y0, bw: q.dbw, nw: q.dnw, stub: q.dstub)
                         if theme.mode == .black { drop.stroke(ThemeColors.dark.line, lineWidth: 2) }
                         drop.fill(Color.black)
                     }

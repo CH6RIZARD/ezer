@@ -906,6 +906,23 @@ style problem.
   had, just no pill"). It hangs from the cut-out's bottom (island: top 11 +
   37; notch: 0.66 × inset; Android hole: camera + 4.5). Black theme strokes
   it in `darkTokens.line` under the fill. Don't bring back the pill/card.
+  It is a TEARDROP, not a circle on a stalk (v1 "just looks like a dot"):
+  an ellipse body that stretches as it travels, one smooth necked outline
+  (cubic sides) from a base at the cut-out (`bwCap`: 12 on iPhone, 2.5 on
+  an Android hole, or it reads as a keyhole), a pinch with a wobble, then
+  the body shrinks away while the bird fades in out of it and a stub
+  retracts. `scripts`-free check: `E:\ezer-dove\loaders\work\drop_check.py`
+  draws the same maths frame by frame; run it after changing the timeline.
+- **The loading bird is drawn ×1.15 over its rendered size** (`BIRD_K`, owner:
+  "15 percent bigger") on top of the 8.5% larger v3 renders.
+- **The tabs' EZER perch is empty while the camera dove is out**
+  (`useCameraDoveOut` / `CameraDoveCenter.shared.run == nil` in `TabMark`):
+  it is the same bird, and perched + flying read as two ("dupe birds in
+  initial load"). Keep that with the lock-open rule above.
+- **Skeletons use `colors.line`** (black theme: `darkTokens.line`), never a
+  neutral grey ("use the app hexes"). They show only while there is nothing
+  yet (first load, no cached data), so with data on the device they are
+  rarely seen; that is correct, not a bug.
 - **Only waits someone can see fly it.** Savings registers
   `isLoading && (!hydrated || asked)`: the first load, or a refresh they
   asked for (pull, Retry). The silent refresh behind already-shown data

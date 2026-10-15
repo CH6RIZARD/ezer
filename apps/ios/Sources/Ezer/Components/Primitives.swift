@@ -149,8 +149,11 @@ struct TabMark: View {
         // No perched dove while the lock is up: P1 flies into the camera WHILE the lock lifts and
         // this tab shows through, and the owner saw two doves at once (Oct 13 2026). Exactly one
         // dove on screen: this one lands (fades in) once P1 is in the camera and the lock is open.
-        DoveMark(width: TAB_MARK_W, perched: lockOpen)
-            .animation(.rn(.easeOut, 200), value: lockOpen)
+        // Nor while the camera dove is out: it is this dove, off its perch (RN useCameraDoveOut; owner, Oct 14
+        // 2026: "dupe birds in initial load").
+        let perched = lockOpen && CameraDoveCenter.shared.run == nil
+        DoveMark(width: TAB_MARK_W, perched: perched)
+            .animation(.rn(.easeOut, 200), value: perched)
             .padding(.top, insets.top + TAB_MARK_TOP)
             .padding(.trailing, Layout.screenX)
             .allowsHitTesting(false)
@@ -168,8 +171,8 @@ extension View {
 
 // MARK: - Surfaces
 
-/// Skeleton screens (owner, Oct 14 2026; RN `Skeleton` / `SkeletonRows` in Primitives.tsx): light grey
-/// shapes in the layout of the content that is loading, next to the camera dove. One slow breathing
+/// Skeleton screens (owner, Oct 14 2026; RN `Skeleton` / `SkeletonRows` in Primitives.tsx): shapes in the
+/// theme's line colour (not grey: "use the app hexes"; black theme: EZER's purple line, its own is near-grey) in the layout of the content that is loading, next to the camera dove. One slow breathing
 /// pulse; Reduce Motion: still.
 struct Skeleton: View {
     @Environment(ThemeStore.self) private var theme
@@ -181,7 +184,7 @@ struct Skeleton: View {
 
     var body: some View {
         RoundedRectangle(cornerRadius: r, style: .circular)
-            .fill(theme.colors.ink.opacity(0.08))
+            .fill(theme.mode == .black ? ThemeColors.dark.line : theme.colors.line)
             .frame(width: w, height: h)
             .frame(maxWidth: w == nil ? .infinity : nil, alignment: .leading)
             .opacity(dim ? 0.55 : 1)

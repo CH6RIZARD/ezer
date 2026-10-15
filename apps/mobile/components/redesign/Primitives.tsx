@@ -23,6 +23,7 @@ import { useIsFocused } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { DoveMark } from '../DoveReveal';
 import { LockOpenContext } from '../LockGate';
+import { useCameraDoveOut } from '../CameraDove';
 import { useTheme } from '../../utils/ThemeContext';
 import Animated, {
   Easing,
@@ -33,6 +34,7 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import { typeScale, radius, motion, layout } from '../../theme/type';
+import { darkTokens } from '../../theme/tokens';
 
 const EASE_OUT = Easing.bezier(...motion.easeOut);
 
@@ -125,9 +127,11 @@ export function TabMark() {
   // (Oct 13 2026). Exactly one dove on screen: this one appears once P1 is in
   // the camera and the lock is open.
   const lockOpen = useContext(LockOpenContext);
+  // Nor while the camera dove is out: it is this dove, off its perch.
+  const doveOut = useCameraDoveOut();
   return (
     <View pointerEvents="none" style={{ position: 'absolute', top: insets.top + TAB_MARK_TOP, right: layout.screenX }}>
-      <DoveMark width={TAB_MARK_W} perched={lockOpen} />
+      <DoveMark width={TAB_MARK_W} perched={lockOpen && !doveOut} />
     </View>
   );
 }
@@ -308,14 +312,14 @@ export function PulseRing({ radius: r = radius.card }: { radius?: number }) {
 
 /**
  * Skeleton screens (owner, Oct 14 2026): while a page's content loads it shows
- * light grey shapes in the layout of what is coming, next to the camera dove
+ * shapes in the theme's line colour in the layout of what is coming, next to the camera dove
  * (the dove says "loading", the shapes keep the page's structure so nothing
  * jumps when the data lands). One slow breathing pulse; Reduced Motion: still.
  */
 export function Skeleton({ w = '100%', h = 14, r = 8, style }: {
   w?: number | `${number}%`; h?: number; r?: number; style?: StyleProp<ViewStyle>;
 }) {
-  const { colors } = useTheme();
+  const { colors, mode } = useTheme();
   const reduced = useReduceMotion();
   const pulse = useSharedValue(0);
   useEffect(() => {
@@ -324,7 +328,8 @@ export function Skeleton({ w = '100%', h = 14, r = 8, style }: {
     return () => cancelAnimation(pulse);
   }, [pulse, reduced]);
   const a = useAnimatedStyle(() => ({ opacity: 1 - 0.45 * pulse.get() }));
-  return <Animated.View style={[{ width: w, height: h, borderRadius: r, backgroundColor: colors.ink + '14' }, a, style]} />;
+  // The app's own line colour, not a neutral grey (black theme: EZER's purple line, its own is near-grey) (owner, Oct 14 2026: "shouldn't be grey, use the app hexes").
+  return <Animated.View style={[{ width: w, height: h, borderRadius: r, backgroundColor: mode === 'black' ? darkTokens.line : colors.line }, a, style]} />;
 }
 
 /** `count` list rows: a round mark, a title line and a shorter detail line, an amount on the right. */
