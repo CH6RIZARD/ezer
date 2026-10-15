@@ -315,7 +315,10 @@ function p1Pose(ph: number, t: number, L: number, cx: number, cy: number, fade: 
     y: (1 - c) * y + c * cy,
     s: lf[il * 5 + 2] + (es - lf[il * 5 + 2]) * b,
     i: [0, il, ie],
-    a: [0, (1 - b) * o, b * o],
+    // ONE sprite at a time: the switch from the loop's cell to the exit's is a single frame at the blend's midpoint.
+    // Cross-fading them drew two translucent doves at once (owner's recording, Oct 14 2026: "2 birds before it
+    // enters camera"). Only the position and scale blend.
+    a: [0, b < 0.5 ? o : 0, b < 0.5 ? 0 : o],
   };
 }
 

@@ -867,7 +867,7 @@ style problem.
   circles" on Savings). The screen registers the dove for the wait
   (`useCameraDove(isLoading)` / `.cameraDove(savings.isLoading)`). Swift: `Components/CameraDove.swift`, its own
   pass-through window (`OverlayWindows`), `.cameraDove(active)` / `DoveLoader`.
-- **Rules (owner, Oct 13 2026):** each appearance picks A, B, C or F at random,
+- **Rules (owner, Oct 13 2026):** each appearance picks one of the 16 paths (A–P) at random,
   never the same twice in a row; it only comes out if the wait passes ~300 ms;
   once out it always completes: in, loop while any registration is active,
   then it finishes the current lap and plays `out` FULLY into the camera (no
@@ -886,8 +886,20 @@ style problem.
   bird stop its loop and seamlessly go back if load finishes short?"). No
   finishing the lap: the out clip is carried over to start at the current
   loop frame (`exitL`) and drawn in to the camera as it goes, blended from
-  the still-running loop over `EXIT_BLEND` frames with two sprite windows
-  (P1's exit, same maths). Don't go back to waiting for the lap.
+  the still-running loop over `EXIT_BLEND` frames (P1's exit, same maths).
+  Don't go back to waiting for the lap. Only position and scale blend: the
+  sprite switches from the loop's cell to the out clip's in ONE frame at the
+  blend's midpoint, in both the camera dove and P1. A cross-fade drew two
+  translucent doves at once (owner's screen recording, Oct 14 2026: "2 birds
+  before it enters camera"). Don't cross-fade sprites.
+- **All 16 v3 paths (A–P) are in the rotation** (owner, Oct 14 2026: "these
+  dove loader put them in the app"); `LETTERS` in `export_app_doves.py`.
+- **P1 renders at 1024 px, not rig.py's 640** (`passcode/render.py` `BIG`,
+  `passcode/export.py` `PIVOT = (552, 572)`, crop margin 8). At 640 the wings
+  ran off the render on 16 loop / 10 exit frames, so the sheet had birds cut
+  straight at the cell edge and any sub-pixel slide showed the next cell's
+  edge-bird beside it: the "two doves after the passcode" in the owner's
+  recording. The export now checks no cell touches its edge; keep it so.
 - **The camera forms a black droplet that releases the dove (`SPAWN` frames,
   `dropPath` / Swift `Droplet`), and the return ends in a small liquid bump
   at the cut-out (`ENTRY`).** Owner's ask ("the droplet like animation you

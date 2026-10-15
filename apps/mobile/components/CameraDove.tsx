@@ -10,7 +10,7 @@
 // leaves from WHERE IT IS (no finishing the lap: the out clip is carried over
 // to start at the current loop frame and blended in, like P1's exit) and
 // flies FULLY back into the camera. Rules (owner, Oct 2026):
-//   - each appearance picks one of the approved paths A, B, C, F at random,
+//   - each appearance picks one of the 16 approved paths (A-P) at random,
 //     never the same one twice in a row;
 //   - it only comes out if the wait outlasts WAIT_MS; once out it always
 //     completes in and out;
@@ -318,10 +318,11 @@ function Sprite({ id, serial: s }: { id: CameraDoveId; serial: number }) {
       x: f[li * 4] + (px - f[li * 4]) * b,
       y: f[li * 4 + 1] + (py - f[li * 4 + 1]) * b,
       s: f[li * 4 + 2] + (ps - f[li * 4 + 2]) * b,
+      // One sprite at a time (P1's exit, same reason): a cross-fade drew two translucent doves at once.
       ca: li,
-      oa: (1 - b) * o,
+      oa: b < 0.5 ? o : 0,
       cb: e,
-      ob: b * o,
+      ob: b < 0.5 ? 0 : o,
     };
   };
   const place = (q: Pose, o: number) => {
