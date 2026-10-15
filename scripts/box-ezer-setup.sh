@@ -22,7 +22,7 @@ if [ ! -x /root/ezer/xtool/AppRun ]; then
 fi
 ln -sf /root/ezer/xtool/AppRun /usr/local/bin/xtool
 xtool --version
-if [ -f /root/ezer/Xcode.xip ] && ! xtool sdk status 2>&1 | grep -qi installed; then
+if [ -f /root/ezer/Xcode.xip ] && xtool sdk status 2>&1 | grep -qi "not installed"; then
   xtool sdk install /root/ezer/Xcode.xip
 fi
 xtool sdk status
