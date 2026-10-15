@@ -376,7 +376,7 @@ private final class P1Clock {
         let c = ef[ie * 5 + 3]
         let o = ph == 3 ? 0 : fade ? ef[ie * 5 + 4] : 1
         return Pose(x: (1 - c) * x + c * Double(cam.x), y: (1 - c) * y + c * Double(cam.y),
-                    s: lf[il * 5 + 2] + (es - lf[il * 5 + 2]) * b, i: [0, il, ie], a: [0, (1 - b) * o, b * o])
+                    s: lf[il * 5 + 2] + (es - lf[il * 5 + 2]) * b, i: [0, il, ie], a: [0, b < 0.5 ? o : 0, b < 0.5 ? 0 : o])
     }
 }
 

@@ -248,7 +248,7 @@ final class CameraDoveCenter {
         let b = sm(t / EXIT_BLEND)
         let o = phase == 3 || i >= no ? 0 : E.3
         q.x = A.0 + (px - A.0) * b; q.y = A.1 + (py - A.1) * b; q.s = A.2 + (ps - A.2) * b
-        q.ca = li; q.oa = (1 - b) * o; q.cb = e; q.ob = b * o
+        q.ca = li; q.oa = b < 0.5 ? o : 0; q.cb = e; q.ob = b < 0.5 ? 0 : o // one sprite at a time (P1 exit)
         let ee = t - (NO - 3)
         if phase == 2 && ee >= 0 && ee <= NE {
             let amp = exp(-ee / 3.5) * cos(ee * 0.75)
