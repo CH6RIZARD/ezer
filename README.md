@@ -119,6 +119,14 @@ This starts:
 - **Worker**: Background job processor
 - **Mobile**: Expo dev server (scan QR code with Expo Go app)
 
+### Money-movement partners
+
+| Module | Partner | Where |
+|---|---|---|
+| Pay in 4 card, authorizations, installments | **Highnote** | `apps/api/src/services/highnote.ts`, `routes/highnoteAuth.ts` |
+| Savings goals, sweeps, deposits/withdrawals | **Lithic** (planned; `ProcessorClient` is still a stub) | `apps/api/src/services/savingsEngine.ts`, `routes/processorWebhook.ts` |
+| Bank linking, balances, transactions | **Plaid** | `apps/api/src/routes/plaid.ts` |
+
 ## Demo Mode (Local Development)
 
 EZER includes a **simulator mode** for local development without real OAuth credentials.

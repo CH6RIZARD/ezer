@@ -246,6 +246,27 @@ style problem.
   hand-copied implementation. Edit the physics there; `VirtualCard.tsx` and
   `PhysicalCardReview.tsx` should only ever supply front/back content to it.
 
+## Who moves the money (owner, Oct 15 2026)
+
+- **Highnote is the Pay in 4 / card side** (`services/highnote.ts`,
+  `routes/highnoteAuth.ts`, `User.highnoteCardId`). Its Railway key
+  (`HIGHNOTE_API_KEY`) has been answering "Bad credentials" on every
+  `GET /cards/highnote` since at least Oct 14 2026; rotate it in the Highnote
+  dashboard, not in code.
+- **Lithic is the Savings module's processor.** The savings engine
+  (`services/savingsEngine.ts`) already talks to an abstract `ProcessorClient`
+  (`originateDebit` / `originateCredit`) and hears back through
+  `routes/processorWebhook.ts` (`PROCESSOR_NAME`, `PROCESSOR_WEBHOOK_SECRET`).
+  Today that client is `stubProcessor` and nothing is wired to Lithic: no
+  SDK, no env var, no code. Building it means a `LithicProcessor` that
+  implements `ProcessorClient` (a Lithic financial account per user as the
+  savings pot, ACH pulls from the Pay in 4 / linked checking account into it)
+  and a webhook adapter that maps Lithic's payment events onto
+  `ProcessorEvent`. Keep the money math where it is; only the client and the
+  webhook mapping change. The owner's Lithic sandbox key lives in Railway as
+  `LITHIC_API_KEY` once set, never in the repo. Do NOT use Highnote for
+  savings and do NOT use Lithic for the card.
+
 ## Spending Power / Pay in 4 underwriting
 
 - **There is no manual-review state.** There used to be one — any trust score
