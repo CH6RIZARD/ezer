@@ -25,8 +25,9 @@ private let FPS: Double = 30
 private let RM_FADE: Double = 8
 /// RN SPAWN / ENTRY / EXIT_BLEND.
 private let SPAWN: Double = 10
-/// The loading bird drawn 15% over its rendered size (owner, Oct 14 2026: "15 percent bigger").
-private let BIRD_K = 1.15
+/// The loading bird drawn over its rendered size: 15% (owner, Oct 14 2026: "15 percent bigger"),
+/// then 22% more on top (Oct 15 2026: "22 percent bigger... it's so small").
+private let BIRD_K = 1.15 * 1.22
 private let ENTRY: Double = 12
 private let EXIT_BLEND: Double = 6
 
@@ -374,6 +375,9 @@ private struct CameraDoveView: View {
                         if theme.mode == .black { drop.stroke(ThemeColors.dark.line, lineWidth: 2) }
                         drop.fill(Color.black)
                     }
+                    // Sprite steps never animate (DoveReveal.swift DoveP1: an inherited withAnimation
+                    // slid the sheet between cells and showed two partial birds).
+                    .transaction { $0.animation = nil }
                 }
                 .id(run.serial)
             }
