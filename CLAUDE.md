@@ -109,6 +109,17 @@ style problem.
   `NODE_ENV=production` makes `pnpm install` skip them, which shows up as
   "spawn prisma EACCES". That's why `railway.json`'s buildCommand installs
   with `--prod=false`. Keep it, and keep `NODE_ENV=production` for runtime.
+- **Railway's `DATABASE_URL` must be Supabase's TRANSACTION pooler (port
+  6543) with `?pgbouncer=true&connection_limit=5`.** On Oct 15 2026 it was
+  the session pooler (port 5432, 15 clients total): Prisma's default pool
+  plus Savings' five parallel queries filled it, every later request waited
+  past the phone's 15 s timeout, and both apps reported "Cannot reach the
+  server" on Make a goal (Add/Move are disabled until a goal exists, so they
+  looked dead too). `/health` stays green through it. Never put 5432 back
+  for runtime; it is only for `railway run ... prisma db execute` below.
+  Also: never build that URL in PowerShell as `"$base?..."` — `$base?` is
+  parsed as a variable name and the value saved was `=true&connection_limit=5`,
+  which took the API down until a dashboard rollback. Use `"${base}?..."`.
 - **Migrations do not run on deploy.** `railway.json` runs `prisma generate`
   only — `migrate deploy` needs a session-mode connection (port 5432), not the
   transaction pooler. Apply migrations manually.
