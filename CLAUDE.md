@@ -220,7 +220,13 @@ style problem.
 
 - **`CardFrontFace`/`CardBackFace`, exported from `components/redesign/CardCanvas.tsx`,
   are the ONLY place the physical card's locked layout is drawn** — front is
-  the chip only, no wording (the contactless mark that used to sit next to it
+  the chip plus the EZER logo (`CardLogo`: DoveMark, wordmark with the dove on
+  the R, top right; owner's request Oct 18 2026, both apps), no other wording.
+  The Pay in 4 card (`VirtualCard`) draws its front WITH `CardFrontFace` and
+  the saved Card Studio design (payin4.tsx re-reads `loadCardDesign()` on
+  focus, Swift `refreshDesign()` on appear), with number/cardholder text on
+  top: "if you customize a card ... your pay in 4 tab reflects your design".
+  Don't give the Pay in 4 card a private front again. (The contactless mark that used to sit next to it
   was removed on request — and NO card anywhere in the app shows a
   contactless/NFC mark: VirtualCard, the Saved tab card, CreditCard and the
   Home tile's NfcTapIcon animation were all stripped of it on request too.

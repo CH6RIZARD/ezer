@@ -11,12 +11,12 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { View, Text, StyleSheet } from 'react-native';
 // RNGH's ScrollView, so the card's pan cancels page scroll natively (SpinCard).
 import { ScrollView } from 'react-native-gesture-handler';
-import { useLocalSearchParams } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../utils/ThemeContext';
-import { gradients } from '../../theme/tokens';
+import { gradients, cardFinishes, type CardFinish } from '../../theme/tokens';
 import { fontFamily, typeScale, radius, layout } from '../../theme/type';
 import {
   Label,
@@ -31,7 +31,13 @@ import {
 import VirtualCard from '../../components/redesign/VirtualCard';
 import ProgressRing from '../../components/redesign/ProgressRing';
 import SpendingPowerSheet from '../../components/redesign/SpendingPowerSheet';
-import { getSpendingPowerOutcome } from '../../utils/cardDesignStore';
+import { getSpendingPowerOutcome, loadCardDesign, type CardStroke } from '../../utils/cardDesignStore';
+
+type SavedDesign = { finish: CardFinish; strokes: CardStroke[]; updatedAt: string };
+
+function isFinish(v: string): v is CardFinish {
+  return Object.prototype.hasOwnProperty.call(cardFinishes, v);
+}
 import { formatCents } from '../../utils/calculations';
 import { api } from '../../utils/api';
 
@@ -133,15 +139,33 @@ export default function PayInFourScreen() {
   const [issued, refreshIssued] = useIssuedCard();
   const last4 = issued?.card?.last4;
   const expiry = issued?.card?.expiry;
+  // The Card Studio design, re-read on every focus: the designer is pushed
+  // over the tabs, so coming back from it is a focus. Kept as the same object
+  // while nothing changed (updatedAt), or every focus would rebuild the card.
+  const [design, setDesign] = useState<SavedDesign | null>(null);
+  useFocusEffect(
+    useCallback(() => {
+      let alive = true;
+      void loadCardDesign().then(d => {
+        if (!alive) return;
+        const next = d && isFinish(d.finish) ? { finish: d.finish, strokes: d.strokes, updatedAt: d.updatedAt } : null;
+        setDesign(prev => (prev?.updatedAt === next?.updatedAt && prev?.finish === next?.finish ? prev : next));
+      });
+      return () => {
+        alive = false;
+      };
+    }, [])
+  );
   const card = useMemo(
     () => (
       <VirtualCard
         style={{ marginTop: 10 }}
         onDragChange={setCardDragging}
         issued={last4 && expiry ? { last4, expiry } : undefined}
+        design={design ?? undefined}
       />
     ),
-    [last4, expiry]
+    [last4, expiry, design]
   );
   const plan = issued?.plans?.[0];
   const installments = useInstallments(plan);

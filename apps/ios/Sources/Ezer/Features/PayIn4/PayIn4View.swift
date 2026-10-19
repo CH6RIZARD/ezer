@@ -105,6 +105,8 @@ struct PayIn4View: View {
     @State private var joined = false
     @State private var handledSheetParam: String?
     @State private var mounted = false
+    /// The Card Studio design, re-read on every appear (coming back from the designer is one).
+    @State private var savedDesign: SavedCardDesign?
 
     var body: some View {
         let colors = theme.colors
@@ -150,7 +152,8 @@ struct PayIn4View: View {
                     // --- the card ----------------------------------------------------
                     VirtualCard(
                         onDragChange: { cardDragging = $0 },
-                        issued: !last4.isEmpty && !expiry.isEmpty ? (last4: last4, expiry: expiry) : nil
+                        issued: !last4.isEmpty && !expiry.isEmpty ? (last4: last4, expiry: expiry) : nil,
+                        design: savedDesign
                     )
                     .padding(.top, 10)
 
@@ -238,6 +241,7 @@ struct PayIn4View: View {
             SpendingPowerSheet(visible: sheetVisible, viaJoin: sheetViaJoin, onClose: closeSheet)
         }
         .onAppear {
+            refreshDesign()
             guard !mounted else { return }
             mounted = true
             refreshJoined()
@@ -286,6 +290,14 @@ struct PayIn4View: View {
 
     private func refreshJoined() {
         Task { joined = await CardDesignStore.loadSpendingPowerOutcome() != nil }
+    }
+
+    /// Kept as the same value while nothing changed, so an appear doesn't rebuild the card.
+    private func refreshDesign() {
+        let next = CardDesignStore.loadCardDesign().flatMap { d in
+            CardFinish(rawValue: d.finish).map { SavedCardDesign(finish: $0, strokes: d.strokes, updatedAt: d.updatedAt) }
+        }
+        if next != savedDesign { savedDesign = next }
     }
 
     private func refreshIssued(_ tries: Int = 0) {

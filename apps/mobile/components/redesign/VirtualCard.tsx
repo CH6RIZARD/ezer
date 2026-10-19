@@ -11,17 +11,25 @@
 // this app holds; a real reveal needs Highnote's PCI-scoped secure display.
 // The preview card's "revealed" number (and its 09/29 expiry) was invented,
 // which is worse than showing nothing. Keep it masked.
+//
+// The front is Card Studio's own CardFrontFace (chip, logo, artwork), so a
+// saved design shows here exactly as the designer drew it (owner, Oct 18
+// 2026: "if you customize a card ... your pay in 4 tab reflects your
+// design"). The number and cardholder rows sit on top of it.
 // =============================================================================
 
 import React from 'react';
 import { View, Text, StyleSheet, type StyleProp, type ViewStyle } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { gradients, cardFinishes, type CardFinish } from '../../theme/tokens';
+import { gradients, cardBackFinishes, isDarkFinish, type CardFinish } from '../../theme/tokens';
 import { fontFamily, radius } from '../../theme/type';
 import SpinCard from './SpinCard';
-import CardChip from './CardChip';
+import { CardFrontFace, type Stroke } from './CardCanvas';
 
 const NUMBER_MASKED = '••••  ••••  ••••  ••••';
+const NO_STROKES: Stroke[] = [];
+/** CardChip's height: the number row starts below it, as it did beside a real chip. */
+const CHIP_H = 33;
 
 export interface VirtualCardProps {
   finish?: CardFinish;
@@ -34,48 +42,50 @@ export interface VirtualCardProps {
   onDragChange?: (dragging: boolean) => void;
   /** Issued card (Highnote TEST). Absent = the preview card. */
   issued?: { last4: string; expiry: string };
+  /** The design saved in Card Studio. Absent = the plain `finish` card. */
+  design?: { finish: CardFinish; strokes: Stroke[] };
 }
 
-export function VirtualCard({ finish = 'amethyst', style, onDragChange, issued }: VirtualCardProps) {
-  const finishColors = cardFinishes[finish];
+export function VirtualCard({ finish = 'amethyst', style, onDragChange, issued, design }: VirtualCardProps) {
+  const f = design?.finish ?? finish;
+  // Text is white on the dark finishes and Card Studio's ink on bone.
+  const ink = isDarkFinish(f) ? '#FFFFFF' : '#241A38';
+  const sub = isDarkFinish(f) ? 'rgba(255,255,255,.55)' : 'rgba(36,26,56,.55)';
 
   return (
     <SpinCard
       style={style}
       onDragChange={onDragChange}
       front={
-        <LinearGradient
-          colors={finishColors as unknown as readonly [string, string, ...string[]]}
-          locations={gradients.cardFrontLocations as unknown as readonly [number, number, ...number[]]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={[styles.fill, styles.facePad]}
-        >
-          <View style={styles.rowBetween}>
-            <CardChip />
-          </View>
+        <View style={[styles.fill, styles.clip]}>
+          <CardFrontFace finish={f} strokes={design?.strokes ?? NO_STROKES} />
+          <View style={[StyleSheet.absoluteFill, styles.facePad]} pointerEvents="none">
+            <View style={{ height: CHIP_H }} />
 
-          <Text selectable={false} style={styles.number}>{issued ? `••••  ••••  ••••  ${issued.last4}` : NUMBER_MASKED}</Text>
+            <Text selectable={false} style={[styles.number, { color: ink }]}>
+              {issued ? `••••  ••••  ••••  ${issued.last4}` : NUMBER_MASKED}
+            </Text>
 
-          <View style={styles.rowBetween}>
-            <View>
-              <Text selectable={false} style={styles.cardLabel}>CARDHOLDER</Text>
-              <Text selectable={false} style={styles.cardValue}>EZER MEMBER</Text>
-            </View>
-            <View>
-              <Text selectable={false} style={styles.cardLabel}>
-                {issued ? 'EXPIRES' : 'STATUS'}
-              </Text>
-              <Text selectable={false} style={styles.cardValue}>
-                {issued ? issued.expiry : 'PREVIEW'}
-              </Text>
+            <View style={styles.rowBetween}>
+              <View>
+                <Text selectable={false} style={[styles.cardLabel, { color: sub }]}>CARDHOLDER</Text>
+                <Text selectable={false} style={[styles.cardValue, { color: ink }]}>EZER MEMBER</Text>
+              </View>
+              <View>
+                <Text selectable={false} style={[styles.cardLabel, { color: sub }]}>
+                  {issued ? 'EXPIRES' : 'STATUS'}
+                </Text>
+                <Text selectable={false} style={[styles.cardValue, { color: ink }]}>
+                  {issued ? issued.expiry : 'PREVIEW'}
+                </Text>
+              </View>
             </View>
           </View>
-        </LinearGradient>
+        </View>
       }
       back={
         <LinearGradient
-          colors={gradients.cardBack as unknown as readonly [string, string, ...string[]]}
+          colors={(design ? cardBackFinishes[design.finish] : gradients.cardBack) as unknown as readonly [string, string, ...string[]]}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
           style={styles.fill}
@@ -86,7 +96,7 @@ export function VirtualCard({ finish = 'amethyst', style, onDragChange, issued }
               <Text selectable={false} style={styles.cvv}>•••</Text>
             </View>
           </View>
-          <Text selectable={false} style={styles.backNote}>SINGLE-USE VIRTUAL CARD</Text>
+          <Text selectable={false} style={[styles.backNote, design && { color: sub }]}>SINGLE-USE VIRTUAL CARD</Text>
         </LinearGradient>
       }
     />
@@ -97,6 +107,9 @@ const styles = StyleSheet.create({
   fill: {
     flex: 1,
     borderRadius: radius.virtualCard,
+  },
+  clip: {
+    overflow: 'hidden',
   },
   facePad: {
     padding: 18,

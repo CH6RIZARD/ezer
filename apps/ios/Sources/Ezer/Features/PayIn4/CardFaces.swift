@@ -1,8 +1,9 @@
 // Port of apps/mobile/components/redesign/CardCanvas.tsx (CARD_W, CARD_H, Stroke, CardFrontFace,
 // CardBackFace — the drawing surface itself is in CardCanvas.swift)
 //
-// LOCKED layout, per the Card Studio comp: the front carries ONLY the chip —
-// no wording, no contactless mark (removed on request). Cardholder name,
+// LOCKED layout, per the Card Studio comp: the front carries the chip and the
+// EZER logo (wordmark + dove on the R, top right; owner's request, Oct 18 2026)
+// and no other wording, no contactless mark (removed on request). Cardholder name,
 // masked number, CVV and expiry live on the back. Do not put identifying text
 // back on the front; that is the one thing the design explicitly locks against.
 //
@@ -32,9 +33,30 @@ private struct PayIn4StrokePath: View {
     }
 }
 
+/// The logo's wordmark width on a 308-wide card.
+private let LOGO_W: CGFloat = 58
+
 /**
- * The LOCKED front: chip + the artwork, no wording.
- * Used anywhere a finished design shows read-only — PhysicalCardReview's free-spin preview — so it
+ * The EZER logo for a card front, top right: the same DoveMark the lock screen and tabs draw.
+ * Its dove sits outside the word's box (0.36 of the width above, 0.23 past the right edge,
+ * DoveFrames.PERCH), so the box is offset to keep the whole bird inside the 18pt margin.
+ */
+struct CardLogo: View {
+    let finish: CardFinish
+
+    var body: some View {
+        DoveMark(width: LOGO_W, ink: Color(css: isDarkFinish(finish) ? "#FFFFFF" : "#241A38"))
+            .padding(.top, 18 + LOGO_W * 0.36)
+            .padding(.trailing, 18 + LOGO_W * 0.23)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+            .allowsHitTesting(false)
+    }
+}
+
+/**
+ * The LOCKED front: chip + logo + the artwork, no other wording.
+ * Used anywhere a finished design shows read-only — PhysicalCardReview's free-spin preview, and
+ * the Pay in 4 card (VirtualCard.swift) once a design is saved — so it
  * renders exactly this and cannot drift from what the live designer draws. `liveStroke` is the
  * designer's in-progress path only (painted in the same place a committed stroke is: above the
  * artwork, under the chip); omit it everywhere else.
@@ -74,6 +96,7 @@ struct CardFrontFace: View {
             CardChip()
                 .padding(18)
                 .allowsHitTesting(false)
+            CardLogo(finish: finish)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }

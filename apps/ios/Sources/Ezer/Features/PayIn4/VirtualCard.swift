@@ -13,11 +13,24 @@
 // this app holds; a real reveal needs Highnote's PCI-scoped secure display.
 // The preview card's "revealed" number (and its 09/29 expiry) was invented,
 // which is worse than showing nothing. Keep it masked.
+//
+// The front is Card Studio's own CardFrontFace (chip, logo, artwork), so a
+// saved design shows here exactly as the designer drew it (owner, Oct 18
+// 2026). The number and cardholder rows sit on top of it.
 // =============================================================================
 
 import SwiftUI
 
 private let NUMBER_MASKED = "••••  ••••  ••••  ••••"
+/// CardChip's height: the number row starts below it, as it did beside a real chip.
+private let CHIP_H: CGFloat = 33
+
+/// The design saved in Card Studio, as the Pay in 4 card draws it.
+struct SavedCardDesign: Equatable {
+    let finish: CardFinish
+    let strokes: [Stroke]
+    let updatedAt: String
+}
 
 struct VirtualCard: View {
     var finish: CardFinish = .amethyst
@@ -29,55 +42,64 @@ struct VirtualCard: View {
     var onDragChange: ((Bool) -> Void)?
     /** Issued card (Highnote TEST). nil = the preview card. */
     var issued: (last4: String, expiry: String)?
+    /** The design saved in Card Studio. nil = the plain `finish` card. */
+    var design: SavedCardDesign?
 
-    init(finish: CardFinish = .amethyst, onDragChange: ((Bool) -> Void)? = nil, issued: (last4: String, expiry: String)? = nil) {
+    init(
+        finish: CardFinish = .amethyst,
+        onDragChange: ((Bool) -> Void)? = nil,
+        issued: (last4: String, expiry: String)? = nil,
+        design: SavedCardDesign? = nil
+    ) {
         self.finish = finish
         self.onDragChange = onDragChange
         self.issued = issued
+        self.design = design
     }
 
     var body: some View {
-        let finishColors = cardFinishes[finish] ?? []
+        let f = design?.finish ?? finish
+        // Text is white on the dark finishes and Card Studio's ink on bone.
+        let ink = Color(css: isDarkFinish(f) ? "#FFFFFF" : "#241A38")
+        let sub = Color(css: isDarkFinish(f) ? "rgba(255,255,255,.55)" : "rgba(36,26,56,.55)")
 
         SpinCard(onDragChange: onDragChange) {
-            // front: fill + facePad (padding 18, justifyContent: space-between)
-            VStack(alignment: .leading, spacing: 0) {
-                HStack(alignment: .center, spacing: 0) {
-                    CardChip()
+            ZStack(alignment: .topLeading) {
+                CardFrontFace(finish: f, strokes: design?.strokes ?? [])
+                // facePad (padding 18, justifyContent: space-between) over the face
+                VStack(alignment: .leading, spacing: 0) {
+                    Color.clear.frame(height: CHIP_H)
+
                     Spacer(minLength: 0)
-                }
 
-                Spacer(minLength: 0)
+                    Text(issued.map { "••••  ••••  ••••  \($0.last4)" } ?? NUMBER_MASKED)
+                        .font(.ezer(FontFamily.medium, 17))
+                        .tracking(1.6)
+                        .foregroundStyle(ink)
+                        .frame(maxWidth: .infinity, alignment: .leading)
 
-                Text(issued.map { "••••  ••••  ••••  \($0.last4)" } ?? NUMBER_MASKED)
-                    .font(.ezer(FontFamily.medium, 17))
-                    .tracking(1.6)
-                    .foregroundStyle(Color(css: "#FFFFFF"))
-                    .frame(maxWidth: .infinity, alignment: .leading)
-
-                Spacer(minLength: 0)
-
-                HStack(alignment: .center, spacing: 0) {
-                    VStack(alignment: .leading, spacing: 0) {
-                        PayIn4CardLabel("CARDHOLDER")
-                        PayIn4CardValue("EZER MEMBER")
-                    }
                     Spacer(minLength: 0)
-                    VStack(alignment: .leading, spacing: 0) {
-                        PayIn4CardLabel(issued != nil ? "EXPIRES" : "STATUS")
-                        PayIn4CardValue(issued?.expiry ?? "PREVIEW")
+
+                    HStack(alignment: .center, spacing: 0) {
+                        VStack(alignment: .leading, spacing: 0) {
+                            PayIn4CardLabel("CARDHOLDER", color: sub)
+                            PayIn4CardValue("EZER MEMBER", color: ink)
+                        }
+                        Spacer(minLength: 0)
+                        VStack(alignment: .leading, spacing: 0) {
+                            PayIn4CardLabel(issued != nil ? "EXPIRES" : "STATUS", color: sub)
+                            PayIn4CardValue(issued?.expiry ?? "PREVIEW", color: ink)
+                        }
                     }
                 }
+                .padding(18)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .allowsHitTesting(false)
             }
-            .padding(18)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .background(
-                LinearGradient.rn(finishColors, locations: Gradients.cardFrontLocations, start: UnitPoint(x: 0, y: 0), end: UnitPoint(x: 1, y: 1))
-                    .clipShape(rnRect(Radius.virtualCard))
-            )
+            .clipShape(rnRect(Radius.virtualCard))
         } back: {
             ZStack(alignment: .topLeading) {
-                LinearGradient.rn(Gradients.cardBack, start: UnitPoint(x: 0, y: 0), end: UnitPoint(x: 1, y: 1))
+                LinearGradient.rn(design.map { cardBackFinishes[$0.finish] ?? [] } ?? Gradients.cardBack, start: UnitPoint(x: 0, y: 0), end: UnitPoint(x: 1, y: 1))
                     .clipShape(rnRect(Radius.virtualCard))
                 // magStripe: absolute, top 22, left/right 0, height 36
                 Color(css: "#000000")
@@ -99,7 +121,7 @@ struct VirtualCard: View {
                 Text("SINGLE-USE VIRTUAL CARD")
                     .font(.ezer(FontFamily.bold, 8))
                     .tracking(0.8)
-                    .foregroundStyle(Color(css: "rgba(255,255,255,.5)"))
+                    .foregroundStyle(design != nil ? sub : Color(css: "rgba(255,255,255,.5)"))
                     .padding(.leading, 18)
                     .padding(.bottom, 16)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
@@ -109,29 +131,31 @@ struct VirtualCard: View {
     }
 }
 
-/// styles.cardLabel: bold 8, letterSpacing .8, rgba(255,255,255,.55), marginBottom 3.
+/// styles.cardLabel: bold 8, letterSpacing .8, marginBottom 3 (colour per finish).
 private struct PayIn4CardLabel: View {
     let text: String
-    init(_ text: String) { self.text = text }
+    let color: Color
+    init(_ text: String, color: Color) { self.text = text; self.color = color }
 
     var body: some View {
         Text(text)
             .font(.ezer(FontFamily.bold, 8))
             .tracking(0.8)
-            .foregroundStyle(Color(css: "rgba(255,255,255,.55)"))
+            .foregroundStyle(color)
             .padding(.bottom, 3)
     }
 }
 
-/// styles.cardValue: semibold 11.5, letterSpacing .6, #FFFFFF.
+/// styles.cardValue: semibold 11.5, letterSpacing .6 (colour per finish).
 private struct PayIn4CardValue: View {
     let text: String
-    init(_ text: String) { self.text = text }
+    let color: Color
+    init(_ text: String, color: Color) { self.text = text; self.color = color }
 
     var body: some View {
         Text(text)
             .font(.ezer(FontFamily.semibold, 11.5))
             .tracking(0.6)
-            .foregroundStyle(Color(css: "#FFFFFF"))
+            .foregroundStyle(color)
     }
 }

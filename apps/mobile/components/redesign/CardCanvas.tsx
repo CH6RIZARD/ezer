@@ -4,9 +4,10 @@
 // A 308x190 card face (the same geometry as VirtualCard) that doubles as a
 // freehand drawing canvas. Used by app/screens/PhysicalCard.tsx.
 //
-// LOCKED layout, per the Card Studio comp: the front carries ONLY the chip —
-// no wording. (The comp's original spec also put a contactless mark next to
-// it; removed on request, so the front is chip-only now.) Cardholder name,
+// LOCKED layout, per the Card Studio comp: the front carries the chip and the
+// EZER logo (wordmark + dove on the R, top right; added on the owner's request
+// Oct 18 2026) and nothing else. (The comp's original spec also put a
+// contactless mark next to the chip; removed on request.) Cardholder name,
 // masked number, CVV and expiry live on the back, which the user reaches with
 // the flip control. Do not put identifying text back on the front; that is
 // the one thing the design explicitly locks against.
@@ -38,9 +39,30 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { cardFinishes, cardBackFinishes, gradients, isDarkFinish, type CardFinish } from '../../theme/tokens';
 import { fontFamily, radius } from '../../theme/type';
 import CardChip from './CardChip';
+import { DoveMark } from '../DoveReveal';
 
 export const CARD_W = 308;
 export const CARD_H = 190;
+
+/** The logo's wordmark width on a 308-wide card. */
+const LOGO_W = 58;
+
+/**
+ * The EZER logo for a card front, top right: the same DoveMark the lock
+ * screen and tabs draw. Its dove sits outside the word's box (0.36 of the
+ * width above, 0.23 past the right edge, doveFrames' PERCH), so the box is
+ * offset to keep the whole bird inside the card's 18-unit margin.
+ */
+export function CardLogo({ finish }: { finish: CardFinish }) {
+  return (
+    <View
+      pointerEvents="none"
+      style={{ position: 'absolute', top: 18 + LOGO_W * 0.36, right: 18 + LOGO_W * 0.23 }}
+    >
+      <DoveMark width={LOGO_W} ink={isDarkFinish(finish) ? '#FFFFFF' : '#241A38'} />
+    </View>
+  );
+}
 
 /** One freehand stroke, in card-local coordinates. */
 export interface Stroke {
@@ -86,9 +108,10 @@ const AnimatedPath = Reanimated.createAnimatedComponent(Path);
 const FLIP_MS = 620;
 
 /**
- * The LOCKED front: chip + the artwork, no wording.
- * Exported so anywhere that shows a finished design read-only — currently
- * PhysicalCardReview.tsx's free-spin preview — renders exactly this and
+ * The LOCKED front: chip + logo + the artwork, no other wording.
+ * Exported so anywhere that shows a finished design read-only —
+ * PhysicalCardReview.tsx's free-spin preview, and the Pay in 4 card
+ * (VirtualCard.tsx) once a design is saved — renders exactly this and
  * cannot drift from what the live designer draws. `liveStroke` is for the
  * designer's in-progress path only (an animated Path, painted in the same
  * place a committed stroke is: above the artwork, under the chip); omit it
@@ -140,6 +163,7 @@ export function CardFrontFace({
       <View style={styles.furniture} pointerEvents="none">
         <CardChip />
       </View>
+      <CardLogo finish={finish} />
     </View>
   );
 }
