@@ -211,7 +211,12 @@ style problem.
   `PlaidItem.readForSubscriptions`, `FundingInstrument.subtype`/`itemId`) HAS
   been applied. `20261005000000_add_highnote_card_id` (`User.highnoteCardId`)
   HAS been applied. `20261008000000_add_date_of_birth` (`User.dateOfBirth`)
-  HAS been applied (2026-10-11). Apply each one with `railway run --service ezer-api npx
+  HAS been applied (2026-10-11). `20261003000000_money_check_constraints`
+  HAS been applied (2026-10-18; zero violating rows beforehand). `prisma db
+  execute` died there with a bare "Error in Schema engine" from this PC; the
+  fallback that worked is a PrismaClient script run under `railway run`
+  (`$transaction` + `$executeRawUnsafe`, idempotent via pg_constraint checks).
+  Apply each one with `railway run --service ezer-api npx
   prisma db execute --schema prisma\schema.prisma --file <migration.sql>` from
   `packages/db`. NEVER `migrate deploy`: this DB was never baselined, so it
   replays `0_init` and fails on "type already exists".
