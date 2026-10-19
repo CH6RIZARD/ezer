@@ -145,6 +145,24 @@ enum CardDesignStore {
     /** The saved design, or nil if nothing has ever been saved. Never throws. */
     static func loadCardDesign() -> CardDesign? { readRecord()?.design }
 
+    /**
+     * Port of RN's readOrRestore: the local design, else the signed-in user's latest one from
+     * GET /cards/designs/latest, written locally once found. Without it a reinstall, the other
+     * phone or a sign-out reopened a blank canvas ("I've designed it many times"). The readers
+     * above are sync, so screens await this first. Never throws.
+     */
+    @discardableResult
+    static func restoreFromServerIfMissing() async -> CardDesign? {
+        if let local = readRecord() { return local.design }
+        guard let d = try? await api.latestDesign(), let id = d.id, let finish = d.finish, let strokes = d.strokes
+        else { return nil }
+        // A save made while the request was in flight wins.
+        if let local = readRecord() { return local.design }
+        let design = CardDesign(finish: finish, strokes: strokes, updatedAt: d.updatedAt ?? toISOString(Date()))
+        writeRecord(StoredRecord(id: id, design: design, synced: true, access: nil))
+        return design
+    }
+
     /** Id of the saved design, or nil. A `local_…` id means the server has not seen it yet. */
     static func getCardDesignId() -> String? { readRecord()?.id }
 
@@ -260,7 +278,21 @@ enum CardDesignStore {
     static func markSpendingPowerRevealSeen() { KV.set(REVEAL_SEEN_KEY, "1") }
 }
 
+/// GET /cards/designs/latest's `data`: every field optional, checked by the caller.
+private struct LatestDesignPayload: Decodable {
+    let id: String?
+    let finish: String?
+    let strokes: [CardStroke]?
+    let updatedAt: String?
+}
+
 private extension APIClient {
+    /// The signed-in user's newest saved design, or nil.
+    func latestDesign() async throws -> LatestDesignPayload? {
+        let r: Envelope<LatestDesignPayload> = try await get("/cards/designs/latest")
+        return r.data
+    }
+
     /// POST /cards/designs, tolerating both `{ data: { id } }` and a bare `{ id }`.
     func getOrPostDesign(_ design: CardDesign) async throws -> String? {
         var body: [String: JSON] = ["finish": .string(design.finish), "strokes": JSON(encoding: design.strokes)]

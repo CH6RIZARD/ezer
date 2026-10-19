@@ -62,7 +62,10 @@ struct PhysicalCardReviewView: View {
         }
         .rnScreen()
         // useEffect(..., []): once per mount.
-        .task { load() }
+        .task {
+            await CardDesignStore.restoreFromServerIfMissing()
+            load()
+        }
     }
 
     private func load() {

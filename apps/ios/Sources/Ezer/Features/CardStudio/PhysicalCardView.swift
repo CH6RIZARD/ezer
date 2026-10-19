@@ -332,7 +332,11 @@ struct PhysicalCardView: View {
                 onClose: { mixerOpen = false }
             )
         }
-        .onAppear(perform: restore)
+        // The server copy first, so a reinstall or the other phone reopens the saved artwork.
+        .task {
+            await CardDesignStore.restoreFromServerIfMissing()
+            restore()
+        }
         .onChange(of: strokes) { _, _ in scheduleAutosave() }
         .onChange(of: finish) { _, _ in scheduleAutosave() }
         .onChange(of: loading) { _, _ in scheduleAutosave() }

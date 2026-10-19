@@ -294,10 +294,12 @@ struct PayIn4View: View {
 
     /// Kept as the same value while nothing changed, so an appear doesn't rebuild the card.
     private func refreshDesign() {
-        let next = CardDesignStore.loadCardDesign().flatMap { d in
-            CardFinish(rawValue: d.finish).map { SavedCardDesign(finish: $0, strokes: d.strokes, updatedAt: d.updatedAt) }
+        Task { @MainActor in
+            let next = await CardDesignStore.restoreFromServerIfMissing().flatMap { d in
+                CardFinish(rawValue: d.finish).map { SavedCardDesign(finish: $0, strokes: d.strokes, updatedAt: d.updatedAt) }
+            }
+            if next != savedDesign { savedDesign = next }
         }
-        if next != savedDesign { savedDesign = next }
     }
 
     private func refreshIssued(_ tries: Int = 0) {

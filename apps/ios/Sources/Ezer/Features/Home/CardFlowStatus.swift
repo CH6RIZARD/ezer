@@ -68,6 +68,7 @@ final class HomeCardFlowStatus {
         let run = nextRun
         alive.insert(run)
         Task { @MainActor in
+            await CardDesignStore.restoreFromServerIfMissing()
             let design = CardDesignStore.loadCardDesign()
             let localOutcome = CardDesignStore.getCardAccessOutcome()
             guard self.alive.contains(run) else { return }
