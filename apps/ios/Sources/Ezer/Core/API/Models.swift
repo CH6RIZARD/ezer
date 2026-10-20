@@ -56,11 +56,14 @@ struct SessionInfo: Codable, Hashable, Sendable {
     var userId: String
     var email: String
     var authProviders: [String]
+    /// Sliding session: a renewed token (routes/auth.ts). Nil from an older API.
+    var token: String?
 }
 extension SessionInfo {
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: AnyKey.self)
         userId = c.str("userId"); email = c.str("email"); authProviders = c.strList("authProviders")
+        token = c.strOpt("token")
     }
 }
 

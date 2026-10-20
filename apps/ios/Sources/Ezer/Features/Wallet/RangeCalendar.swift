@@ -81,25 +81,6 @@ private struct DayPressStyle: ButtonStyle {
     }
 }
 
-/// The sheet's border: the top edge and its two rounded corners, nothing down the sides or along the
-/// bottom (RN: borderTopWidth 1 only). Inset half the line so the stroke sits inside the shape.
-private struct SheetTopEdge: Shape {
-    let radius: CGFloat
-
-    func path(in rect: CGRect) -> Path {
-        let i: CGFloat = 0.5
-        let r = min(radius, rect.width / 2, rect.height)
-        var p = Path()
-        p.move(to: CGPoint(x: rect.minX + i, y: rect.minY + r))
-        p.addArc(tangent1End: CGPoint(x: rect.minX + i, y: rect.minY + i),
-                 tangent2End: CGPoint(x: rect.minX + r, y: rect.minY + i), radius: r - i)
-        p.addLine(to: CGPoint(x: rect.maxX - r, y: rect.minY + i))
-        p.addArc(tangent1End: CGPoint(x: rect.maxX - i, y: rect.minY + i),
-                 tangent2End: CGPoint(x: rect.maxX - i, y: rect.minY + r), radius: r - i)
-        return p
-    }
-}
-
 struct RangeCalendar: View {
     @Environment(ThemeStore.self) private var theme
     @Environment(\.safeInsets) private var insets
@@ -310,16 +291,19 @@ struct RangeCalendar: View {
                 }
                 .padding(.top, 12)
             }
-            .padding(.horizontal, Layout.screenX)
+            .padding(.horizontal, Layout.screenX - 8)
             .padding(.top, 10)
-            .padding(.bottom, insets.bottom + 18)
+            .padding(.bottom, 18)
             .frame(maxWidth: .infinity, alignment: .leading)
-            // Full bleed to the bottom edge, under the home indicator (insets.bottom is padding
-            // inside). The border is the TOP edge only: drawn round the whole shape, its sides and
-            // bottom ran into the iPhone's rounded display corners, which clipped them ("cut off
-            // at the bottom corners", Oct 13 2026).
-            .background(rnRect(topLeading: 26, topTrailing: 26).fill(colors.card))
-            .overlay(SheetTopEdge(radius: 26).stroke(colors.goldLine, lineWidth: 1))
+            // A floating card, inset 8 from the sides and lifted above the home indicator, with
+            // its full gold outline. Full bleed to the bottom, the iPhone's rounded display
+            // corners clipped its bottom corners and rim ("cut off at the bottom corners",
+            // Oct 13; still "pushed under the phone", Oct 20 2026). Don't go back to full bleed.
+            .background(rnRect(26).fill(colors.card))
+            .overlay(rnRect(26).strokeBorder(colors.goldLine, lineWidth: 1))
+            .padding(.horizontal, 8)
+            .padding(.bottom, insets.bottom + 8)
+            // Measured with the gap, so the entrance starts fully off screen.
             .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { sheetH = $0 }
             .opacity(reduce ? p : 1)
             .offset(y: reduce ? 0 : (1 - p) * sheetH)

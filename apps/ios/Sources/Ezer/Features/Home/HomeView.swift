@@ -251,7 +251,7 @@ struct HomeView: View {
             HomeStatTile(
                 key: "savings",
                 icon: "wallet-outline",
-                tint: colors.success,
+                tint: colors.accInk,
                 value: formatCents(savingsTotalCents),
                 label: "Current Savings",
                 sub: "\(goals.count) goal\(goals.count == 1 ? "" : "s")",

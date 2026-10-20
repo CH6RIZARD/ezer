@@ -81,7 +81,8 @@ final class AuthStore {
         }
 
         do {
-            _ = try await api.session()
+            // Sliding session (routes/auth.ts): keep the renewed token.
+            if let fresh = try await api.session()?.token { api.setToken(fresh) }
             user = storedUser
         } catch {
             let status = error.httpStatus

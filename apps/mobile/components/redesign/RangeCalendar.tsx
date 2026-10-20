@@ -277,7 +277,7 @@ export function RangeCalendar({
   const scrimStyle = { opacity: p };
   const sheetStyle = reduce ? { opacity: p } : { transform: [{ translateY: sheetY }] };
   const onSheetLayout = (e: LayoutChangeEvent) => {
-    sheetH.setValue(e.nativeEvent.layout.height);
+    sheetH.setValue(e.nativeEvent.layout.height + insets.bottom + SHEET_GAP);
     // The sheet's views exist natively now, so the animation can reach them.
     if (wantIn.current) slideIn();
   };
@@ -300,7 +300,7 @@ export function RangeCalendar({
           onLayout={onSheetLayout}
           style={[
             styles.sheet,
-            { backgroundColor: colors.card, borderColor: colors.goldLine, paddingBottom: insets.bottom + 18 },
+            { backgroundColor: colors.card, borderColor: colors.goldLine, marginBottom: insets.bottom + SHEET_GAP },
             sheetStyle,
           ]}
         >
@@ -364,19 +364,23 @@ export function RangeCalendar({
 }
 
 const ROW_H = 36;
+const SHEET_GAP = 8;
 
 const styles = StyleSheet.create({
   sheetWrap: { flex: 1, justifyContent: 'flex-end' },
   sheet: {
-    borderTopLeftRadius: 26,
-    borderTopRightRadius: 26,
-    // Top edge only. The sheet runs to the bottom of the screen (insets.bottom
-    // is padding inside it), so side borders ran into the phone's rounded
-    // display corners and were clipped there ("cut off at the bottom corners",
-    // Oct 13 2026). The top corners' border tapers out along the arcs.
-    borderTopWidth: 1,
-    paddingHorizontal: layout.screenX,
+    // A floating card, inset from the sides and lifted above the home
+    // indicator, with its full gold outline. Run full-bleed to the bottom, the
+    // phone's rounded display corners clipped its bottom corners and rim
+    // ("cut off at the bottom corners", Oct 13; still "pushed under the
+    // phone", Oct 20 2026, with the top-edge-only border). Don't go back to
+    // full-bleed.
+    marginHorizontal: SHEET_GAP,
+    borderRadius: 26,
+    borderWidth: 1,
+    paddingHorizontal: layout.screenX - SHEET_GAP,
     paddingTop: 10,
+    paddingBottom: 18,
   },
   grabber: { width: 44, height: 5, borderRadius: radius.pill, alignSelf: 'center', marginBottom: 12 },
   monthRow: {

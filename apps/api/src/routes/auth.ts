@@ -336,6 +336,11 @@ export async function authRoutes(server: FastifyInstance) {
         userId: user.id,
         email: user.email,
         authProviders: user.authAccounts.map((a) => a.provider),
+        // Sliding session: the app checks this at every launch and stores the
+        // fresh token, so only 7 days WITHOUT opening the app signs you out.
+        // A fixed 7 days from sign-in sent active users back through
+        // onboarding and wiped their passcode once a week (Oct 20 2026).
+        token: signJwt({ userId: user.id, email: user.email }),
       },
     };
   });

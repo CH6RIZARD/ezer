@@ -30,7 +30,6 @@ import {
   ScrollView,
   StyleSheet,
   KeyboardAvoidingView,
-  Platform,
 } from 'react-native';
 import { CameraDoveHost, DoveLoader } from '../CameraDove';
 import { Ionicons } from '@expo/vector-icons';
@@ -286,7 +285,7 @@ export default function MoveMoneySheet({
       </Pressable>
 
       <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior="padding" // both platforms: see app/auth/login.tsx
         style={styles.sheetWrap}
         pointerEvents="box-none"
       >

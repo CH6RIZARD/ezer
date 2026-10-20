@@ -177,10 +177,12 @@ style problem.
   nothing on screen, so every later tap was a no-op. `ModalPresenter.present`
   now waits out transitions, verifies, and retries; `openPicker()` re-presents
   when `pickOpen` is already true (the modal covers the chip, so a tap that
-  reaches it means the sheet is not up). The sheet's border is the TOP edge
-  only (`SheetTopEdge` / `borderTopWidth: 1`): it is full-bleed to the bottom,
-  and a border down the sides ran into the iPhone's rounded display corners
-  and looked cut off. Don't put the full outline back.
+  reaches it means the sheet is not up). The sheet is a FLOATING card (Oct 20
+  2026): inset 8 from the sides and lifted `insets.bottom + 8` above the
+  bottom, all four corners rounded, full gold outline (`SHEET_GAP`). Full
+  bleed to the bottom, the phone's rounded display corners clipped its bottom
+  corners and rim, first with a full outline and then still with a top-edge-
+  only one ("pushed under the phone"). Don't go back to full bleed.
 - **Wallet card switches must be cache hits** (Oct 12 2026, "4 secs to show
   the numbers"). Measured on web against a mock API that answers one request
   at a time: a swipe made before the prefetch finished took 3.7s, because the
@@ -999,6 +1001,19 @@ style problem.
   passcode lock. Same call signature, so a new call site only needs the
   import. The owner asked for this after seeing Android's grey "Login failed"
   dialog; don't import RN's Alert again.
+
+## Sessions and the keyboard
+
+- **The session slides.** `POST /auth/session` (checked at every launch)
+  returns a fresh 7-day token and both apps store it. With a fixed 7 days
+  from sign-in, a weekly 401 signed active users out, LockGate wiped the
+  passcode, and they landed in onboarding setting a passcode again (Oct 20
+  2026). Keep the renewal.
+- **`KeyboardAvoidingView` is `behavior="padding"` on BOTH platforms**
+  (login, signup, onboarding's auth step, GoalFormSheet, MoveMoneySheet).
+  SDK 54 Android is edge-to-edge, and the window is not resized for the
+  keyboard, so `undefined` on Android left the keyboard over the inputs.
+  Not `height` (drew typed text outside its box, 25b6577).
 
 ## Secrets
 

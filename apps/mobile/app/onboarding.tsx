@@ -25,6 +25,7 @@ import {
   Animated,
   Easing,
   TextInput,
+  KeyboardAvoidingView,
   ScrollView,
   Platform,
   useWindowDimensions,
@@ -738,6 +739,9 @@ export default function OnboardingScreen() {
         )}
 
         {step === 4 && (
+          // 'padding' so the keyboard can't cover the email field (Android is
+          // edge-to-edge and not resized; see app/auth/login.tsx).
+          <KeyboardAvoidingView behavior="padding" style={{ flex: 1 }}>
           <ScrollView
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
@@ -748,6 +752,7 @@ export default function OnboardingScreen() {
             </Pressable>
             <AuthStep mode={authMode} setMode={setAuthMode} onDone={finish} />
           </ScrollView>
+          </KeyboardAvoidingView>
         )}
 
         {/* No back button: the account behind it already exists. */}

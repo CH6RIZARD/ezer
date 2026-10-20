@@ -94,7 +94,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
 
         try {
-          await api.post('/auth/session');
+          const res: any = await api.post('/auth/session');
+          // Sliding session (routes/auth.ts): keep the renewed token.
+          if (res?.data?.token) await api.setToken(res.data.token);
           setUser(storedUser);
         } catch (err: any) {
           const status: number | undefined = err?.status;

@@ -9,7 +9,7 @@ import {
   TextInput,
   Pressable,
   KeyboardAvoidingView,
-  Platform,
+  ScrollView,
 } from 'react-native';
 import { DoveLoader } from '../../components/CameraDove';
 import { Alert } from '../../utils/appAlert';
@@ -57,19 +57,22 @@ export default function LoginScreen() {
   };
 
   return (
-    // Android already resizes the window for the keyboard (Expo's default
-    // android.softwareKeyboardLayoutMode is "resize" — app.json sets nothing
-    // else). Also applying KeyboardAvoidingView's behavior="height" on top of
-    // that double-shrinks the layout: RN measures the keyboard against the
-    // window's ORIGINAL size and re-applies a height adjustment the OS
-    // already made, so inputs end up positioned wrong and can render outside
-    // their own box while the keyboard is up — undefined on Android lets the
-    // native resize do the whole job, matching iOS's own single adjustment.
+    // 'padding' on BOTH platforms. Expo SDK 54 draws Android edge-to-edge,
+    // and edge-to-edge windows are not resized for the keyboard, so leaving
+    // Android to the OS (behavior undefined) let the keyboard sit on top of
+    // the inputs: "can't see what I'm typing" (Oct 20 2026). 'padding' is safe
+    // if a window ever is resized too: it pads by the keyboard's overlap with
+    // this view's measured frame, which is then zero. Not 'height': that set a
+    // fixed height and drew typed text outside its box (25b6577).
     <KeyboardAvoidingView
       style={{ flex: 1, backgroundColor: colors.background }}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      behavior="padding"
     >
-      <View style={{ flex: 1, paddingHorizontal: 24, justifyContent: 'space-between', paddingTop: insets.top + 40, paddingBottom: insets.bottom + 20 }}>
+      <ScrollView
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ flexGrow: 1, paddingHorizontal: 24, justifyContent: 'space-between', paddingTop: insets.top + 40, paddingBottom: insets.bottom + 20 }}
+      >
         {/* Logo */}
         <View style={{ alignItems: 'center', marginBottom: 40 }}>
           <LinearGradient
@@ -163,7 +166,7 @@ export default function LoginScreen() {
             <Text style={{ fontSize: 14, fontWeight: '700', color: colors.primary }}>Sign Up</Text>
           </Pressable>
         </View>
-      </View>
+      </ScrollView>
     </KeyboardAvoidingView>
   );
 }

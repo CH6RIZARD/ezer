@@ -197,7 +197,7 @@ export default function HomeScreen() {
     {
       key: 'savings',
       icon: 'wallet-outline' as const,
-      tint: colors.success,
+      tint: colors.accInk,
       value: formatCents(savingsTotalCents),
       label: 'Current Savings',
       sub: `${goals.length} goal${goals.length === 1 ? '' : 's'}`,
