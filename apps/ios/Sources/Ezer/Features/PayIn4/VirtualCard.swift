@@ -22,8 +22,6 @@
 import SwiftUI
 
 private let NUMBER_MASKED = "••••  ••••  ••••  ••••"
-/// CardChip's height: the number row starts below it, as it did beside a real chip.
-private let CHIP_H: CGFloat = 33
 
 /// The design saved in Card Studio, as the Pay in 4 card draws it.
 struct SavedCardDesign: Equatable {
@@ -68,7 +66,8 @@ struct VirtualCard: View {
                 CardFrontFace(finish: f, strokes: design?.strokes ?? [])
                 // facePad (padding 18, justifyContent: space-between) over the face
                 VStack(alignment: .leading, spacing: 0) {
-                    Color.clear.frame(height: CHIP_H)
+                    // The number row starts below the chip, as on a real card (18 = facePad).
+                    Color.clear.frame(height: CHIP_BOTTOM - 18)
 
                     Spacer(minLength: 0)
 

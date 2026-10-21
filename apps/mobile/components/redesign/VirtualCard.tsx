@@ -24,12 +24,10 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { gradients, cardBackFinishes, isDarkFinish, type CardFinish } from '../../theme/tokens';
 import { fontFamily, radius } from '../../theme/type';
 import SpinCard from './SpinCard';
-import { CardFrontFace, type Stroke } from './CardCanvas';
+import { CardFrontFace, CHIP_BOTTOM, type Stroke } from './CardCanvas';
 
 const NUMBER_MASKED = '••••  ••••  ••••  ••••';
 const NO_STROKES: Stroke[] = [];
-/** CardChip's height: the number row starts below it, as it did beside a real chip. */
-const CHIP_H = 33;
 
 export interface VirtualCardProps {
   finish?: CardFinish;
@@ -60,7 +58,8 @@ export function VirtualCard({ finish = 'amethyst', style, onDragChange, issued, 
         <View style={[styles.fill, styles.clip]}>
           <CardFrontFace finish={f} strokes={design?.strokes ?? NO_STROKES} />
           <View style={[StyleSheet.absoluteFill, styles.facePad]} pointerEvents="none">
-            <View style={{ height: CHIP_H }} />
+            {/* The number row starts below the chip, as on a real card (18 = facePad). */}
+            <View style={{ height: CHIP_BOTTOM - 18 }} />
 
             <Text selectable={false} style={[styles.number, { color: ink }]}>
               {issued ? `••••  ••••  ••••  ${issued.last4}` : NUMBER_MASKED}

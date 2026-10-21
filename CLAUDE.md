@@ -235,6 +235,12 @@ style problem.
   are the ONLY place the physical card's locked layout is drawn** — front is
   the chip plus the EZER logo (`CardLogo`: DoveMark, wordmark with the dove on
   the R, top right; owner's request Oct 18 2026, both apps), no other wording.
+  The chip sits where a real EMV chip does (`CHIP_LEFT`/`CHIP_TOP`: ISO 7816-2
+  puts it ~17.6% across and ~43% down) and the logo is small and tucked into
+  the corner (`LOGO_W` 42, `LOGO_INSET` 12); owner, Oct 21 2026: "put the chip
+  where it would really be and the EZER smaller and more in the corner". It
+  was chip top-left, logo 58 at 18. The Pay in 4 card's number row starts
+  below `CHIP_BOTTOM`, so moving the chip moves the number with it.
   The Pay in 4 card (`VirtualCard`) draws its front WITH `CardFrontFace` and
   the saved Card Studio design (payin4.tsx re-reads `loadCardDesign()` on
   focus, Swift `refreshDesign()` on appear), with number/cardholder text on

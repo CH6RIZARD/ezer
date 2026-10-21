@@ -44,20 +44,33 @@ import { DoveMark } from '../DoveReveal';
 export const CARD_W = 308;
 export const CARD_H = 190;
 
-/** The logo's wordmark width on a 308-wide card. */
-const LOGO_W = 58;
+/** The logo's wordmark width on a 308-wide card, and its corner inset (owner,
+ *  Oct 21 2026: "the EZER smaller and more in the corner"; was 58 and 18). */
+const LOGO_W = 42;
+const LOGO_INSET = 12;
+
+/**
+ * The chip's well box (CardChip at its default size, 50x39) sits where a real
+ * EMV chip does: ISO 7816-2 puts the contacts' centre ~17.6% across and ~43%
+ * down an ID-1 card (owner, Oct 21 2026: "put the chip where it would really
+ * be"; it was in the top-left corner). VirtualCard starts its number row
+ * below CHIP_BOTTOM.
+ */
+export const CHIP_LEFT = 29;
+export const CHIP_TOP = 62;
+export const CHIP_BOTTOM = CHIP_TOP + 39;
 
 /**
  * The EZER logo for a card front, top right: the same DoveMark the lock
  * screen and tabs draw. Its dove sits outside the word's box (0.36 of the
  * width above, 0.23 past the right edge, doveFrames' PERCH), so the box is
- * offset to keep the whole bird inside the card's 18-unit margin.
+ * offset to keep the whole bird inside the LOGO_INSET margin.
  */
 export function CardLogo({ finish }: { finish: CardFinish }) {
   return (
     <View
       pointerEvents="none"
-      style={{ position: 'absolute', top: 18 + LOGO_W * 0.36, right: 18 + LOGO_W * 0.23 }}
+      style={{ position: 'absolute', top: LOGO_INSET + LOGO_W * 0.36, right: LOGO_INSET + LOGO_W * 0.23 }}
     >
       <DoveMark width={LOGO_W} ink={isDarkFinish(finish) ? '#FFFFFF' : '#241A38'} />
     </View>
@@ -376,7 +389,8 @@ const styles = StyleSheet.create({
   },
   furniture: {
     ...StyleSheet.absoluteFillObject,
-    padding: 18,
+    paddingLeft: CHIP_LEFT,
+    paddingTop: CHIP_TOP,
     justifyContent: 'flex-start',
   },
   rowBetween: {

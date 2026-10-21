@@ -33,21 +33,31 @@ private struct PayIn4StrokePath: View {
     }
 }
 
-/// The logo's wordmark width on a 308-wide card.
-private let LOGO_W: CGFloat = 58
+/// The logo's wordmark width on a 308-wide card, and its corner inset (owner, Oct 21 2026:
+/// "the EZER smaller and more in the corner"; was 58 and 18).
+private let LOGO_W: CGFloat = 42
+private let LOGO_INSET: CGFloat = 12
+
+/// The chip's well box (CardChip at its default size, 50x39) sits where a real EMV chip does:
+/// ISO 7816-2 puts the contacts' centre ~17.6% across and ~43% down an ID-1 card (owner, Oct 21
+/// 2026: "put the chip where it would really be"; it was in the top-left corner). VirtualCard
+/// starts its number row below CHIP_BOTTOM.
+let CHIP_LEFT: CGFloat = 29
+let CHIP_TOP: CGFloat = 62
+let CHIP_BOTTOM: CGFloat = CHIP_TOP + 39
 
 /**
  * The EZER logo for a card front, top right: the same DoveMark the lock screen and tabs draw.
  * Its dove sits outside the word's box (0.36 of the width above, 0.23 past the right edge,
- * DoveFrames.PERCH), so the box is offset to keep the whole bird inside the 18pt margin.
+ * DoveFrames.PERCH), so the box is offset to keep the whole bird inside the LOGO_INSET margin.
  */
 struct CardLogo: View {
     let finish: CardFinish
 
     var body: some View {
         DoveMark(width: LOGO_W, ink: Color(css: isDarkFinish(finish) ? "#FFFFFF" : "#241A38"))
-            .padding(.top, 18 + LOGO_W * 0.36)
-            .padding(.trailing, 18 + LOGO_W * 0.23)
+            .padding(.top, LOGO_INSET + LOGO_W * 0.36)
+            .padding(.trailing, LOGO_INSET + LOGO_W * 0.23)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
             .allowsHitTesting(false)
     }
@@ -94,7 +104,8 @@ struct CardFrontFace: View {
             // matter how heavily the user draws. Chip only — no contactless mark,
             // removed on request.
             CardChip()
-                .padding(18)
+                .padding(.leading, CHIP_LEFT)
+                .padding(.top, CHIP_TOP)
                 .allowsHitTesting(false)
             CardLogo(finish: finish)
         }
