@@ -919,6 +919,16 @@ style problem.
   split sliding). Three sheet re-renders (1024 px, 8 exits) could not touch it;
   Android never showed it (Reanimated styles inherit no transaction). Any new
   SwiftUI sprite that steps cells needs the same modifier.
+  **It came back once, so it is now enforced (Oct 20 2026).** That fix lived only
+  on the unmerged `claude/one-dove` branch, so the next iPhone build from this
+  branch showed doubled birds before and after the passcode again. Now:
+  `SpriteCell` (the one view every dove sprite is drawn through) carries the
+  modifier itself, each call site keeps its own (DoveFlight, DoveHover, DoveP1,
+  CameraDoveView), and `scripts/check-sprites.sh` fails the iPhone build if any
+  of them goes. `scripts/remote-build.sh` also refuses to build while an
+  `origin/claude/*` branch has app commits HEAD lacks. Debug-only branches are
+  listed in `scripts/unmerged-ok.txt`; `ALLOW_UNMERGED=1` overrides. Draw new
+  sprites through SpriteCell, never with a hand-rolled window.
   Tabs end with `insets.bottom + layout.tabBottom` (176): room past the floating
   bar so a scroll doesn't stop dead on the last row (owner's request).
 

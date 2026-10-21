@@ -49,6 +49,11 @@ cp /e/tmp/ezer-build-<id>/ezer-aab/ezer.aab /e/tmp/ezer-build-<id>/ezer.apk   # 
 bash scripts/remote-build.sh ios   # streams `git archive HEAD apps/ios` to the box → E:\tmp\Ezer.ipa
 ```
 
+- Before building, the script refuses to run if an `origin/claude/*` branch
+  has app commits HEAD doesn't include (a fix left on an unmerged branch is
+  how the doubled dove came back on Oct 20 2026). Merge them; debug-only
+  branches go in `scripts/unmerged-ok.txt`. It also runs
+  `scripts/check-sprites.sh`, the doubled-dove guard.
 - The box is Vast instance 56970625, labelled "ezer-build". It is the default in
   `scripts/remote-build.sh`, with key `~/.ssh/vast_ed25519`. Override it with
   `VAST_SSH="-p <port> root@<ip>"`.

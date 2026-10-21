@@ -157,6 +157,13 @@ struct SpriteCell: View {
         .clipped()
         // RN needsOffscreenAlphaCompositing on DoveFlight's/DoveHover's window (see Perched).
         .compositingGroup()
+        // A cell step must NEVER animate. An inherited withAnimation (the lock word's 900 ms breath, any
+        // animated state change while the camera dove flies) interpolates the sheet offset between cells,
+        // and the window shows the tail of one bird and the head of the next: the doubled/"rolling" dove
+        // (Oct 14-16 2026, and again Oct 20 when this fix lived only on an unmerged branch). Here, so no
+        // sprite can be drawn without it; callers that move the window per frame still add their own.
+        // scripts/check-sprites.sh fails the iPhone build if this line goes.
+        .transaction { $0.animation = nil }
     }
 }
 
@@ -275,6 +282,8 @@ struct DoveHover: View {
                 TimelineView(.animation(paused: !loaded)) { tl in
                     SpriteCell(image: DoveImages.shared[.hover], cellW: H.w * k, cellH: H.h * k,
                                cols: H.cols, rows: H.rows, i: index(at: tl.date), edge: EdgeReader.edge(theme))
+                        // Sprite steps never inherit an animation (see SpriteCell).
+                        .transaction { $0.animation = nil }
                 }
                 .opacity(loaded ? 1 : 0)
                 .offset(x: H.x * k, y: H.y * k)
