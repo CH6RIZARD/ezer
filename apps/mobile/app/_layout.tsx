@@ -104,6 +104,7 @@ function RootLayoutNav() {
           <Stack.Screen name="screens/ConfirmCancel" />
           <Stack.Screen name="screens/Reallocate" />
           <Stack.Screen name="screens/GoalDetail" />
+          <Stack.Screen name="screens/SubscriptionPool" />
           <Stack.Screen name="screens/TrialDecision" />
           <Stack.Screen name="screens/MonthlyBurn" />
           <Stack.Screen name="screens/RiskDetail" />

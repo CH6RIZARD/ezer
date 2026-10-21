@@ -23,6 +23,8 @@ import {
   weekKey,
   deposit,
   moveBetweenGoals,
+  accrualCents,
+  ensurePoolGoal,
   type ProcessorClient,
 } from '../services/savingsEngine';
 
@@ -80,6 +82,8 @@ export async function savingsRoutes(server: FastifyInstance) {
       goals.map(async g => ({
         id: g.id,
         name: g.name,
+        // SUBSCRIPTION_POOL renders separately (GET /subscription-pool).
+        kind: g.kind,
         targetCents: g.targetCents,
         targetDate: g.targetDate,
         priority: g.priority,
@@ -165,6 +169,13 @@ export async function savingsRoutes(server: FastifyInstance) {
 
     const goal = await prisma.savingsGoal.findFirst({ where: { id, userId } });
     if (!goal) return reply.status(404).send({ error: 'Goal not found' });
+    // The pool is named by the app and has no target; only status applies.
+    if (
+      goal.kind === 'SUBSCRIPTION_POOL' &&
+      (body.name !== undefined || body.targetCents !== undefined || body.targetDate !== undefined)
+    ) {
+      return reply.status(400).send({ error: 'Subscription savings has no name or target to edit' });
+    }
 
     // Validate before it reaches Prisma — an unknown enum value 500s there.
     if (body.status !== undefined && !['ACTIVE', 'PAUSED', 'CLOSED'].includes(body.status)) {
@@ -409,6 +420,170 @@ export async function savingsRoutes(server: FastifyInstance) {
       if (CLIENT_ERRORS.has(msg)) return reply.status(400).send({ error: msg });
       throw err;
     }
+  });
+
+  // ---------------------------------------------------------------------------
+  // Subscription savings pool: ONE goal, many subscriptions feeding it
+  // ---------------------------------------------------------------------------
+
+  server.get('/subscription-pool', async request => {
+    const userId = userIdOf(request);
+    const goal = await prisma.savingsGoal.findFirst({ where: { userId, kind: 'SUBSCRIPTION_POOL' } });
+    if (!goal) return { success: true, data: { goal: null, sources: [], recent: [] } };
+
+    const sources = await prisma.subscriptionSavingSource.findMany({
+      where: { goalId: goal.id },
+      orderBy: { startedAt: 'asc' },
+      include: {
+        subscription: {
+          include: { merchant: true, priceHistory: { orderBy: { month: 'desc' }, take: 1 } },
+        },
+        accruals: { orderBy: { createdAt: 'desc' } },
+      },
+    });
+
+    const transferIds = [
+      ...new Set(sources.flatMap(s => s.accruals.map(a => a.sweptTransferId)).filter((x): x is string => !!x)),
+    ];
+    const statusOf = new Map(
+      (
+        await prisma.transfer.findMany({ where: { id: { in: transferIds } }, select: { id: true, status: true } })
+      ).map(t => [t.id, t.status])
+    );
+    // queued = accrued, no sweep has carried it yet (or its transfer came back).
+    const stateOf = (transferId: string | null): 'queued' | 'pending' | 'saved' => {
+      const st = transferId ? statusOf.get(transferId) : undefined;
+      if (st === 'SETTLED' || st === 'POSTED') return 'saved';
+      if (st === 'PENDING' || st === 'SUBMITTED') return 'pending';
+      return 'queued';
+    };
+    const sum = (rows: { amountCents: number; sweptTransferId: string | null }[], want: string) =>
+      rows.filter(a => stateOf(a.sweptTransferId) === want).reduce((n, a) => n + a.amountCents, 0);
+
+    return {
+      success: true,
+      data: {
+        goal: {
+          id: goal.id,
+          name: goal.name,
+          status: goal.status,
+          createdAt: goal.createdAt,
+          fundedCents: await goalBalanceCents(userId, goal.id),
+          withdrawableCents: await withdrawableCents(userId, goal.id),
+        },
+        sources: sources.map(s => ({
+          subscriptionId: s.subscriptionId,
+          merchantName: s.subscription.merchant.canonicalName,
+          logo: s.subscription.merchant.logo,
+          mode: s.mode,
+          status: s.status,
+          // From the latest price; the real accrual follows each actual charge.
+          perChargeCents: accrualCents(s.mode, s.subscription.priceHistory[0]?.amountCents ?? 0),
+          renewalDate: s.subscription.renewalDate,
+          savedCents: sum(s.accruals, 'saved'),
+          pendingCents: sum(s.accruals, 'pending'),
+          queuedCents: sum(s.accruals, 'queued'),
+          charges: s.accruals.length,
+          startedAt: s.startedAt,
+          endedAt: s.endedAt,
+        })),
+        recent: sources
+          .flatMap(s =>
+            s.accruals.map(a => ({
+              id: a.id,
+              subscriptionId: s.subscriptionId,
+              merchantName: s.subscription.merchant.canonicalName,
+              amountCents: a.amountCents,
+              state: stateOf(a.sweptTransferId),
+              createdAt: a.createdAt,
+            }))
+          )
+          .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+          .slice(0, 20),
+      },
+    };
+  });
+
+  /** Enable / switch mode / restart. Creates the pool on first use. Idempotent. */
+  server.put('/subscription-pool/sources/:subscriptionId', async (request, reply) => {
+    const userId = userIdOf(request);
+    const { subscriptionId } = request.params as { subscriptionId: string };
+    const mode = (request.body as { mode?: string } | undefined)?.mode;
+    if (mode !== 'HALF' && mode !== 'MATCH') {
+      return reply.status(400).send({ error: 'mode must be HALF or MATCH' });
+    }
+
+    const sub = await prisma.subscription.findFirst({ where: { id: subscriptionId, userId } });
+    if (!sub) return reply.status(404).send({ error: 'Subscription not found' });
+    if (sub.status === 'canceled') return reply.status(409).send({ error: 'Subscription is canceled' });
+
+    const enable = () =>
+      prisma.$transaction(async tx => {
+        const goal = await ensurePoolGoal(tx, userId);
+        const existing = await tx.subscriptionSavingSource.findUnique({
+          where: { goalId_subscriptionId: { goalId: goal.id, subscriptionId } },
+        });
+        if (!existing) {
+          return tx.subscriptionSavingSource.create({ data: { userId, goalId: goal.id, subscriptionId, mode } });
+        }
+        return tx.subscriptionSavingSource.update({
+          where: { id: existing.id },
+          data: {
+            mode,
+            status: 'ACTIVE',
+            endedAt: null,
+            // Charges from while it was off never accrue.
+            ...(existing.status !== 'ACTIVE' ? { activeSince: new Date() } : {}),
+          },
+        });
+      });
+
+    let source;
+    try {
+      source = await enable();
+    } catch (err) {
+      // Two first enables racing: one loses on the one-pool-per-user (or the
+      // goal+subscription) unique index. The retry finds the winner's rows.
+      if ((err as { code?: string }).code !== 'P2002') throw err;
+      source = await enable();
+    }
+    return { success: true, data: { subscriptionId, mode: source.mode, status: source.status } };
+  });
+
+  server.patch('/subscription-pool/sources/:subscriptionId', async (request, reply) => {
+    const userId = userIdOf(request);
+    const { subscriptionId } = request.params as { subscriptionId: string };
+    const status = (request.body as { status?: string } | undefined)?.status;
+    if (status !== 'PAUSED' && status !== 'ACTIVE') {
+      return reply.status(400).send({ error: 'status must be PAUSED or ACTIVE' });
+    }
+    const source = await prisma.subscriptionSavingSource.findFirst({ where: { userId, subscriptionId } });
+    if (!source) return reply.status(404).send({ error: 'Not saving from this subscription' });
+    if (source.status === 'ENDED') {
+      return reply.status(409).send({ error: 'Stopped; restart with PUT' });
+    }
+    if (source.status !== status) {
+      await prisma.subscriptionSavingSource.update({
+        where: { id: source.id },
+        data: { status, ...(status === 'ACTIVE' ? { activeSince: new Date() } : {}) },
+      });
+    }
+    return { success: true, data: { subscriptionId, status } };
+  });
+
+  /** Stop saving from it. Keeps every accrual and every dollar already in the goal. */
+  server.delete('/subscription-pool/sources/:subscriptionId', async (request, reply) => {
+    const userId = userIdOf(request);
+    const { subscriptionId } = request.params as { subscriptionId: string };
+    const source = await prisma.subscriptionSavingSource.findFirst({ where: { userId, subscriptionId } });
+    if (!source) return reply.status(404).send({ error: 'Not saving from this subscription' });
+    if (source.status !== 'ENDED') {
+      await prisma.subscriptionSavingSource.update({
+        where: { id: source.id },
+        data: { status: 'ENDED', endedAt: new Date() },
+      });
+    }
+    return { success: true, data: { subscriptionId, status: 'ENDED' } };
   });
 
   // ---------------------------------------------------------------------------

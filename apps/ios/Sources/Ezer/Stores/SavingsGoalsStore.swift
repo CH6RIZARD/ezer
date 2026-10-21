@@ -49,6 +49,56 @@ struct SavingsTransaction: Hashable, Sendable, Identifiable {
     var pending: Bool
 }
 
+/// One subscription feeding Subscription savings. DOLLARS, like the rest of this file.
+struct PoolSource: Hashable, Sendable, Identifiable {
+    var subscriptionId: String
+    var merchantName: String
+    /// 'HALF' | 'MATCH' — what each charge moves into Subscription savings.
+    var mode: String
+    /// 'ACTIVE' | 'PAUSED' | 'ENDED'
+    var status: String
+    /// What the next charge moves (HALF = half the charge, MATCH = all of it).
+    var perCharge: Double
+    /// On settled transfers.
+    var saved: Double
+    /// On transfers still clearing.
+    var pending: Double
+    /// Accrued from charges, waiting for the weekly sweep.
+    var queued: Double
+    /// saved + pending + queued: what this source has put toward the goal. No ACH processor exists
+    /// yet, so `saved` stays 0 and this is the figure to show.
+    var total: Double
+    var logo: String?
+    var renewalDate: String?
+    var charges: Int
+    var startedAt: String
+    var endedAt: String?
+    var id: String { subscriptionId }
+}
+
+/// The ONE subscription-savings goal (PATCH-NOTES-subscription-savings.md). nil until the first
+/// source is enabled, and whenever the API cannot say.
+struct SubscriptionPool: Hashable, Sendable {
+    var goalId: String
+    /// DOLLARS: the sources' saved + pending + queued, summed (the ledger is 0 until ACH exists).
+    var saved: Double
+    /// DOLLARS every ACTIVE source moves on its next charge, summed.
+    var perCycle: Double
+    var sources: [PoolSource]
+    var recent: [PoolRecent]
+}
+
+/// One charge-driven save. DOLLARS.
+struct PoolRecent: Hashable, Sendable, Identifiable {
+    var id: String
+    var subscriptionId: String
+    var merchantName: String
+    var amount: Double
+    /// 'queued' | 'pending' | 'saved'
+    var state: String
+    var date: Date?
+}
+
 /// { ok: true; id? } | { ok: false; error }
 struct MoveResult: Sendable {
     let ok: Bool
@@ -181,6 +231,7 @@ final class SavingsGoalsStore {
     @ObservationIgnored private let theme: ThemeStore
 
     private var wireGoals: [SavingsWireGoal] = []
+    private var wirePool: SubscriptionPoolWire?
     private var transfers: [SavingsWireTransfer] = []
     private var settings: SavingsWireSettings?
     private(set) var preview: SweepPreview = EMPTY_PREVIEW
@@ -224,7 +275,7 @@ final class SavingsGoalsStore {
         refreshSeq += 1
         let seq = refreshSeq
         if !auth.isAuthenticated {
-            wireGoals = []; transfers = []; settings = nil; preview = EMPTY_PREVIEW
+            wireGoals = []; wirePool = nil; transfers = []; settings = nil; preview = EMPTY_PREVIEW
             checkingCents = nil; checkingLabel = nil; error = nil; hydrated = true
             return
         }
@@ -237,7 +288,8 @@ final class SavingsGoalsStore {
         async let p = settle { try await api.sweepPreview() }
         async let t = settle { try await api.savingsTransfers() }
         async let b = settle { try await api.plaidBalance() }
-        let (goalsRes, settingsRes, previewRes, transfersRes, balanceRes) = await (g, s, p, t, b)
+        async let sp = settle { try await api.subscriptionPool() }
+        let (goalsRes, settingsRes, previewRes, transfersRes, balanceRes, poolRes) = await (g, s, p, t, b, sp)
 
         // A newer refresh (or a logout) owns the state now — drop this snapshot.
         if seq != refreshSeq { return }
@@ -245,6 +297,8 @@ final class SavingsGoalsStore {
         if case let .success(v) = goalsRes { wireGoals = v }
         if case let .success(v) = settingsRes { settings = v }
         if case let .success(v) = transfersRes { transfers = v }
+        // Any failure (a 404 before the API ships the route included) is "no pool", never an error.
+        if case let .success(v) = poolRes { wirePool = v } else { wirePool = nil }
 
         // Resolved BEFORE the preview copy: whether a bank exists changes which sentence is true.
         var hasBank = false
@@ -295,7 +349,7 @@ final class SavingsGoalsStore {
 
     var goals: [SavingsGoal] {
         let accInk = theme.tokens.accInk
-        return wireGoals.filter { $0.status != "CLOSED" }.map { g in
+        return wireGoals.filter { $0.status != "CLOSED" && $0.kind != "SUBSCRIPTION_POOL" }.map { g in
             let look = appearance[g.id] ?? Look()
             return SavingsGoal(
                 id: g.id,
@@ -338,7 +392,47 @@ final class SavingsGoalsStore {
         )
     }
 
-    var totalSaved: Double { toDollars(wireGoals.reduce(0) { $0 + $1.fundedCents }) }
+    /// STANDARD goals live in `goals`; the subscription pool renders separately.
+    var pool: SubscriptionPool? {
+        guard let w = wirePool, let goal = w.goal else { return nil }
+        func totalCents(_ s: SubscriptionPoolWire.Source) -> Int { s.savedCents + s.pendingCents + s.queuedCents }
+        return SubscriptionPool(
+            goalId: goal.id,
+            saved: toDollars(w.sources.reduce(0) { $0 + totalCents($1) }),
+            perCycle: toDollars(w.sources.filter { $0.status == "ACTIVE" }.reduce(0) { $0 + $1.perChargeCents }),
+            sources: w.sources.map { s in
+                PoolSource(
+                    subscriptionId: s.subscriptionId,
+                    merchantName: s.merchantName,
+                    mode: s.mode,
+                    status: s.status,
+                    perCharge: toDollars(s.perChargeCents),
+                    saved: toDollars(s.savedCents),
+                    pending: toDollars(s.pendingCents),
+                    queued: toDollars(s.queuedCents),
+                    total: toDollars(totalCents(s)),
+                    logo: s.logo,
+                    renewalDate: s.renewalDate,
+                    charges: s.charges,
+                    startedAt: s.startedAt,
+                    endedAt: s.endedAt
+                )
+            },
+            recent: w.recent.map { r in
+                PoolRecent(
+                    id: r.id, subscriptionId: r.subscriptionId, merchantName: r.merchantName,
+                    amount: toDollars(r.amountCents), state: r.state, date: parseISODate(r.createdAt)
+                )
+            }
+        )
+    }
+
+    /// The pool's ledger balance stays 0 until an ACH processor exists, so it counts by its sources'
+    /// figure; the pool goal's own fundedCents is left out so nothing is counted twice.
+    var totalSaved: Double {
+        let listed = wireGoals.filter { $0.kind != "SUBSCRIPTION_POOL" }.reduce(0) { $0 + $1.fundedCents }
+        return toDollars(listed) + (pool?.saved ?? 0)
+    }
 
     var savedThisMonth: Double {
         let now = jsParts(Date())
@@ -485,6 +579,49 @@ final class SavingsGoalsStore {
             return .success()
         } catch {
             return fail(error, "Could not change that setting.")
+        }
+    }
+
+    // --- subscription savings (one goal, many sources) ---
+
+    /// Add (or switch / resume) a subscription as a source of Subscription savings.
+    /// mode: 'HALF' | 'MATCH'.
+    func setSubscriptionSaving(_ subscriptionId: String, _ mode: String) async -> MoveResult {
+        do {
+            try await api.setSubscriptionPoolSource(subscriptionId: subscriptionId, mode: mode)
+            await refresh()
+            return .success()
+        } catch {
+            return fail(error, "Could not turn on saving for that subscription.")
+        }
+    }
+
+    func pauseSubscriptionSaving(_ subscriptionId: String) async -> MoveResult {
+        await setSourceStatus(subscriptionId, "PAUSED")
+    }
+
+    func resumeSubscriptionSaving(_ subscriptionId: String) async -> MoveResult {
+        await setSourceStatus(subscriptionId, "ACTIVE")
+    }
+
+    private func setSourceStatus(_ subscriptionId: String, _ status: String) async -> MoveResult {
+        do {
+            try await api.setSubscriptionPoolSourceStatus(subscriptionId: subscriptionId, status: status)
+            await refresh()
+            return .success()
+        } catch {
+            return fail(error, "Could not change that setting.")
+        }
+    }
+
+    /// Ends the source. The money it already moved stays in the goal.
+    func stopSubscriptionSaving(_ subscriptionId: String) async -> MoveResult {
+        do {
+            try await api.endSubscriptionPoolSource(subscriptionId: subscriptionId)
+            await refresh()
+            return .success()
+        } catch {
+            return fail(error, "Could not stop saving from that subscription.")
         }
     }
 }

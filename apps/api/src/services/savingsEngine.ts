@@ -148,6 +148,10 @@ export async function gate(userId: string, periodKey: string): Promise<GateResul
 
 export interface GoalWithFunding {
   id: string;
+  /** SUBSCRIPTION_POOL: no target (targetCents 0), need = unswept accruals. */
+  kind?: 'STANDARD' | 'SUBSCRIPTION_POOL';
+  /** SUBSCRIPTION_POOL only: sum of accruals no sweep has carried yet. */
+  poolNeedCents?: Cents;
   targetCents: Cents;
   targetDate: Date | null;
   priority: number;
@@ -182,6 +186,9 @@ function periodsBetween(from: Date, to: Date, cadence: GoalWithFunding['rule']['
  * catch-up bookkeeping.
  */
 export function fixedPerPeriod(goal: GoalWithFunding, fundedCents: Cents): Cents {
+  // The pool has no target to cap against: its need is exactly what real
+  // charges accrued. Never invent a 12x target for it.
+  if (isPool(goal)) return Math.max(0, goal.poolNeedCents ?? 0);
   const remaining = goal.targetCents - fundedCents;
   if (remaining <= 0) return 0;
   // The sweep runs once per WEEK (weekKey), whatever the goal's cadence — so a
@@ -270,6 +277,10 @@ export async function safeToSave(userId: string): Promise<SafeToSaveResult> {
 // 3. ALLOCATE across goals
 // =============================================================================
 
+function isPool(g: GoalWithFunding): boolean {
+  return g.kind === 'SUBSCRIPTION_POOL';
+}
+
 function byPriority(a: GoalWithFunding, b: GoalWithFunding): number {
   // Lower priority number first; ties broken by the nearer deadline.
   if (a.priority !== b.priority) return a.priority - b.priority;
@@ -287,12 +298,14 @@ function byPriority(a: GoalWithFunding, b: GoalWithFunding): number {
  */
 export function allocate(pool: Cents, goals: GoalWithFunding[]): Map<string, Cents> {
   const out = new Map<string, Cents>();
-  const active = goals.filter(g => g.fundedCents < g.targetCents);
+  const active = goals.filter(g => (isPool(g) ? fixedPerPeriod(g, 0) > 0 : g.fundedCents < g.targetCents));
   if (!active.length || pool <= 0) return out;
 
   const needs = active.map(g => ({
     goal: g,
-    need: Math.min(fixedPerPeriod(g, g.fundedCents), g.targetCents - g.fundedCents),
+    need: isPool(g)
+      ? fixedPerPeriod(g, g.fundedCents)
+      : Math.min(fixedPerPeriod(g, g.fundedCents), g.targetCents - g.fundedCents),
   }));
   const totalNeed = needs.reduce((s, n) => s + n.need, 0);
 
@@ -305,6 +318,8 @@ export function allocate(pool: Cents, goals: GoalWithFunding[]): Map<string, Cen
     }
     for (const g of [...active].sort(byPriority)) {
       if (left <= 0) break;
+      // The pool takes exactly its accruals, never surplus.
+      if (isPool(g)) continue;
       const already = out.get(g.id) ?? 0;
       const room = g.targetCents - g.fundedCents - already;
       const ceiling = g.rule.maxPeriodCents != null ? g.rule.maxPeriodCents - already : left;
@@ -324,7 +339,8 @@ export function allocate(pool: Cents, goals: GoalWithFunding[]): Map<string, Cen
     // rather than letting it vanish from the plan.
     const drift = pool - assigned;
     if (drift > 0) {
-      const top = [...active].sort(byPriority)[0];
+      const sorted = [...active].sort(byPriority);
+      const top = sorted.find(g => !isPool(g)) ?? sorted[0];
       out.set(top.id, (out.get(top.id) ?? 0) + drift);
     }
   }
@@ -350,6 +366,25 @@ export interface ProcessorClient {
     idempotencyKey: string;
     rail: 'ACH' | 'RTP';
   }): Promise<{ externalId: string }>;
+}
+
+/**
+ * Which accruals a pool leg of `capCents` carries: oldest first, stopping at
+ * the first one that no longer fits, so a trimmed week leaves the NEWEST ones
+ * waiting. Input must already be sorted oldest-first.
+ */
+export function takeOldestAccruals(
+  accruals: { id: string; amountCents: Cents }[],
+  capCents: Cents
+): { ids: string[]; cents: Cents } {
+  const ids: string[] = [];
+  let cents = 0;
+  for (const a of accruals) {
+    if (cents + a.amountCents > capCents) break;
+    ids.push(a.id);
+    cents += a.amountCents;
+  }
+  return { ids, cents };
 }
 
 export function idempotencyKey(userId: string, goalId: string, periodKey: string): string {
@@ -384,10 +419,30 @@ export async function execute(
     });
 
     const ids: { id: string; key: string; cents: Cents }[] = [];
+    const poolGoal = await tx.savingsGoal.findFirst({
+      where: { userId, kind: 'SUBSCRIPTION_POOL' },
+      select: { id: true },
+    });
 
-    for (const [goalId, cents] of plan) {
+    for (const [goalId, planned] of plan) {
+      let cents = planned;
       if (cents <= 0) continue;
       const key = idempotencyKey(userId, goalId, periodKey);
+
+      // The pool's leg carries whole accruals only, so each one is either in
+      // this transfer or still waiting, never half-swept.
+      let carried: string[] = [];
+      if (goalId === poolGoal?.id) {
+        const unswept = await tx.subscriptionSavingAccrual.findMany({
+          where: { sweptTransferId: null, source: { goalId } },
+          orderBy: { createdAt: 'asc' },
+          select: { id: true, amountCents: true },
+        });
+        const take = takeOldestAccruals(unswept, cents);
+        if (take.cents <= 0) continue;
+        cents = take.cents;
+        carried = take.ids;
+      }
 
       const transfer = await tx.transfer.create({
         data: {
@@ -400,6 +455,15 @@ export async function execute(
           settlesAt,
         },
       });
+
+      if (carried.length) {
+        const marked = await tx.subscriptionSavingAccrual.updateMany({
+          where: { id: { in: carried }, sweptTransferId: null },
+          data: { sweptTransferId: transfer.id },
+        });
+        // Something else carried one of these first: abort the whole run.
+        if (marked.count !== carried.length) throw new Error('ACCRUAL_RACE');
+      }
 
       // Booked as IN_TRANSIT, NOT as goal balance. It only becomes the user's
       // savings when the processor says it settled.
@@ -529,6 +593,11 @@ export async function onTransferEvent(evt: ProcessorEvent): Promise<TransferEven
     });
     if (claimed.count !== 1) return false;
     await reverseLedger(tx, tr.id);
+    // Free the subscription accruals it carried so the next sweep retries them.
+    await tx.subscriptionSavingAccrual.updateMany({
+      where: { sweptTransferId: tr.id },
+      data: { sweptTransferId: null },
+    });
     return true;
   });
   if (!applied) return 'OK';
@@ -773,6 +842,16 @@ export async function loadGoalsWithFunding(userId: string): Promise<GoalWithFund
   return Promise.all(
     goals.map(async g => ({
       id: g.id,
+      kind: g.kind,
+      poolNeedCents:
+        g.kind === 'SUBSCRIPTION_POOL'
+          ? (
+              await prisma.subscriptionSavingAccrual.aggregate({
+                where: { sweptTransferId: null, source: { goalId: g.id } },
+                _sum: { amountCents: true },
+              })
+            )._sum.amountCents ?? 0
+          : undefined,
       targetCents: g.targetCents,
       targetDate: g.targetDate,
       priority: g.priority,
@@ -800,7 +879,8 @@ async function getUserAggressiveness(userId: string): Promise<number> {
 
 async function maybeCompleteGoal(tx: Tx, goalId: string) {
   const goal = await tx.savingsGoal.findUnique({ where: { id: goalId } });
-  if (!goal) return;
+  // The pool has no target (targetCents 0) and is never "complete".
+  if (!goal || goal.kind === 'SUBSCRIPTION_POOL') return;
 
   const acct = await tx.internalAccount.findFirst({
     where: { userId: goal.userId, kind: 'GOAL', goalId },
@@ -1079,4 +1159,74 @@ export async function moveBetweenGoals(
   });
 
   return { transferId: transfer.id };
+}
+
+// ============================================================================
+// Subscription savings pool
+//
+// ONE goal per user (kind SUBSCRIPTION_POOL, partial unique index). Smart
+// saving on a subscription adds a SubscriptionSavingSource; each real charge
+// Plaid sync records writes one accrual (unique on chargeId). The sweep above
+// carries unswept accruals. Ending a source never moves money out.
+// ============================================================================
+
+export type SubscriptionSavingMode = 'HALF' | 'MATCH';
+
+/** Computed from the ACTUAL charge, so a price rise is followed automatically. */
+export function accrualCents(mode: SubscriptionSavingMode, chargeCents: Cents): Cents {
+  if (chargeCents <= 0) return 0; // refunds and reversals save nothing
+  return mode === 'MATCH' ? chargeCents : Math.round(chargeCents / 2);
+}
+
+/**
+ * Only ACTIVE sources accrue, and only for charges on or after the day they
+ * became active: Plaid sync re-reads 12 months of history, which must not be
+ * backfilled into savings when someone switches saving on. Day granularity
+ * (UTC) because Plaid charge timestamps are dates at UTC midnight.
+ */
+export function chargeAccrues(
+  source: { status: 'ACTIVE' | 'PAUSED' | 'ENDED'; activeSince: Date },
+  chargeAt: Date
+): boolean {
+  if (source.status !== 'ACTIVE') return false;
+  const since = new Date(source.activeSince);
+  since.setUTCHours(0, 0, 0, 0);
+  return chargeAt.getTime() >= since.getTime();
+}
+
+/** The subscription's source that is saving right now, if any. */
+export function activeSavingSource(subscriptionId: string) {
+  return prisma.subscriptionSavingSource.findFirst({ where: { subscriptionId, status: 'ACTIVE' } });
+}
+
+/** Idempotent: a re-sync of the same charge hits the chargeId unique and no-ops. */
+export async function accrueForCharge(
+  source: Awaited<ReturnType<typeof activeSavingSource>>,
+  charge: { id: string; amountCents: Cents; chargeTimestamp: Date }
+): Promise<Cents> {
+  if (!source || !chargeAccrues(source, charge.chargeTimestamp)) return 0;
+  const cents = accrualCents(source.mode, charge.amountCents);
+  if (cents <= 0) return 0;
+  const res = await prisma.subscriptionSavingAccrual.createMany({
+    data: [{ sourceId: source.id, chargeId: charge.id, amountCents: cents }],
+    skipDuplicates: true,
+  });
+  return res.count ? cents : 0;
+}
+
+/** The user's pool goal, created on first use. Callers retry once on P2002 (two first enables racing on the partial unique index). */
+export async function ensurePoolGoal(tx: Tx, userId: string) {
+  const existing = await tx.savingsGoal.findFirst({ where: { userId, kind: 'SUBSCRIPTION_POOL' } });
+  if (existing) return existing;
+  return tx.savingsGoal.create({
+    data: { userId, name: 'Subscription savings', targetCents: 0, kind: 'SUBSCRIPTION_POOL' },
+  });
+}
+
+/** Cancellation paths call this in the same transaction that marks the subscription canceled. */
+export async function endSubscriptionSaving(tx: Tx, subscriptionId: string): Promise<void> {
+  await tx.subscriptionSavingSource.updateMany({
+    where: { subscriptionId, status: { not: 'ENDED' } },
+    data: { status: 'ENDED', endedAt: new Date() },
+  });
 }

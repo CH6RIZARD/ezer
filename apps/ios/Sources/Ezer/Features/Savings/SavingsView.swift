@@ -21,6 +21,7 @@ import SwiftUI
 struct SavingsView: View {
     @Environment(ThemeStore.self) private var theme
     @Environment(SavingsGoalsStore.self) private var savings
+    @Environment(DataStore.self) private var data
     @Environment(Router.self) private var router
     @Environment(\.safeInsets) private var insets
 
@@ -225,8 +226,9 @@ struct SavingsView: View {
                         }
                     }
                 }
-            } else if hasGoals {
+            } else if hasGoals || savings.pool != nil {
                 VStack(alignment: .leading, spacing: 8) {
+                    if let pool = savings.pool { poolRow(pool, c) }
                     ForEach(goals) { g in goalRow(g, c) }
                 }
             } else {
@@ -423,6 +425,66 @@ struct SavingsView: View {
                             .padding(.top, 4)
 
                         Text(funded ? "Funded — nice work" : "\(formatCents(savingsDollarsToCents(g.targetAmount - g.currentAmount))) to go")
+                            .font(.ezer(FontFamily.regular, 11.5))
+                            .foregroundStyle(c.mut2)
+                            .lineLimit(1)
+                            .padding(.top, 2)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                    Ionicon("chevron-forward", size: 16, color: c.mut2)
+                }
+                .padding(14 + 1)
+            }
+        }
+    }
+
+    // MARK: - subscription savings row
+
+    /// The ONE goal every subscription with smart saving feeds. Hidden until the first source exists.
+    private func poolRow(_ pool: SubscriptionPool, _ c: ThemeColors) -> some View {
+        let live = pool.sources.filter { $0.status != "ENDED" }
+        let activeCount = live.filter { $0.status == "ACTIVE" }.count
+        let marks = live.map { s in
+            let sub = data.subscriptions.first { $0.id == s.subscriptionId }
+            return PoolMark(name: s.merchantName, merchantId: sub?.merchantId, logoUrl: s.logo ?? sub?.logo)
+        }
+
+        return PressScale(scaleTo: Motion.pressScale, action: { router.push("/screens/SubscriptionPool") }) {
+            Surface {
+                HStack(alignment: .center, spacing: 13) {
+                    Group {
+                        if marks.isEmpty {
+                            Ionicon("repeat", size: 18, color: c.success)
+                                .frame(width: 30, height: 30)
+                                .background(rnRect(10).fill(c.successBg))
+                        } else {
+                            PoolStackedMarks(marks: marks, ringColor: c.card)
+                        }
+                    }
+                    .frame(width: 50, height: 50, alignment: .topLeading)
+
+                    VStack(alignment: .leading, spacing: 0) {
+                        HStack(alignment: .center, spacing: 7) {
+                            Text("Subscription savings")
+                                .font(.ezer(FontFamily.bold, 14.5))
+                                .foregroundStyle(c.ink)
+                                .lineLimit(1)
+                            tag(activeCount > 0, c).fixedSize()
+                        }
+
+                        (Text(formatCents(savingsDollarsToCents(pool.saved)))
+                            + Text("  from \(live.count) \(live.count == 1 ? "subscription" : "subscriptions")")
+                            .foregroundStyle(c.mut2)
+                            .font(.ezer(FontFamily.regular, 14)))
+                            .font(.ezer(FontFamily.bold, 14))
+                            .foregroundStyle(c.ink)
+                            .lineLimit(1)
+                            .padding(.top, 4)
+
+                        Text(activeCount > 0
+                             ? "+\(formatCents(savingsDollarsToCents(pool.perCycle))) every cycle"
+                             : "No subscriptions saving right now")
                             .font(.ezer(FontFamily.regular, 11.5))
                             .foregroundStyle(c.mut2)
                             .lineLimit(1)

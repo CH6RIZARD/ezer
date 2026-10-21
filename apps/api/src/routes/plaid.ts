@@ -3,6 +3,7 @@ import { Configuration, PlaidApi, PlaidEnvironments, Products, CountryCode, Tran
 import { prisma } from '@ezer/db';
 import { authMiddleware } from '../middleware/auth';
 import { encrypt, decrypt } from '../utils/encryption';
+import { accrueForCharge, activeSavingSource } from '../services/savingsEngine';
 import {
   normalizeMerchantName,
   isSubscriptionCandidate,
@@ -808,6 +809,9 @@ async function syncTransactionsForItem(userId: string, itemId: string, accessTok
       newSubscriptions++;
     }
 
+    // Subscription savings source (if smart saving is on), read once per sync.
+    const savingSource = await activeSavingSource(subscription.id);
+
     // Upsert subscription charges
     for (const tx of txs) {
       const amountCents = Math.round(tx.amount * 100);
@@ -843,7 +847,7 @@ async function syncTransactionsForItem(userId: string, itemId: string, accessTok
         where: { userId, merchantId: merchant.id, chargeTimestamp: chargeDate, amountCents },
       });
 
-      if (!existing) {
+      const charge = existing ?? (
         await prisma.subscriptionCharge.create({
           data: {
             userId,
@@ -857,7 +861,19 @@ async function syncTransactionsForItem(userId: string, itemId: string, accessTok
             confidenceScore: 0.9,
             evidenceRef: tx.transaction_id,
           },
-        });
+        })
+      );
+
+      // Subscription savings: one accrual per real charge, idempotent on the
+      // charge id, so running this for already-stored charges on every
+      // re-sync is safe (and retries one that failed last time). Never fail
+      // the sync over it.
+      if (savingSource) {
+        try {
+          await accrueForCharge(savingSource, charge);
+        } catch (err) {
+          console.error('subscription saving accrual failed', { chargeId: charge.id, err });
+        }
       }
 
       // Track price history by month

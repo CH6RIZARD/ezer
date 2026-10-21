@@ -198,6 +198,31 @@ extension APIClient {
         return r.data
     }
 
+    /// nil when the user has no pool yet.
+    func subscriptionPool() async throws -> SubscriptionPoolWire? {
+        let r: Envelope<SubscriptionPoolWire> = try await get("/savings/subscription-pool")
+        return r.data
+    }
+
+    /// PUT { mode }: creates the pool if missing, upserts the source, sets it ACTIVE.
+    func setSubscriptionPoolSource(subscriptionId: String, mode: String) async throws {
+        let _: JSON = try await request("PUT", poolSourcePath(subscriptionId), body: ["mode": .string(mode)])
+    }
+
+    /// PATCH { status: 'PAUSED' | 'ACTIVE' }.
+    func setSubscriptionPoolSourceStatus(subscriptionId: String, status: String) async throws {
+        try await patch(poolSourcePath(subscriptionId), ["status": .string(status)])
+    }
+
+    /// DELETE: status ENDED. The money already moved stays in the goal.
+    func endSubscriptionPoolSource(subscriptionId: String) async throws {
+        try await del(poolSourcePath(subscriptionId))
+    }
+
+    private func poolSourcePath(_ id: String) -> String {
+        "/savings/subscription-pool/sources/\(id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed.subtracting(CharacterSet(charactersIn: "/"))) ?? id)"
+    }
+
     func savingsSettings() async throws -> SavingsWireSettings? {
         let r: Envelope<SavingsWireSettings> = try await get("/savings/settings")
         return r.data

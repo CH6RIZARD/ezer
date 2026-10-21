@@ -47,6 +47,8 @@ import ProgressRing from '../../components/redesign/ProgressRing';
 import MoveMoneySheet, { type MoveMode } from '../../components/redesign/MoveMoneySheet';
 import GoalFormSheet from '../../components/redesign/GoalFormSheet';
 import { useCameraDove } from '../../components/CameraDove';
+import StackedMarks from '../../components/redesign/StackedMarks';
+import { useData } from '../../contexts/DataContext';
 
 /** Goals store dollars; formatCents wants cents. One conversion, one place. */
 const dollarsToCents = (d: number) => Math.round(d * 100);
@@ -60,6 +62,7 @@ export default function SavingsScreen() {
   const { colors } = useTheme();
   const {
     goals,
+    pool,
     transactions,
     autoSave,
     // checkingBalance / checkingLabel / averageSave were only read by the
@@ -127,6 +130,7 @@ export default function SavingsScreen() {
 
   const activeGoals = goals.filter(g => g.autoSave);
   const hasGoals = goals.length > 0;
+  const { subscriptions } = useData();
 
   const goalName = (id: string) => goals.find(g => g.id === id)?.name ?? 'Savings';
   const openGoal = (id: string) => router.push({ pathname: '/screens/GoalDetail', params: { id } });
@@ -174,6 +178,73 @@ export default function SavingsScreen() {
               {funded
                 ? 'Funded — nice work'
                 : `${formatCents(dollarsToCents(g.targetAmount - g.currentAmount))} to go`}
+            </Text>
+          </View>
+
+          <Ionicons name="chevron-forward" size={16} color={colors.mut2} />
+        </Surface>
+      </PressScale>
+    );
+  };
+
+  // --- subscription savings row ----------------------------------------------
+  //
+  // The ONE goal every subscription with smart saving feeds. Hidden until the
+  // first source exists (the server creates the goal then).
+
+  const renderPool = () => {
+    if (!pool) return null;
+    const live = pool.sources.filter(s => s.status !== 'ENDED');
+    const active = live.filter(s => s.status === 'ACTIVE');
+    const marks = live.map(s => {
+      const sub = subscriptions.find(x => x.id === s.subscriptionId);
+      return { name: s.merchantName, merchantId: sub?.merchantId, logoUrl: s.logo ?? sub?.logo };
+    });
+    return (
+      <PressScale
+        key="pool"
+        onPress={() => router.push('/screens/SubscriptionPool')}
+        scaleTo={motion.pressScale}
+      >
+        <Surface style={styles.goalRow}>
+          <View style={{ width: 50, height: 50 }}>
+            {marks.length > 0 ? (
+              <StackedMarks marks={marks} ringColor={colors.card} />
+            ) : (
+              <View style={[styles.poolEmptyMark, { backgroundColor: colors.successBg }]}>
+                <Ionicons name="repeat" size={18} color={colors.success} />
+              </View>
+            )}
+          </View>
+
+          <View style={{ flex: 1 }}>
+            <View style={styles.goalTitleRow}>
+              <Text style={[styles.goalName, { color: colors.ink }]} numberOfLines={1}>
+                Subscription savings
+              </Text>
+              {active.length > 0 ? (
+                <View style={[styles.tag, { backgroundColor: colors.successBg }]}>
+                  <Ionicons name="sparkles" size={9} color={colors.success} />
+                  <Text style={[styles.tagText, { color: colors.success }]}>AUTO</Text>
+                </View>
+              ) : (
+                <View style={[styles.tag, { backgroundColor: colors.bg2 }]}>
+                  <Text style={[styles.tagText, { color: colors.mut2 }]}>PAUSED</Text>
+                </View>
+              )}
+            </View>
+
+            <Text style={[styles.goalAmount, { color: colors.ink }]} numberOfLines={1}>
+              {formatCents(dollarsToCents(pool.saved))}
+              <Text style={{ color: colors.mut2, fontFamily: fontFamily.regular }}>
+                {`  from ${live.length} ${live.length === 1 ? 'subscription' : 'subscriptions'}`}
+              </Text>
+            </Text>
+
+            <Text style={[styles.goalMeta, { color: colors.mut2 }]} numberOfLines={1}>
+              {active.length > 0
+                ? `+${formatCents(dollarsToCents(pool.perCycle))} every cycle`
+                : 'No subscriptions saving right now'}
             </Text>
           </View>
 
@@ -523,8 +594,11 @@ export default function SavingsScreen() {
                 </Surface>
               ))}
             </View>
-          ) : hasGoals ? (
-            <View style={{ gap: 8 }}>{goals.map(renderGoal)}</View>
+          ) : hasGoals || pool ? (
+            <View style={{ gap: 8 }}>
+              {renderPool()}
+              {goals.map(renderGoal)}
+            </View>
           ) : (
             <Surface style={styles.empty}>
               <Ionicons name="flag-outline" size={22} color={colors.mut2} />
@@ -748,6 +822,13 @@ const styles = StyleSheet.create({
     fontFamily: fontFamily.regular,
     fontSize: 11.5,
     marginTop: 2,
+  },
+  poolEmptyMark: {
+    width: 30,
+    height: 30,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   empty: {
     padding: 20,

@@ -8,7 +8,7 @@
 set -e
 cd "$(dirname "$0")/.."
 [ "${1:-ios}" = ios ] || { echo "only ios builds on the box; Android builds on GitHub (scripts/build-both.sh)" >&2; exit 1; }
-SSH=${VAST_SSH:-"-p 44621 root@49.0.90.52"}
+SSH=${VAST_SSH:-"-p 40531 root@76.69.5.231"}  # Vast 56970625 "ezer-build" (Oct 20 2026)
 PORT=$(echo $SSH | awk '{print $2}'); HOST=$(echo $SSH | awk '{print $3}')
 KEY=~/.ssh/vast_ed25519
 SHA=$(git rev-parse --short HEAD)

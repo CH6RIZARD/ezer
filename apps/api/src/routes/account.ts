@@ -62,9 +62,13 @@ export async function accountRoutes(server: FastifyInstance) {
     // on a plain userId string (a design can predate the account), so no
     // cascade reaches them and they outlived every deleted account. Same
     // transaction, so "everything goes" (docs/privacy.html) stays true.
+    // Subscription-saving sources/accruals would cascade via the goal, but
+    // they key on a bare userId too, so they are listed explicitly.
     await prisma.$transaction([
       prisma.cardDesign.deleteMany({ where: { userId } }),
       prisma.cardAccessList.deleteMany({ where: { userId } }),
+      prisma.subscriptionSavingAccrual.deleteMany({ where: { source: { userId } } }),
+      prisma.subscriptionSavingSource.deleteMany({ where: { userId } }),
       prisma.user.delete({ where: { id: userId } }),
     ]);
 
@@ -163,13 +167,17 @@ export async function accountRoutes(server: FastifyInstance) {
     reply.header('Content-Disposition', 'attachment; filename="ezer-data-export.json"');
     // Card designs and access-list decisions aren't relations on User (see
     // DELETE above), so the include can't reach them.
-    const [cardDesigns, cardAccessList] = await Promise.all([
+    const [cardDesigns, cardAccessList, subscriptionSavingSources] = await Promise.all([
       prisma.cardDesign.findMany({ where: { userId } }),
       prisma.cardAccessList.findMany({ where: { userId } }),
+      prisma.subscriptionSavingSource.findMany({ where: { userId }, include: { accruals: true } }),
     ]);
     return {
       success: true,
-      data: { exportedAt: new Date().toISOString(), user: { ...safe, cardDesigns, cardAccessList } },
+      data: {
+        exportedAt: new Date().toISOString(),
+        user: { ...safe, cardDesigns, cardAccessList, subscriptionSavingSources },
+      },
     };
   });
 }

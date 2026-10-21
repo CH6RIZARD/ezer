@@ -3,6 +3,7 @@ import { prisma } from '@ezer/db';
 import { authMiddleware } from '../middleware/auth';
 import { saveFile } from '../utils/storage';
 import path from 'path';
+import { endSubscriptionSaving } from '../services/savingsEngine';
 
 export async function cancelRoutes(server: FastifyInstance) {
   server.addHook('preHandler', authMiddleware);
@@ -164,21 +165,20 @@ export async function cancelRoutes(server: FastifyInstance) {
       return reply.status(400).send({ success: false, error: 'Confirmation required' });
     }
 
-    // Update cancel attempt status
-    await prisma.cancelAttempt.update({
-      where: { id },
-      data: {
-        status: 'confirmed',
-        notes: notes || cancelAttempt.notes,
-      },
-    });
-
-    // Update subscription status
-    await prisma.subscription.update({
-      where: { id: cancelAttempt.subscriptionId },
-      data: {
-        status: 'canceled',
-      },
+    // Confirm, cancel, and stop subscription saving from it, all at once.
+    await prisma.$transaction(async tx => {
+      await tx.cancelAttempt.update({
+        where: { id },
+        data: {
+          status: 'confirmed',
+          notes: notes || cancelAttempt.notes,
+        },
+      });
+      await tx.subscription.update({
+        where: { id: cancelAttempt.subscriptionId },
+        data: { status: 'canceled' },
+      });
+      await endSubscriptionSaving(tx, cancelAttempt.subscriptionId);
     });
 
     return {

@@ -657,6 +657,8 @@ struct SavingsWireGoal: Codable, Hashable, Sendable, Identifiable {
     var fundedCents: Int
     var withdrawableCents: Int
     var rule: SavingsRule?
+    /// 'STANDARD' | 'SUBSCRIPTION_POOL' (the one subscription-savings goal); STANDARD when absent.
+    var kind: String = "STANDARD"
 }
 extension SavingsWireGoal {
     init(from decoder: Decoder) throws {
@@ -664,6 +666,68 @@ extension SavingsWireGoal {
         id = c.str("id"); name = c.str("name"); targetCents = c.int("targetCents"); targetDate = c.strOpt("targetDate")
         priority = c.int("priority", 100); status = c.str("status", "ACTIVE"); fundedCents = c.int("fundedCents")
         withdrawableCents = c.int("withdrawableCents"); rule = c.obj("rule")
+        kind = c.str("kind", "STANDARD")
+    }
+}
+
+/// GET /savings/subscription-pool — `data` (PATCH-NOTES-subscription-savings.md).
+struct SubscriptionPoolWire: Codable, Hashable, Sendable {
+    struct Goal: Codable, Hashable, Sendable {
+        var id: String
+        var fundedCents: Int?
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: AnyKey.self)
+            id = c.str("id"); fundedCents = c.intOpt("fundedCents")
+        }
+    }
+    struct Source: Codable, Hashable, Sendable {
+        var subscriptionId: String
+        var merchantName: String
+        /// 'HALF' | 'MATCH'
+        var mode: String
+        /// 'ACTIVE' | 'PAUSED' | 'ENDED'
+        var status: String
+        var logo: String?
+        var renewalDate: String?
+        var perChargeCents: Int
+        var savedCents: Int
+        var pendingCents: Int
+        /// Accrued from a charge, not yet carried by a sweep transfer.
+        var queuedCents: Int
+        var charges: Int
+        var startedAt: String
+        var endedAt: String?
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: AnyKey.self)
+            subscriptionId = c.str("subscriptionId"); merchantName = c.str("merchantName")
+            mode = c.str("mode", "HALF"); status = c.str("status", "ACTIVE")
+            perChargeCents = c.int("perChargeCents"); savedCents = c.int("savedCents")
+            pendingCents = c.int("pendingCents"); queuedCents = c.int("queuedCents"); charges = c.int("charges")
+            logo = c.strOpt("logo"); renewalDate = c.strOpt("renewalDate")
+            startedAt = c.str("startedAt"); endedAt = c.strOpt("endedAt")
+        }
+    }
+    /// One charge-driven save.
+    struct Recent: Codable, Hashable, Sendable {
+        var id: String
+        var subscriptionId: String
+        var merchantName: String
+        var amountCents: Int
+        /// 'queued' | 'pending' | 'saved'
+        var state: String
+        var createdAt: String
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: AnyKey.self)
+            id = c.str("id"); subscriptionId = c.str("subscriptionId"); merchantName = c.str("merchantName")
+            amountCents = c.int("amountCents"); state = c.str("state", "queued"); createdAt = c.str("createdAt")
+        }
+    }
+    var goal: Goal?
+    var sources: [Source]
+    var recent: [Recent]
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: AnyKey.self)
+        goal = c.obj("goal"); sources = c.list("sources"); recent = c.list("recent")
     }
 }
 

@@ -2,6 +2,7 @@ import { FastifyInstance, FastifyRequest } from 'fastify';
 import { prisma } from '@ezer/db';
 import { signJwt, verifyJwt, extractTokenFromHeader } from '../utils/jwt';
 import { encrypt } from '../utils/encryption';
+import { endSubscriptionSaving } from '../services/savingsEngine';
 
 // Defense in depth for the mutation routes below: same bypass gate as
 // /dev-login (they are already unregistered in production), and when the
@@ -246,9 +247,12 @@ export async function simulatorRoutes(server: FastifyInstance) {
     }
 
     // Simulate auto-cancel
-    await prisma.subscription.update({
-      where: { id: trial.subscriptionId },
-      data: { status: 'canceled' },
+    await prisma.$transaction(async tx => {
+      await tx.subscription.update({
+        where: { id: trial.subscriptionId },
+        data: { status: 'canceled' },
+      });
+      await endSubscriptionSaving(tx, trial.subscriptionId);
     });
 
     await prisma.decisionRule.update({
@@ -287,9 +291,12 @@ export async function simulatorRoutes(server: FastifyInstance) {
         return reply.status(404).send({ success: false, error: 'Subscription not found' });
       }
 
-      await prisma.subscription.update({
-        where: { id: subscriptionId },
-        data: { status: 'canceled' },
+      await prisma.$transaction(async tx => {
+        await tx.subscription.update({
+          where: { id: subscriptionId },
+          data: { status: 'canceled' },
+        });
+        await endSubscriptionSaving(tx, subscriptionId);
       });
 
       return {

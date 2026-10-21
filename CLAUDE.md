@@ -570,6 +570,33 @@ style problem.
   webhook (`routes/highnoteAuth.ts`) read the LATEST row: a newer waitlist
   row blanked Home and would start declining the issued card. Keep it.
 
+## Subscription savings pool
+
+- **Subscription saving is ONE goal.** `SavingsGoal.kind = SUBSCRIPTION_POOL`,
+  at most one per user (partial unique index `SavingsGoal_one_pool_per_user`).
+  Smart saving on a subscription adds a `SubscriptionSavingSource`; it never
+  creates a goal. Amounts accrue per real charge (`SubscriptionSavingAccrual`,
+  unique on `chargeId` = `SubscriptionCharge.id`, written from Plaid sync in
+  `routes/plaid.ts` via `accrueForCharge`) and the weekly sweep carries
+  unswept accruals (whole accruals, oldest first; a returned transfer clears
+  `sweptTransferId` so the next sweep retries). Stopping a source keeps the
+  money. "Enabled" is looked up by `subscriptionId`, never by goal name.
+  Don't go back to ``addGoal({ name: `${merchant} savings` })``.
+- The pool has no target (`targetCents = 0`): `fixedPerPeriod`/`allocate` skip
+  the target cap for it and `maybeCompleteGoal` never completes it. Don't
+  invent a 12x target or give it a `GoalAllocationRule`.
+- Charges dated before a source's `activeSince` (set on enable and on every
+  resume) never accrue: sync re-reads 12 months of history, and switching
+  saving on must not backfill it.
+- Cancellation (`routes/cancel.ts` confirm, `simulator` mark-canceled and trial
+  auto-cancel) ends the source in the same transaction (`endSubscriptionSaving`).
+- Sources key on a bare `userId`: `DELETE /account` deletes sources+accruals
+  explicitly and `/account/export` includes them.
+- Migration `20261020000000_subscription_savings_pool` is **NOT yet applied**
+  to the live DB (as of 2026-10-20). Apply it by hand before deploying the API
+  that uses it, then run `apps/api/scripts/migrate-subscription-savings-goals.ts`
+  (`--dry-run` first) under `railway run` to fold old "X savings" goals in.
+
 ## Inbox scanning (`apps/mobile/utils/inboxScan/`, `SCOPES.md`)
 
 - **Email is read ON THE PHONE, never on the server.** The app fetches

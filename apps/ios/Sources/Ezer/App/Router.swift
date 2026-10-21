@@ -36,6 +36,7 @@ enum Route: Hashable, Sendable {
     case subscriptionDetail(id: String?)
     case drainReview
     case goalDetail(id: String)
+    case subscriptionPool
     case bankDetail(itemId: String)
     case physicalCard
     case physicalCardApproval
@@ -56,6 +57,7 @@ enum Route: Hashable, Sendable {
         case .subscriptionDetail: return "subscription-detail"
         case .drainReview: return "drain-review"
         case .goalDetail: return "goal-detail"
+        case .subscriptionPool: return "subscription-pool"
         case .bankDetail: return "bank-detail"
         case .physicalCard: return "physical-card"
         case .physicalCardApproval: return "physical-card-approval"
@@ -133,6 +135,7 @@ final class Router {
         case "/settings/notifications": return .screen(.settingsNotifications)
         case "/screens/SubscriptionDetail": return .screen(.subscriptionDetail(id: params["id"]))
         case "/screens/GoalDetail": return .screen(.goalDetail(id: params["id"] ?? ""))
+        case "/screens/SubscriptionPool": return .screen(.subscriptionPool)
         case "/screens/BankDetail": return .screen(.bankDetail(itemId: params["itemId"] ?? ""))
         case "/screens/PhysicalCard": return .screen(.physicalCard)
         case "/screens/PhysicalCardApproval": return .screen(.physicalCardApproval)

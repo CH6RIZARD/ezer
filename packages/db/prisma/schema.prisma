@@ -281,6 +281,7 @@ model Subscription {
   priceHistory    PriceHistory[]
   cancelAttempts  CancelAttempt[]
   allocationPlans AllocationPlan[]
+  savingSources   SubscriptionSavingSource[]
 
   @@index([userId])
   @@index([merchantId])
@@ -629,15 +630,77 @@ model SavingsGoal {
   /// Lower is funded first.
   priority    Int               @default(100)
   status      SavingsGoalStatus @default(ACTIVE)
+  /// SUBSCRIPTION_POOL = the user's ONE "Subscription savings" goal (partial
+  /// unique index in the migration). Its targetCents is 0 = "no target"; its
+  /// amount is the accruals, never a GoalAllocationRule.
+  kind        SavingsGoalKind   @default(STANDARD)
   createdAt   DateTime          @default(now())
   completedAt DateTime?
 
-  user             User                @relation(fields: [userId], references: [id], onDelete: Cascade)
-  rule             GoalAllocationRule?
-  internalAccounts InternalAccount[]
-  transfers        Transfer[]
+  user                User                       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  rule                GoalAllocationRule?
+  internalAccounts    InternalAccount[]
+  transfers           Transfer[]
+  subscriptionSources SubscriptionSavingSource[]
 
   @@index([userId, status])
+}
+
+enum SavingsGoalKind {
+  STANDARD
+  SUBSCRIPTION_POOL
+}
+
+enum SubscriptionSavingMode {
+  HALF
+  MATCH
+}
+
+enum SubscriptionSavingStatus {
+  ACTIVE
+  PAUSED
+  ENDED
+}
+
+/// One subscription feeding the user's SUBSCRIPTION_POOL goal. Keyed on a bare
+/// userId (no User relation), so DELETE /account deletes these explicitly.
+model SubscriptionSavingSource {
+  id             String                   @id @default(cuid())
+  userId         String
+  goalId         String
+  subscriptionId String
+  mode           SubscriptionSavingMode
+  status         SubscriptionSavingStatus @default(ACTIVE)
+  startedAt      DateTime                 @default(now())
+  /// Last time status became ACTIVE. Charges dated before this never accrue,
+  /// so enabling (or resuming) does not backfill a year of Plaid history.
+  activeSince    DateTime                 @default(now())
+  endedAt        DateTime?
+
+  goal         SavingsGoal                 @relation(fields: [goalId], references: [id], onDelete: Cascade)
+  subscription Subscription                @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  accruals     SubscriptionSavingAccrual[]
+
+  @@unique([goalId, subscriptionId])
+  @@index([userId])
+  @@index([subscriptionId])
+}
+
+/// One per real subscription charge (chargeId = SubscriptionCharge.id), so a
+/// Plaid re-sync never double-saves. The weekly sweep sets sweptTransferId;
+/// a returned transfer clears it so the next sweep retries.
+model SubscriptionSavingAccrual {
+  id              String   @id @default(cuid())
+  sourceId        String
+  chargeId        String   @unique
+  amountCents     Int
+  sweptTransferId String?
+  createdAt       DateTime @default(now())
+
+  source SubscriptionSavingSource @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+
+  @@index([sourceId])
+  @@index([sweptTransferId])
 }
 
 enum AllocationMode {

@@ -52,6 +52,43 @@ interface WireGoal {
   status: GoalStatus;
   fundedCents: number;
   withdrawableCents: number;
+  /** 'SUBSCRIPTION_POOL' is the one subscription-savings goal; absent on older servers. */
+  kind?: 'STANDARD' | 'SUBSCRIPTION_POOL';
+}
+
+export type SubscriptionSavingMode = 'HALF' | 'MATCH';
+export type SubscriptionSavingStatus = 'ACTIVE' | 'PAUSED' | 'ENDED';
+
+interface WirePoolSource {
+  subscriptionId: string;
+  merchantName: string;
+  mode: SubscriptionSavingMode;
+  status: SubscriptionSavingStatus;
+  logo?: string | null;
+  renewalDate?: string | null;
+  perChargeCents: number;
+  savedCents: number;
+  pendingCents: number;
+  /** Accrued from a charge, not yet carried by a sweep transfer. */
+  queuedCents?: number;
+  charges: number;
+  startedAt: string;
+  endedAt: string | null;
+}
+
+interface WirePoolRecent {
+  id: string;
+  subscriptionId: string;
+  merchantName: string;
+  amountCents: number;
+  state: 'queued' | 'pending' | 'saved';
+  createdAt: string;
+}
+
+interface WirePool {
+  goal: { id: string; fundedCents?: number } | null;
+  sources: WirePoolSource[];
+  recent?: WirePoolRecent[];
 }
 
 interface WireSettings {
@@ -114,6 +151,56 @@ export interface SavingsTransaction {
   pending: boolean;
 }
 
+/** One subscription feeding Subscription savings. DOLLARS, like the rest of this file. */
+export interface PoolSource {
+  subscriptionId: string;
+  merchantName: string;
+  mode: SubscriptionSavingMode;
+  status: SubscriptionSavingStatus;
+  /** What the next charge moves (HALF = half the charge, MATCH = all of it). */
+  perCharge: number;
+  /** On settled transfers. */
+  saved: number;
+  /** On transfers still clearing. */
+  pending: number;
+  /** Accrued from charges, waiting for the weekly sweep. */
+  queued: number;
+  /**
+   * saved + pending + queued: what this source has put toward the goal. No ACH
+   * processor exists yet, so `saved` stays 0 and this is the figure to show.
+   */
+  total: number;
+  logo: string | null;
+  renewalDate: string | null;
+  charges: number;
+  startedAt: string;
+  endedAt: string | null;
+}
+
+/**
+ * The ONE subscription-savings goal (PATCH-NOTES-subscription-savings.md).
+ * null until the first source is enabled, and whenever the API cannot say.
+ */
+/** One charge-driven save. DOLLARS. */
+export interface PoolRecent {
+  id: string;
+  subscriptionId: string;
+  merchantName: string;
+  amount: number;
+  state: 'queued' | 'pending' | 'saved';
+  date: Date;
+}
+
+export interface SubscriptionPool {
+  goalId: string;
+  /** DOLLARS: the sources' saved + pending + queued, summed (the ledger is 0 until ACH exists). */
+  saved: number;
+  /** DOLLARS every ACTIVE source moves on its next charge, summed. */
+  perCycle: number;
+  sources: PoolSource[];
+  recent: PoolRecent[];
+}
+
 export type MoveResult = { ok: true; id?: string } | { ok: false; error: string };
 
 export interface AutoSaveSettings {
@@ -155,7 +242,9 @@ export type NewGoalInput = {
 };
 
 interface SavingsContextValue {
+  /** STANDARD goals only; the subscription pool is `pool`. */
   goals: SavingsGoal[];
+  pool: SubscriptionPool | null;
   transactions: SavingsTransaction[];
   autoSave: AutoSaveSettings;
   preview: SweepPreview;
@@ -188,6 +277,13 @@ interface SavingsContextValue {
 
   setBuffer: (dollars: number) => Promise<MoveResult>;
   setAutoSaveEnabled: (on: boolean) => Promise<MoveResult>;
+
+  /** Add (or switch / resume) a subscription as a source of Subscription savings. */
+  setSubscriptionSaving: (subscriptionId: string, mode: SubscriptionSavingMode) => Promise<MoveResult>;
+  pauseSubscriptionSaving: (subscriptionId: string) => Promise<MoveResult>;
+  resumeSubscriptionSaving: (subscriptionId: string) => Promise<MoveResult>;
+  /** Ends the source. The money it already moved stays in the goal. */
+  stopSubscriptionSaving: (subscriptionId: string) => Promise<MoveResult>;
 
   transactionsForGoal: (goalId: string) => SavingsTransaction[];
   totalSaved: number;
@@ -319,6 +415,7 @@ export function SavingsGoalsProvider({ children }: { children: ReactNode }) {
   const { colors } = useTheme();
 
   const [wireGoals, setWireGoals] = useState<WireGoal[]>([]);
+  const [wirePool, setWirePool] = useState<WirePool | null>(null);
   const [transfers, setTransfers] = useState<WireTransfer[]>([]);
   const [settings, setSettings] = useState<WireSettings | null>(null);
   const [preview, setPreview] = useState<SweepPreview>(EMPTY_PREVIEW);
@@ -364,6 +461,7 @@ export function SavingsGoalsProvider({ children }: { children: ReactNode }) {
     const seq = ++refreshSeq.current;
     if (!isAuthenticated) {
       setWireGoals([]);
+      setWirePool(null);
       setTransfers([]);
       setSettings(null);
       setPreview(EMPTY_PREVIEW);
@@ -378,7 +476,7 @@ export function SavingsGoalsProvider({ children }: { children: ReactNode }) {
 
     // allSettled, NOT all: a flaky balance call must not blank the goals the
     // user is looking at. Each result is taken on its own merit.
-    const [goalsRes, settingsRes, previewRes, transfersRes, balanceRes] = await Promise.allSettled([
+    const [goalsRes, settingsRes, previewRes, transfersRes, balanceRes, poolRes] = await Promise.allSettled([
       api.get<{ data: WireGoal[] }>('/savings/goals'),
       api.get<{ data: WireSettings }>('/savings/settings'),
       api.get<{ data: WirePreview }>('/savings/sweep/preview'),
@@ -386,6 +484,7 @@ export function SavingsGoalsProvider({ children }: { children: ReactNode }) {
       api.get<{ data: { checkingAvailableCents: number | null; accounts: any[] } }>(
         '/plaid/balance'
       ),
+      api.get<{ data: WirePool | null }>('/savings/subscription-pool'),
     ]);
 
     // A newer refresh (or a logout) owns the state now — drop this snapshot.
@@ -394,6 +493,9 @@ export function SavingsGoalsProvider({ children }: { children: ReactNode }) {
     if (goalsRes.status === 'fulfilled') setWireGoals(goalsRes.value.data ?? []);
     if (settingsRes.status === 'fulfilled') setSettings(settingsRes.value.data ?? null);
     if (transfersRes.status === 'fulfilled') setTransfers(transfersRes.value.data ?? []);
+    // Any failure (a 404 before the API ships the route included) is "no pool",
+    // never an error state: the rest of Savings works without it.
+    setWirePool(poolRes.status === 'fulfilled' ? poolRes.value?.data ?? null : null);
 
     // Resolved BEFORE the preview copy, because whether a bank exists changes
     // which sentence is true.
@@ -464,7 +566,7 @@ export function SavingsGoalsProvider({ children }: { children: ReactNode }) {
   const goals = useMemo<SavingsGoal[]>(
     () =>
       wireGoals
-        .filter(g => g.status !== 'CLOSED')
+        .filter(g => g.status !== 'CLOSED' && g.kind !== 'SUBSCRIPTION_POOL')
         .map(g => {
           const look = appearance[g.id] ?? {};
           return {
@@ -507,10 +609,53 @@ export function SavingsGoalsProvider({ children }: { children: ReactNode }) {
     };
   }, [settings]);
 
-  const totalSaved = useMemo(
-    () => toDollars(wireGoals.reduce((s, g) => s + g.fundedCents, 0)),
-    [wireGoals]
-  );
+  const pool = useMemo<SubscriptionPool | null>(() => {
+    if (!wirePool?.goal) return null;
+    const wire = Array.isArray(wirePool.sources) ? wirePool.sources : [];
+    const totalCents = (s: WirePoolSource) =>
+      (s.savedCents ?? 0) + (s.pendingCents ?? 0) + (s.queuedCents ?? 0);
+    return {
+      goalId: wirePool.goal.id,
+      saved: toDollars(wire.reduce((a, s) => a + totalCents(s), 0)),
+      perCycle: toDollars(
+        wire.filter(s => s.status === 'ACTIVE').reduce((a, s) => a + (s.perChargeCents ?? 0), 0)
+      ),
+      sources: wire.map(s => ({
+        subscriptionId: s.subscriptionId,
+        merchantName: s.merchantName,
+        mode: s.mode,
+        status: s.status,
+        perCharge: toDollars(s.perChargeCents ?? 0),
+        saved: toDollars(s.savedCents ?? 0),
+        pending: toDollars(s.pendingCents ?? 0),
+        queued: toDollars(s.queuedCents ?? 0),
+        total: toDollars(totalCents(s)),
+        logo: s.logo ?? null,
+        renewalDate: s.renewalDate ?? null,
+        charges: s.charges ?? 0,
+        startedAt: s.startedAt,
+        endedAt: s.endedAt ?? null,
+      })),
+      recent: (Array.isArray(wirePool.recent) ? wirePool.recent : []).map(r => ({
+        id: r.id,
+        subscriptionId: r.subscriptionId,
+        merchantName: r.merchantName,
+        amount: toDollars(r.amountCents ?? 0),
+        state: r.state,
+        date: new Date(r.createdAt),
+      })),
+    };
+  }, [wirePool]);
+
+  // The pool's ledger balance stays 0 until an ACH processor exists, so it
+  // counts by its sources' figure instead; the pool goal's own fundedCents is
+  // left out so nothing is counted twice.
+  const totalSaved = useMemo(() => {
+    const listed = wireGoals
+      .filter(g => g.kind !== 'SUBSCRIPTION_POOL')
+      .reduce((s, g) => s + g.fundedCents, 0);
+    return toDollars(listed) + (pool?.saved ?? 0);
+  }, [wireGoals, pool]);
 
   const savedThisMonth = useMemo(() => {
     const now = new Date();
@@ -718,11 +863,63 @@ export function SavingsGoalsProvider({ children }: { children: ReactNode }) {
     [refresh]
   );
 
+  // --- subscription savings (one goal, many sources) -----------------------
+
+  const poolPath = (id: string) => `/savings/subscription-pool/sources/${encodeURIComponent(id)}`;
+
+  const setSubscriptionSaving = useCallback(
+    async (subscriptionId: string, mode: SubscriptionSavingMode): Promise<MoveResult> => {
+      try {
+        await api.put(poolPath(subscriptionId), { mode });
+        await refresh();
+        return { ok: true };
+      } catch (err) {
+        return fail(err, 'Could not turn on saving for that subscription.');
+      }
+    },
+    [refresh]
+  );
+
+  const setSourceStatus = useCallback(
+    async (subscriptionId: string, status: 'PAUSED' | 'ACTIVE'): Promise<MoveResult> => {
+      try {
+        await api.patch(poolPath(subscriptionId), { status });
+        await refresh();
+        return { ok: true };
+      } catch (err) {
+        return fail(err, 'Could not change that setting.');
+      }
+    },
+    [refresh]
+  );
+  const pauseSubscriptionSaving = useCallback(
+    (id: string) => setSourceStatus(id, 'PAUSED'),
+    [setSourceStatus]
+  );
+  const resumeSubscriptionSaving = useCallback(
+    (id: string) => setSourceStatus(id, 'ACTIVE'),
+    [setSourceStatus]
+  );
+
+  const stopSubscriptionSaving = useCallback(
+    async (subscriptionId: string): Promise<MoveResult> => {
+      try {
+        await api.del(poolPath(subscriptionId));
+        await refresh();
+        return { ok: true };
+      } catch (err) {
+        return fail(err, 'Could not stop saving from that subscription.');
+      }
+    },
+    [refresh]
+  );
+
   // 24 fields rebuilt per render meant every provider render re-rendered
   // every consumer; the pieces are already memoized, so memoize the bag too.
   const value: SavingsContextValue = useMemo(
     () => ({
       goals,
+      pool,
       transactions,
       autoSave: autoSaveSettings,
       preview,
@@ -742,6 +939,10 @@ export function SavingsGoalsProvider({ children }: { children: ReactNode }) {
       moveBetweenGoals,
       setBuffer,
       setAutoSaveEnabled,
+      setSubscriptionSaving,
+      pauseSubscriptionSaving,
+      resumeSubscriptionSaving,
+      stopSubscriptionSaving,
       transactionsForGoal,
       totalSaved,
       savedThisMonth,
@@ -749,6 +950,7 @@ export function SavingsGoalsProvider({ children }: { children: ReactNode }) {
     }),
     [
       goals,
+      pool,
       transactions,
       autoSaveSettings,
       preview,
@@ -768,6 +970,10 @@ export function SavingsGoalsProvider({ children }: { children: ReactNode }) {
       moveBetweenGoals,
       setBuffer,
       setAutoSaveEnabled,
+      setSubscriptionSaving,
+      pauseSubscriptionSaving,
+      resumeSubscriptionSaving,
+      stopSubscriptionSaving,
       transactionsForGoal,
       totalSaved,
       savedThisMonth,

@@ -98,6 +98,7 @@ struct RootLayoutNav: View {
         case let .subscriptionDetail(id): SubscriptionDetailView(id: id)
         case .drainReview: DrainReviewView()
         case let .goalDetail(id): GoalDetailView(id: id)
+        case .subscriptionPool: SubscriptionPoolView()
         case let .bankDetail(itemId): BankDetailView(itemId: itemId)
         case .physicalCard: PhysicalCardView()
         case .physicalCardApproval: PhysicalCardApprovalView()
