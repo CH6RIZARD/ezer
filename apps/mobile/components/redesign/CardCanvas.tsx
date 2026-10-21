@@ -40,6 +40,7 @@ import { cardFinishes, cardBackFinishes, gradients, isDarkFinish, type CardFinis
 import { fontFamily, radius } from '../../theme/type';
 import CardChip from './CardChip';
 import { DoveMark } from '../DoveReveal';
+import { useAuth } from '../../utils/AuthContext';
 
 export const CARD_W = 308;
 export const CARD_H = 190;
@@ -53,12 +54,10 @@ const LOGO_INSET = 12;
  * The chip's well box (CardChip at its default size, 50x39) sits where a real
  * EMV chip does: ISO 7816-2 puts the contacts' centre ~17.6% across and ~43%
  * down an ID-1 card (owner, Oct 21 2026: "put the chip where it would really
- * be"; it was in the top-left corner). VirtualCard starts its number row
- * below CHIP_BOTTOM.
+ * be"; it was in the top-left corner).
  */
 export const CHIP_LEFT = 29;
 export const CHIP_TOP = 62;
-export const CHIP_BOTTOM = CHIP_TOP + 39;
 
 /**
  * The EZER logo for a card front, top right: the same DoveMark the lock
@@ -181,8 +180,24 @@ export function CardFrontFace({
   );
 }
 
-/** The LOCKED back: security printing — name, masked number, CVV, expiry. */
-export function CardBackFace({ finish }: { finish: CardFinish }) {
+/**
+ * The LOCKED back: security printing — name, masked number, CVV, expiry.
+ * Only what the server gave: an issued card's last4 and expiry, otherwise a
+ * fully masked number (it used to print an invented "8873"). The name is the
+ * cardholder's own, as on a real card. `note` says which card this is.
+ */
+export function CardBackFace({
+  finish,
+  last4,
+  expiry,
+  note = 'PHYSICAL · YOUR DESIGN',
+}: {
+  finish: CardFinish;
+  last4?: string;
+  expiry?: string;
+  note?: string;
+}) {
+  const { user } = useAuth();
   const backDark = isDarkFinish(finish);
   const backInk = backDark ? 'rgba(255,255,255,.92)' : '#241A38';
   const backSub = backDark ? 'rgba(255,255,255,.55)' : 'rgba(36,26,56,.55)';
@@ -204,7 +219,9 @@ export function CardBackFace({ finish }: { finish: CardFinish }) {
       <View style={styles.backBody} pointerEvents="none">
         <View style={styles.rowBetween}>
           <View style={[styles.nameBox, { backgroundColor: 'rgba(255,255,255,.92)' }]}>
-            <Text selectable={false} style={styles.nameBoxText}>EZER MEMBER</Text>
+            <Text selectable={false} numberOfLines={1} style={styles.nameBoxText}>
+              {(user?.name || 'EZER MEMBER').toUpperCase()}
+            </Text>
           </View>
           <View style={[styles.cvvBox, { backgroundColor: backBoxBg }]}>
             <Text selectable={false} style={[styles.cvvLabel, { color: backInk }]}>CVV</Text>
@@ -212,9 +229,18 @@ export function CardBackFace({ finish }: { finish: CardFinish }) {
           </View>
         </View>
         <View style={{ flex: 1 }} />
-        <Text selectable={false} style={[styles.backNumber, { color: backInk }]}>••••  ••••  ••••  8873</Text>
+        <View style={[styles.rowBetween, styles.numberRow]}>
+          <Text selectable={false} style={[styles.backNumber, { color: backInk }]}>
+            {`••••  ••••  ••••  ${last4 ?? '••••'}`}
+          </Text>
+          {expiry ? (
+            <Text selectable={false} style={[styles.backSub, { color: backSub }]}>
+              EXP <Text style={[styles.backExpiry, { color: backInk }]}>{expiry}</Text>
+            </Text>
+          ) : null}
+        </View>
         <View style={styles.rowBetween}>
-          <Text selectable={false} style={[styles.backSub, { color: backSub }]}>PHYSICAL · YOUR DESIGN</Text>
+          <Text selectable={false} style={[styles.backSub, { color: backSub }]}>{note}</Text>
           <Text selectable={false} style={[styles.backWordmark, { color: backGold }]}>EZER</Text>
         </View>
       </View>
@@ -416,6 +442,9 @@ const styles = StyleSheet.create({
     borderRadius: 6,
     paddingVertical: 8,
     paddingHorizontal: 12,
+    // A long name truncates instead of pushing the CVV box off the card.
+    flexShrink: 1,
+    marginRight: 10,
   },
   nameBoxText: {
     fontFamily: fontFamily.bold,
@@ -439,11 +468,18 @@ const styles = StyleSheet.create({
     fontFamily: fontFamily.medium,
     fontSize: 11,
   },
+  numberRow: {
+    marginBottom: 8,
+  },
   backNumber: {
     fontFamily: fontFamily.medium,
     fontSize: 14,
     letterSpacing: 1.6,
-    marginBottom: 8,
+  },
+  backExpiry: {
+    fontFamily: fontFamily.medium,
+    fontSize: 11,
+    letterSpacing: 1,
   },
   backSub: {
     fontFamily: fontFamily.bold,

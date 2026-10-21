@@ -109,6 +109,9 @@ private struct DigitColumn: View {
                     .frame(height: m.h)
             }
         }
+        // Its own width, centred and clipped by the column: offered the column's easing width,
+        // the strip laid its ten Texts out again on every frame of the roll.
+        .fixedSize()
         .offset(y: y)
         .frame(width: w + PAD * 2, height: m.h, alignment: .top)
         .clipped()

@@ -40,11 +40,9 @@ private let LOGO_INSET: CGFloat = 12
 
 /// The chip's well box (CardChip at its default size, 50x39) sits where a real EMV chip does:
 /// ISO 7816-2 puts the contacts' centre ~17.6% across and ~43% down an ID-1 card (owner, Oct 21
-/// 2026: "put the chip where it would really be"; it was in the top-left corner). VirtualCard
-/// starts its number row below CHIP_BOTTOM.
+/// 2026: "put the chip where it would really be"; it was in the top-left corner).
 let CHIP_LEFT: CGFloat = 29
 let CHIP_TOP: CGFloat = 62
-let CHIP_BOTTOM: CGFloat = CHIP_TOP + 39
 
 /**
  * The EZER logo for a card front, top right: the same DoveMark the lock screen and tabs draw.
@@ -113,13 +111,30 @@ struct CardFrontFace: View {
     }
 }
 
-/** The LOCKED back: security printing — name, masked number, CVV, expiry. */
+/**
+ * The LOCKED back: security printing — name, masked number, CVV, expiry.
+ * Only what the server gave: an issued card's last4 and expiry, otherwise a fully masked number
+ * (it used to print an invented "8873"). The name is the cardholder's own, as on a real card.
+ * `note` says which card this is.
+ */
 struct CardBackFace: View {
     let finish: CardFinish
+    var last4: String?
+    var expiry: String?
+    var note: String
 
-    init(finish: CardFinish) { self.finish = finish }
+    // Optional, so a face drawn outside the app's environment says "EZER MEMBER" instead of trapping.
+    @Environment(AuthStore.self) private var auth: AuthStore?
+
+    init(finish: CardFinish, last4: String? = nil, expiry: String? = nil, note: String = "PHYSICAL · YOUR DESIGN") {
+        self.finish = finish
+        self.last4 = last4
+        self.expiry = expiry
+        self.note = note
+    }
 
     var body: some View {
+        let name = auth?.user?.name ?? ""
         let backDark = isDarkFinish(finish)
         let backInk = Color(css: backDark ? "rgba(255,255,255,.92)" : "#241A38")
         let backSub = Color(css: backDark ? "rgba(255,255,255,.55)" : "rgba(36,26,56,.55)")
@@ -141,13 +156,15 @@ struct CardBackFace: View {
             // backBody: absoluteFill, top 58, padding 16, paddingTop 10
             VStack(alignment: .leading, spacing: 0) {
                 HStack(alignment: .center, spacing: 0) {
-                    Text("EZER MEMBER")
+                    // A long name truncates instead of pushing the CVV box off the card.
+                    Text((name.isEmpty ? "EZER MEMBER" : name).uppercased())
                         .font(.ezer(FontFamily.bold, 11))
                         .foregroundStyle(Color(css: "#241A38"))
+                        .lineLimit(1)
                         .padding(.vertical, 8)
                         .padding(.horizontal, 12)
                         .background(rnRect(6).fill(Color(css: "rgba(255,255,255,.92)")))
-                    Spacer(minLength: 0)
+                    Spacer(minLength: 10)
                     HStack(alignment: .center, spacing: 5) {
                         Text("CVV")
                             .font(.ezer(FontFamily.bold, 8))
@@ -160,16 +177,23 @@ struct CardBackFace: View {
                     .padding(.vertical, 8)
                     .padding(.horizontal, 10)
                     .background(rnRect(6).fill(backBoxBg))
+                    .fixedSize()
                 }
                 Spacer(minLength: 0)
-                Text("••••  ••••  ••••  8873")
-                    .font(.ezer(FontFamily.medium, 14))
-                    .tracking(1.6)
-                    .foregroundStyle(backInk)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.bottom, 8)
                 HStack(alignment: .center, spacing: 0) {
-                    Text("PHYSICAL · YOUR DESIGN")
+                    Text("••••  ••••  ••••  \(last4 ?? "••••")")
+                        .font(.ezer(FontFamily.medium, 14))
+                        .tracking(1.6)
+                        .foregroundStyle(backInk)
+                    Spacer(minLength: 0)
+                    if let expiry {
+                        Text("EXP ").font(.ezer(FontFamily.bold, 8)).tracking(1.1).foregroundStyle(backSub)
+                            + Text(expiry).font(.ezer(FontFamily.medium, 11)).tracking(1).foregroundStyle(backInk)
+                    }
+                }
+                .padding(.bottom, 8)
+                HStack(alignment: .center, spacing: 0) {
+                    Text(note)
                         .font(.ezer(FontFamily.bold, 8))
                         .tracking(1.1)
                         .foregroundStyle(backSub)

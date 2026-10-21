@@ -70,8 +70,14 @@ final class LockGateModel {
     @ObservationIgnored private var p1Busy = false
     @ObservationIgnored private var openAfterP1 = false
 
+    /// A cover put over an OPEN app (Control Centre, a notification, the app switcher, a quick app
+    /// switch) keeps the tabs mounted behind it. Unmounting them there threw away the Wallet's
+    /// cached totals, card and range on every return, so the next switches waited on the network
+    /// (Oct 21 2026). The keypad (`.locked`) still unmounts them: nothing of the tabs is under it.
+    private(set) var coverKeepsTabs = false
+
     var locked: Bool { phase != .open }
-    var warm: Bool { phase == .open || phase == .loading }
+    var warm: Bool { phase == .open || phase == .loading || (phase == .cover && coverKeepsTabs) }
     var showMark: Bool { phase == .cover || phase == .intro || phase == .loading }
     var waitSecs: Int { max(0, Int(ceil((lockedUntil - now) / 1000))) }
     var passcodeLength: Int { if case let .some(i) = info { return i.len }; return 4 }
@@ -111,6 +117,7 @@ final class LockGateModel {
 
     /// Writes the phase WITH its side effects; the layer is back to 1 for every covering phase.
     private func move(_ next: LockPhase) {
+        coverKeepsTabs = next == .cover && warm
         if next == .open || next == .loading { markLockWarm() }
         if next != .open { withoutAnimation { layer = 1 } }
         p1Busy = false

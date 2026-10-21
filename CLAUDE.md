@@ -145,6 +145,17 @@ style problem.
   `WalletSnapBehavior` only wraps it to learn of drag ends. The old port of
   RN's `snapToOffsets` maths plus `decelerationRate` UIScrollView poking is
   gone; don't bring it back.
+  **A pending target holds the index** (Oct 21 2026, "the total drained
+  animation has a delay"): a dot tap sets it (RN `dotTarget`, Swift
+  `refs.target`), and the midpoint commit skips until the scroll arrives.
+  Without it, the dot's own animated scroll was still nearest the OLD card
+  for its first half, so the index flipped back. The total rolled toward the
+  new card, back, then forward again ~150ms late. On iOS the release sets it
+  too: `updateTarget` already knows where the snap will rest
+  (`signals.targetX`), so the numbers switch at release, not ~100ms later
+  when the glide crosses the midpoint. Cleared on arrival, by the settle
+  commit (Swift) or by a finger on the carousel (RN `onTouchStart`). Nothing
+  scrolls on any of this. Don't remove the guard as a simplification.
 - **The Wallet's Custom range picker (`components/redesign/RangeCalendar.tsx`)
   is an overlay sheet with its OWN half-picked state, and applies once.** The
   Custom chip only opens it; `preset`/`rStart`/`rEnd` change in one batch in
@@ -239,13 +250,18 @@ style problem.
   puts it ~17.6% across and ~43% down) and the logo is small and tucked into
   the corner (`LOGO_W` 42, `LOGO_INSET` 12); owner, Oct 21 2026: "put the chip
   where it would really be and the EZER smaller and more in the corner". It
-  was chip top-left, logo 58 at 18. The Pay in 4 card's number row starts
-  below `CHIP_BOTTOM`, so moving the chip moves the number with it.
-  The Pay in 4 card (`VirtualCard`) draws its front WITH `CardFrontFace` and
-  the saved Card Studio design (payin4.tsx re-reads `loadCardDesign()` on
-  focus, Swift `refreshDesign()` on appear), with number/cardholder text on
-  top: "if you customize a card ... your pay in 4 tab reflects your design".
-  Don't give the Pay in 4 card a private front again. (The contactless mark that used to sit next to it
+  was chip top-left, logo 58 at 18.
+  The Pay in 4 card (`VirtualCard`) draws BOTH faces with `CardFrontFace` /
+  `CardBackFace` and the saved Card Studio design (payin4.tsx re-reads
+  `loadCardDesign()` on focus, Swift `refreshDesign()` on appear): "if you
+  customize a card ... your pay in 4 tab reflects your design". Nothing is
+  written on its front: the number / CARDHOLDER EZER MEMBER / STATUS PREVIEW
+  rows that sat on top of the design were "slop, the content is on the back"
+  (owner, Oct 21 2026). The back prints the cardholder's own name (`useAuth` /
+  `AuthStore`; "EZER MEMBER" only as a fallback) and only a number the server
+  gave: the issued last4 and expiry (`last4`/`expiry`), fully masked before
+  that. It printed an invented "8873" until then. Don't give the Pay in 4 card
+  a private face or put text back on its front. (The contactless mark that used to sit next to it
   was removed on request — and NO card anywhere in the app shows a
   contactless/NFC mark: VirtualCard, the Saved tab card, CreditCard and the
   Home tile's NfcTapIcon animation were all stripped of it on request too.
@@ -389,8 +405,8 @@ style problem.
   hand-copied implementation. Edit the physics there; `VirtualCard.tsx` and
   `PhysicalCardReview.tsx` should only ever supply front/back content to it.
 - **The Pay in 4 card has no tap-to-reveal** (`VirtualCard.tsx`, Swift
-  `VirtualCard.swift`). Issued: masked + last4, EXPIRES expiry. Preview:
-  masked, STATUS / PREVIEW. `GET /cards/highnote` returns only last4+expiry,
+  `VirtualCard.swift`). Issued: the back shows masked + last4 and EXP expiry.
+  Preview: fully masked, nothing else. `GET /cards/highnote` returns only last4+expiry,
   so an issued card's reveal did nothing, and the preview "revealed" an
   invented number (5312 7702 4401 8873, 09/29). A real reveal needs
   Highnote's PCI-scoped secure display, not a number in this app. Keep it.
@@ -801,6 +817,16 @@ style problem.
   setting. Only Home mounts under the passcode keypad with lazy tabs, which is
   what keeps the keypad responsive (`LockWarmContext` is still exported for
   anything that wants to wait for the unlock).
+  **A cover over an OPEN app keeps the tabs mounted** (`coverKeepsTabs` in
+  both LockGates, Oct 21 2026). iOS covers on every resign-active (Control
+  Centre, a notification, the app switcher), and unmounting the tabs there
+  threw the Wallet's breakdown cache, card and range away on each return. The
+  first switches after it then waited on the network, rolled up from $0.00,
+  and the screen was back on card 0 / This month. A return inside the grace
+  window now finds everything as left. The keypad (`locked`, past the grace)
+  still unmounts them, so nothing of the tabs is ever under it. That
+  teardown now runs as the keypad appears instead of while the app was away.
+  If first-digit time after a re-lock regresses on the k62, look there first.
 - **`useCardFlowStatus` must not set a fresh object on every focus.** It
   refreshes on every focus of Home; a new `access` object each time
   re-rendered the whole Home tree on every switch back. It keeps the previous
@@ -829,6 +855,10 @@ style problem.
   Top tickets screen. Columns size to each digit's
   measured width because Instrument Serif's figures are proportional; don't
   replace that with a fixed column width. Reuse it for other changing totals.
+  The STRIP inside a column is a different matter: it has a fixed width,
+  the widest digit's, centred and clipped by the column (RN style, Swift
+  `.fixedSize()`). Sized to the column, it laid out and re-measured its ten
+  Texts on every frame of the width easing.
 
 - **Idle loops must stop when their screen is hidden** (`useIsFocused` in
   SpinCard's float and `PulseRing`). The tabs stay mounted while hidden, and

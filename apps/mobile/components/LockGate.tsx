@@ -101,6 +101,12 @@ export default function LockGate({ children }: { children: React.ReactNode }) {
   const [phase, setPhase] = useState<Phase>('cover');
   const phaseRef = useRef(phase);
   phaseRef.current = phase;
+  // A cover put over an OPEN app (a quick app switch; on iOS also Control
+  // Centre, a notification, the app switcher) keeps the tabs mounted behind
+  // it. Unmounting them there threw away the Wallet's cached totals, card and
+  // range on every return, so the next switches waited on the network (Oct 21
+  // 2026). The keypad ('locked') still unmounts them: nothing is under it.
+  const [coverKeepsTabs, setCoverKeepsTabs] = useState(false);
   const infoRef = useRef(info);
   infoRef.current = info;
 
@@ -123,6 +129,8 @@ export default function LockGate({ children }: { children: React.ReactNode }) {
   // the re-render reads the phase it just set.
   const move = useCallback(
     (next: Phase) => {
+      const p = phaseRef.current;
+      setCoverKeepsTabs(k => next === 'cover' && (p === 'open' || p === 'loading' || (p === 'cover' && k)));
       if (next === 'open' || next === 'loading') markLockWarm();
       if (next !== 'open') layer.setValue(1);
       p1Busy.current = false;
@@ -412,7 +420,7 @@ export default function LockGate({ children }: { children: React.ReactNode }) {
   };
 
   const locked = phase !== 'open';
-  const warm = phase === 'open' || phase === 'loading';
+  const warm = phase === 'open' || phase === 'loading' || (phase === 'cover' && coverKeepsTabs);
   const showMark = phase === 'cover' || phase === 'intro' || phase === 'loading';
 
   // The approved render's proportions: the word is 0.517 of the screen width.

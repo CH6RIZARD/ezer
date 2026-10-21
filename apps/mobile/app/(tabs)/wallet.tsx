@@ -750,9 +750,20 @@ export default function WalletScreen() {
    * setIndex only fires when the nearest card actually changes, which is a few
    * times per swipe rather than once per frame — the breakdown below the
    * carousel would otherwise re-render on every scroll event.
+   *
+   * A dot's own animated scroll is exempt until it arrives (`dotTarget`): its
+   * first events are still nearest the OLD card, so the index flipped back
+   * and the total rolled toward the new card, back, then forward again
+   * ~150ms late (Oct 21 2026, "the total drained animation has a delay").
+   * A finger on the carousel hands control back.
    */
+  const dotTarget = useRef<number | null>(null);
   const handleScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
     const i = nearestIndex(e.nativeEvent.contentOffset.x);
+    if (dotTarget.current !== null) {
+      if (i !== dotTarget.current) return;
+      dotTarget.current = null;
+    }
     if (i !== indexRef.current) setIndex(i);
   };
 
@@ -791,6 +802,9 @@ export default function WalletScreen() {
               paddingTop: 18,
             }}
             onScroll={handleScroll}
+            onTouchStart={() => {
+              dotTarget.current = null;
+            }}
             onMomentumScrollBegin={IS_WEB ? undefined : cancelCommit}
             onMomentumScrollEnd={IS_WEB ? undefined : scheduleCommit}
             onScrollEndDrag={IS_WEB ? undefined : scheduleCommit}
@@ -827,6 +841,7 @@ export default function WalletScreen() {
                   key={c.id}
                   hitSlop={10}
                   onPress={() => {
+                    dotTarget.current = i;
                     setIndex(i);
                     carouselRef.current?.scrollTo({ x: cardOffset(i), animated: true });
                   }}

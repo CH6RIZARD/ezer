@@ -183,6 +183,10 @@ private final class WalletRefs {
     var settleTask: Task<Void, Never>?
     /// Between a drag's end and the commit: offset changes (the snap) reset the settle clock.
     var settling = false
+    /// The card `index` already points at while the scroll is still on its way there (a dot's
+    /// animated scroll, or a swipe's snap target at release). Midpoint commits wait until it
+    /// arrives: they flipped a dot tap back to the old card for ~140ms (Oct 21 2026).
+    var target: Int?
     /// rafRef: bumping it cancels a pending focus re-assert.
     var focusGen = 0
 }
@@ -193,18 +197,26 @@ private final class WalletRefs {
 @Observable
 private final class WalletCarouselSignals: @unchecked Sendable {
     @ObservationIgnored var x: CGFloat = 0
+    /// Where the release will come to rest, as scroll x.
+    @ObservationIgnored var targetX: CGFloat = 0
     var dragEnds = 0
 }
 
 /// SwiftUI's .viewAligned snapping, unchanged; wrapped only so a drag end (onScrollEndDrag) can
-/// start the settle clock.
+/// start the settle clock and commit the card the release is heading for.
 private struct WalletSnapBehavior: ScrollTargetBehavior {
     let signals: WalletCarouselSignals
 
     func updateTarget(_ target: inout ScrollTarget, context: TargetContext) {
         ViewAlignedScrollTargetBehavior(limitBehavior: .always).updateTarget(&target, context: context)
         let sig = self.signals
-        onNextRunLoop { sig.dragEnds += 1 }
+        // The rect is centred on the resting card whether or not it counts the side padding, so
+        // its centre gives scroll x (i * CARD_STEP) without knowing where the inset puts its origin.
+        let tx = target.rect.midX - WALLET_CARD_W / 2
+        onNextRunLoop {
+            sig.targetX = tx
+            sig.dragEnds += 1
+        }
     }
 }
 
@@ -498,8 +510,13 @@ struct WalletView: View {
                         // Commit the moment the offset crosses the midpoint between two cards, not
                         // after the glide settles: with every card prefetched, the numbers change
                         // while the card is still moving. The settle commit stays as the backstop.
+                        // A pending target (dot tap, release) holds the index until it arrives.
                         let mid = nearestIndex(x)
-                        if mid != index { index = mid }
+                        if let t = refs.target {
+                            if mid == t { refs.target = nil }
+                        } else if mid != index {
+                            index = mid
+                        }
                         // onMomentumScrollEnd: while the release settles, every move resets the clock.
                         if refs.settling { scheduleCommit(x) }
                     }
@@ -509,6 +526,11 @@ struct WalletView: View {
                 .scrollIndicators(.hidden)
                 .scrollTargetBehavior(WalletSnapBehavior(signals: signals))
                 .onChange(of: signals.dragEnds) {
+                    // The snap target is known at release: switch the numbers now, not when the
+                    // glide crosses the midpoint (~100ms later on a casual flick, Oct 21 2026).
+                    let t = nearestIndex(signals.targetX)
+                    refs.target = t
+                    if t != index { index = t }
                     // onScrollEndDrag: "maybe settled, reset the clock".
                     refs.settling = true
                     scheduleCommit(signals.x)
@@ -522,6 +544,11 @@ struct WalletView: View {
                     ForEach(Array(all.enumerated()), id: \.element.id) { i, c in
                         let on = i == index
                         Button {
+                            // Supersedes a swipe's pending settle commit, which would read the
+                            // offset the dot is leaving.
+                            refs.settleTask?.cancel()
+                            refs.settling = false
+                            refs.target = i
                             index = i
                             withAnimation { carouselProxy.scrollTo(c.id, anchor: .center) }
                         } label: {
@@ -739,6 +766,7 @@ struct WalletView: View {
             if Task.isCancelled { return }
             refs.settleTask = nil
             refs.settling = false
+            refs.target = nil
             let i = nearestIndex(offsetX)
             if i != index { index = i }
         }

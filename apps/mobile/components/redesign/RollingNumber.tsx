@@ -36,7 +36,10 @@ function DigitColumn({ digit, m, style, rollIn }: { digit: number; m: Metrics; s
   const strip = useAnimatedStyle(() => ({ transform: [{ translateY: y.value }] }));
   return (
     <Animated.View style={[styles.col, { height: m.h }, col]}>
-      <Animated.View style={strip}>
+      {/* A fixed width (the widest digit's, centred and clipped by the column):
+          sized to the column, the strip and its ten Texts were laid out and
+          re-measured again on every frame of the width easing. */}
+      <Animated.View style={[{ width: Math.max(...m.w) + PAD * 2 }, strip]}>
         {DIGITS.map(d => (
           <Text key={d} style={[style, styles.center, { height: m.h }]}>
             {d}
