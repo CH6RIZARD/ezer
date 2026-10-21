@@ -6,6 +6,12 @@ repo is edited from two places that drift apart.
 
 ## Every build is BOTH platforms, from one commit
 
+**How to build and install: `BUILD-AND-INSTALL.md` (repo root). Never Expo's
+cloud builds, never "buy EAS builds".** Android is `eas build --local` on
+GitHub Actions (free); the iPhone app is native SwiftUI built with xtool on a
+Vast box and installed through WSL. That file has every command and the fixes
+for each way the install broke on Oct 20 2026.
+
 The owner (Oct 12 2026): "anytime a build is created it has to build both the
 iOS and the Android build at once so that neither are differing in version".
 EZER ships as this RN app (Android) AND a native SwiftUI port for iPhone (built
