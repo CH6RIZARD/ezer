@@ -11,7 +11,8 @@
 //   3. how each goal is doing               (rings, tappable)
 //   4. what already happened                (activity)
 //
-// Every goal card opens its own detail screen; the hero actions open the shared MoveMoneySheet.
+// Every goal card opens its own detail screen; the hero actions (MoneyActions, the same row the goal
+// screen shows) open the shared MoveMoneySheet.
 // A row that shows a number the user cannot act on does not belong here.
 //
 // RN `shortDate` ("Sat, Aug 2") is declared in the .tsx but never used, so it is not ported.
@@ -108,6 +109,8 @@ struct SavingsView: View {
     @ViewBuilder
     private func content(_ c: ThemeColors, _ goals: [SavingsGoal]) -> some View {
         let transactions = savings.transactions
+        // Withdraw / Move and the activity rows reach Subscription savings too (the sheet offers it).
+        let movableGoals = savings.movableGoals
         let autoSave = savings.autoSave
         let totalSaved = savings.totalSaved
         let hasGoals = !goals.isEmpty
@@ -175,17 +178,12 @@ struct SavingsView: View {
                     }
                     .padding(.top, 14)
 
-                    HStack(alignment: .top, spacing: 8) {
-                        SavingsActionButton(icon: "add", iconSize: 16, title: "Add", primary: true, disabled: !hasGoals) {
-                            moveMode = .add
-                        }
-                        SavingsActionButton(icon: "arrow-up", iconSize: 15, title: "Withdraw", disabled: !hasGoals || totalSaved <= 0) {
-                            moveMode = .withdraw
-                        }
-                        SavingsActionButton(icon: "swap-horizontal", iconSize: 15, title: "Move", disabled: goals.count < 2 || totalSaved <= 0) {
-                            moveMode = .move
-                        }
-                    }
+                    MoneyActions(
+                        addDisabled: !hasGoals,
+                        withdrawDisabled: movableGoals.isEmpty || totalSaved <= 0,
+                        moveDisabled: movableGoals.count < 2 || totalSaved <= 0,
+                        onPick: { moveMode = $0 }
+                    )
                     .padding(.top, 16)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -263,7 +261,7 @@ struct SavingsView: View {
                 Surface {
                     VStack(alignment: .leading, spacing: 0) {
                         ForEach(Array(transactions.prefix(10).enumerated()), id: \.element.id) { i, t in
-                            txRow(t, i, goals, c)
+                            txRow(t, i, movableGoals, c)
                         }
                     }
                     .padding(.horizontal, 14 + 1)

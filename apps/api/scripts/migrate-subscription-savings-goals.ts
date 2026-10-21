@@ -8,9 +8,12 @@
 //
 // Idempotent: a migrated goal is CLOSED and no longer matches; a crash between
 // steps leaves a state the next run finishes. Money moves only through the
-// engine's internal move (ledger entries), never a balance overwrite. A goal
-// with in-flight transfers or money still inside the ACH return window is
-// skipped; rerun after it settles.
+// engine's internal move (ledger entries), never a balance overwrite. A deposit
+// still on its way follows the goal into the pool (it is booked IN_TRANSIT and
+// settles into whichever goal its row names). A goal with a withdrawal in
+// flight or money inside the ACH return window is skipped; rerun after it
+// settles. (Oct 21 2026: with no processor, a stub deposit stays SUBMITTED
+// forever, and skipping those left the old goal beside the pool for good.)
 
 import { prisma } from '@ezer/db';
 import {
@@ -51,22 +54,31 @@ async function main() {
 
     for (const goal of goals) {
       const sub = subFor(goal.name);
-      if (!sub) continue; // a user goal that merely ends in "savings"
+      if (!sub) {
+        // A user goal that merely ends in "savings", or a merchant renamed since.
+        console.log(`[no-match] user=${userId} goal=${goal.id} "${goal.name}"`);
+        continue;
+      }
 
-      const inFlight = await prisma.transfer.count({
-        where: { goalId: goal.id, status: { in: ['PENDING', 'SUBMITTED', 'POSTED'] } },
+      const IN_FLIGHT = ['PENDING', 'SUBMITTED', 'POSTED'] as const;
+      // A withdrawal already left this goal's ledger and a return would credit it back here: wait for it.
+      const outgoing = await prisma.transfer.count({
+        where: { goalId: goal.id, direction: 'CREDIT', status: { in: [...IN_FLIGHT] } },
+      });
+      const incoming = await prisma.transfer.count({
+        where: { goalId: goal.id, direction: 'DEBIT', status: { in: [...IN_FLIGHT] } },
       });
       const balance = await goalBalanceCents(userId, goal.id);
       const settled = await withdrawableCents(userId, goal.id);
-      if (inFlight > 0 || settled !== balance) {
-        console.log(`[skip] user=${userId} goal=${goal.id} "${goal.name}": in-flight=${inFlight} balance=${balance} settled=${settled}; rerun after it settles`);
+      if (outgoing > 0 || settled !== balance) {
+        console.log(`[skip] user=${userId} goal=${goal.id} "${goal.name}": withdrawals in flight=${outgoing} balance=${balance} settled=${settled}; rerun after it settles`);
         continue;
       }
 
       const price = sub.priceHistory[0]?.amountCents ?? null;
       const mode = goal.rule?.fixedAmountCents != null && goal.rule.fixedAmountCents === price ? 'MATCH' : 'HALF';
       const ended = sub.status === 'canceled';
-      console.log(`${DRY ? '[dry-run] ' : ''}user=${userId} goal=${goal.id} "${goal.name}" -> pool, sub=${sub.id} mode=${mode}${ended ? ' (ENDED)' : ''}, move ${balance}c`);
+      console.log(`${DRY ? '[dry-run] ' : ''}user=${userId} goal=${goal.id} "${goal.name}" -> pool, sub=${sub.id} mode=${mode}${ended ? ' (ENDED)' : ''}, move ${balance}c, carry ${incoming} deposit(s) in flight`);
       if (DRY) continue;
 
       const pool = await prisma.$transaction(async tx => {
@@ -90,7 +102,23 @@ async function main() {
       });
 
       if (balance > 0) await moveBetweenGoals(userId, goal.id, pool.id, balance);
-      await prisma.savingsGoal.update({ where: { id: goal.id }, data: { status: 'CLOSED' } });
+      const closed = await prisma.$transaction(async tx => {
+        await tx.transfer.updateMany({
+          where: { goalId: goal.id, direction: 'DEBIT', status: { in: [...IN_FLIGHT] } },
+          data: { goalId: pool.id },
+        });
+        // A deposit that settled after the move above credited this goal: don't close it with money inside.
+        const acct = await tx.internalAccount.findFirst({ where: { userId, kind: 'GOAL', goalId: goal.id } });
+        const left = acct
+          ? (await tx.savingsLedgerEntry.aggregate({ where: { accountId: acct.id }, _sum: { amountCents: true } }))._sum.amountCents ?? 0
+          : 0;
+        if (left !== 0) throw new Error(`still holds ${left}c; rerun to move it`);
+        await tx.savingsGoal.update({ where: { id: goal.id }, data: { status: 'CLOSED' } });
+      }).then(() => true, (err: Error) => {
+        console.log(`[skip] user=${userId} goal=${goal.id} "${goal.name}": ${err.message}`);
+        return false;
+      });
+      if (closed) console.log(`[done] user=${userId} goal=${goal.id} "${goal.name}" closed into pool ${pool.id}`);
     }
   }
 }

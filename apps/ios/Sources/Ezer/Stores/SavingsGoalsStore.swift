@@ -80,7 +80,10 @@ struct PoolSource: Hashable, Sendable, Identifiable {
 /// source is enabled, and whenever the API cannot say.
 struct SubscriptionPool: Hashable, Sendable {
     var goalId: String
-    /// DOLLARS: the sources' saved + pending + queued, summed (the ledger is 0 until ACH exists).
+    /// DOLLARS: the pool's ledger balance plus its sources' pending + queued. The ledger holds the
+    /// settled sweeps AND whatever was moved in or withdrawn (Withdraw / Move treat the pool like any
+    /// goal), so the sources' `saved` is already in it. Until ACH exists the ledger is 0 and this is
+    /// pending + queued.
     var saved: Double
     /// DOLLARS every ACTIVE source moves on its next charge, summed.
     var perCycle: Double
@@ -365,6 +368,28 @@ final class SavingsGoalsStore {
         }
     }
 
+    /// What Withdraw and Move pick from: `goals` plus the subscription pool (last, "Subscription
+    /// savings", its ledger figures). PATCH-NOTES-subscription-savings.md: "Withdraw / Move
+    /// (MoveMoneySheet) treat it like any goal": same server calls. Not for Add: the pool fills from
+    /// charges. Last, so the sheet still opens on a standard goal.
+    var movableGoals: [SavingsGoal] {
+        let standard = goals
+        guard let p = wireGoals.first(where: { $0.kind == "SUBSCRIPTION_POOL" && $0.status != "CLOSED" }) else {
+            return standard
+        }
+        return standard + [SavingsGoal(
+            id: p.id,
+            name: "Subscription savings",
+            targetAmount: 0,
+            currentAmount: toDollars(p.fundedCents),
+            withdrawable: toDollars(p.withdrawableCents),
+            icon: "repeat", // the Savings tab's pool row mark
+            color: theme.tokens.success,
+            autoSave: p.status == "ACTIVE",
+            status: p.status
+        )]
+    }
+
     var transactions: [SavingsTransaction] {
         transfers.map { t in
             SavingsTransaction(
@@ -398,7 +423,7 @@ final class SavingsGoalsStore {
         func totalCents(_ s: SubscriptionPoolWire.Source) -> Int { s.savedCents + s.pendingCents + s.queuedCents }
         return SubscriptionPool(
             goalId: goal.id,
-            saved: toDollars(w.sources.reduce(0) { $0 + totalCents($1) }),
+            saved: toDollars((goal.fundedCents ?? 0) + w.sources.reduce(0) { $0 + $1.pendingCents + $1.queuedCents }),
             perCycle: toDollars(w.sources.filter { $0.status == "ACTIVE" }.reduce(0) { $0 + $1.perChargeCents }),
             sources: w.sources.map { s in
                 PoolSource(
@@ -427,8 +452,8 @@ final class SavingsGoalsStore {
         )
     }
 
-    /// The pool's ledger balance stays 0 until an ACH processor exists, so it counts by its sources'
-    /// figure; the pool goal's own fundedCents is left out so nothing is counted twice.
+    /// The pool counts through `pool.saved` (its ledger balance plus what is still on its way), so its
+    /// own row is left out of `listed`: nothing counts twice.
     var totalSaved: Double {
         let listed = wireGoals.filter { $0.kind != "SUBSCRIPTION_POOL" }.reduce(0) { $0 + $1.fundedCents }
         return toDollars(listed) + (pool?.saved ?? 0)

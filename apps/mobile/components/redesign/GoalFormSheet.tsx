@@ -7,8 +7,9 @@
 //
 // Layout: the target leads, centred, with presets under it. The name field
 // carries the "look" chip (icon + colour, one small picker). Auto-save is a
-// full purple card with its own toggle; while the keyboard is up it shrinks to
-// a chip so you still see it's on, and Create docks above the decimal pad.
+// full purple card with its own toggle (AutoSaveCard, shared with the goal
+// screen); while the keyboard is up it shrinks to a chip so you still see
+// it's on, and Create docks above the decimal pad.
 // Create stays disabled until there is a name and a target above $0.
 //
 // There is NO auto-save amount or cadence here, by design. The user chooses
@@ -33,8 +34,6 @@ import {
   KeyboardAvoidingView,
   Keyboard,
   Platform,
-  Animated,
-  Easing,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { CameraDoveHost, DoveLoader } from '../CameraDove';
@@ -44,6 +43,7 @@ import { useSavingsGoals, type SavingsGoal } from '../../utils/SavingsGoalsConte
 import { fontFamily, motion } from '../../theme/type';
 import { themeKeys } from '../../theme/tokens';
 import { PressScale } from './Primitives';
+import AutoSaveCard from './AutoSaveCard';
 
 /** Icon set kept small on purpose — a 40-glyph grid is a chore, not a choice. */
 const ICON_CHOICES = [
@@ -88,8 +88,6 @@ function fitSize(txt: string, base = 96, max = 290): number {
   w *= base;
   return Math.round(w > max ? (base * max) / w : base);
 }
-
-const EASE = Easing.bezier(...motion.easeOut);
 
 /** The amount's caret: the real input is invisible, so the display draws its own. */
 function Caret({ color }: { color: string }) {
@@ -165,12 +163,6 @@ export default function GoalFormSheet({
       hide.remove();
     };
   }, []);
-
-  // Toggle knob: native-driven slide, easeOut.
-  const knob = useRef(new Animated.Value(autoSave ? 1 : 0)).current;
-  useEffect(() => {
-    Animated.timing(knob, { toValue: autoSave ? 1 : 0, duration: 220, easing: EASE, useNativeDriver: true }).start();
-  }, [autoSave, knob]);
 
   const targetAmount = Number(targetText.replace(/[^0-9.]/g, ''));
   const ok = name.trim().length > 0 && Number.isFinite(targetAmount) && targetAmount > 0;
@@ -416,39 +408,12 @@ export default function GoalFormSheet({
               </Pressable>
             </View>
           ) : (
-            <Pressable onPress={() => setAutoSaveOn(v => !v)} style={{ marginTop: 16 }}>
-              <LinearGradient
-                colors={on ? ([colors.accent, '#2A0F5C'] as const) : ([colors.bg2, colors.bg2] as const)}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={[styles.autoCard, { borderColor: on ? colors.accInk + '2E' : colors.line }]}
-              >
-                <View style={styles.autoHead}>
-                  <View style={[styles.autoBadge, { backgroundColor: on ? 'rgba(255,255,255,.14)' : colors.card }]}>
-                    <Ionicons name="sparkles" size={15} color={on ? '#FFFFFF' : colors.mut} />
-                  </View>
-                  <Text style={[styles.autoLabel, { color: on ? 'rgba(255,255,255,.72)' : colors.mut2 }]}>
-                    AUTOMATIC SAVING
-                  </Text>
-                  <View style={[styles.track, { backgroundColor: on ? colors.accInk : 'rgba(255,255,255,.12)' }]}>
-                    <Animated.View
-                      style={[
-                        styles.knob,
-                        {
-                          backgroundColor: on ? '#2A0F5C' : colors.mut2,
-                          transform: [{ translateX: knob.interpolate({ inputRange: [0, 1], outputRange: [0, 20] }) }],
-                        },
-                      ]}
-                    />
-                  </View>
-                </View>
-                <Text style={[styles.autoTitle, { color: on ? '#FFFFFF' : colors.ink }]}>Save automatically</Text>
-                <Text style={[styles.autoSub, { color: on ? 'rgba(255,255,255,.8)' : colors.mut }]}>
-                  We work out what you can spare from your checking balance and move it here. You never set
-                  an amount.
-                </Text>
-              </LinearGradient>
-            </Pressable>
+            <AutoSaveCard
+              on={on}
+              onToggle={() => setAutoSaveOn(v => !v)}
+              body="We work out what you can spare from your checking balance and move it here. You never set an amount."
+              style={{ marginTop: 16 }}
+            />
           )}
 
           {error !== null && <Text style={[styles.error, { color: colors.red }]}>{error}</Text>}
@@ -680,55 +645,6 @@ const styles = StyleSheet.create({
   autoChipText: {
     fontFamily: fontFamily.semibold,
     fontSize: 12.5,
-  },
-  autoCard: {
-    padding: 18,
-    borderRadius: 22,
-    borderWidth: 1,
-  },
-  autoHead: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 9,
-  },
-  autoBadge: {
-    width: 30,
-    height: 30,
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  autoLabel: {
-    flex: 1,
-    fontFamily: fontFamily.semibold,
-    fontSize: 10,
-    letterSpacing: 0.6,
-  },
-  track: {
-    width: 50,
-    height: 30,
-    borderRadius: 15,
-  },
-  knob: {
-    position: 'absolute',
-    top: 2,
-    left: 2,
-    width: 26,
-    height: 26,
-    borderRadius: 13,
-    boxShadow: '0 2px 6px rgba(0,0,0,.3)',
-  },
-  autoTitle: {
-    marginTop: 12,
-    fontFamily: fontFamily.serif,
-    fontSize: 28,
-    lineHeight: 31,
-  },
-  autoSub: {
-    marginTop: 6,
-    fontFamily: fontFamily.regular,
-    fontSize: 13,
-    lineHeight: 19,
   },
   error: {
     fontFamily: fontFamily.medium,

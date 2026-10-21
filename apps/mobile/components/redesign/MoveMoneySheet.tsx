@@ -9,6 +9,9 @@
 //   withdraw  goal                 →  linked bank account
 //   move      goal                 →  goal
 //
+// Withdraw and Move also offer Subscription savings (`movableGoals`), like any
+// goal. Add does not: the pool fills from charges.
+//
 // It lives in components/ rather than inside the Savings tab so the goal detail
 // screen opens the identical sheet — a withdrawal must not behave differently
 // depending on which screen the user started from.
@@ -67,13 +70,15 @@ export default function MoveMoneySheet({
 }) {
   const { colors } = useTheme();
   const {
-    goals,
+    goals: standardGoals,
+    movableGoals,
     checkingBalance,
     checkingLabel,
     depositToGoal,
     withdrawFromGoal,
     moveBetweenGoals,
   } = useSavingsGoals();
+  const goals = mode === 'add' ? standardGoals : movableGoals;
   const { openPlaidLink, isLoading: plaidLoading } = usePlaid();
 
   const [selectedGoalId, setSelectedGoalId] = useState<string | null>(null);

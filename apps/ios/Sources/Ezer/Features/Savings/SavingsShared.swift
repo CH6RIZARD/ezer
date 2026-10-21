@@ -1,6 +1,6 @@
 // Port of the small pieces the Savings group's files share:
 //   `const dollarsToCents = (d: number) => Math.round(d * 100);`   (savings.tsx, GoalDetail.tsx, MoveMoneySheet.tsx)
-//   the hero action buttons (`actionSlot`/`actionBtn`/`actionText`, identical in savings.tsx and GoalDetail.tsx)
+//   the hero action buttons (`actionSlot`/`actionBtn`/`actionText` in MoneyActions.tsx; the row is MoneyActions.swift)
 //   JS Number() / toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) as the .tsx files use them.
 //
 // Yoga note used throughout this folder: an RN border takes layout space, and padding sits INSIDE it,
@@ -105,7 +105,8 @@ struct SavingsCappedScroll<Content: View>: View {
 // MARK: - Hero actions
 
 /**
- * One of the hero's Add / Withdraw / Move buttons. savings.tsx and GoalDetail.tsx declare the same
+ * One of the hero's Add / Withdraw / Move buttons (drawn by MoneyActions, the one row both the Savings tab
+ * and the goal screen use). MoneyActions.tsx declares the
  * styles: actionSlot { flex: 1 }; actionBtn { row, centre, gap 6, paddingV 12, paddingH 4,
  * radius.button, minHeight layout.hitTarget }; actionText { bold 13 }. `primary` is the accent
  * "Add" button (#FFFFFF ink); the others are bg2 with a 1pt `line` border and `ink`.

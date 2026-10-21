@@ -9,6 +9,9 @@
 //   withdraw  goal                 →  linked bank account
 //   move      goal                 →  goal
 //
+// Withdraw and Move also offer Subscription savings (`movableGoals`), like any goal. Add does not:
+// the pool fills from charges.
+//
 // The goal detail screen opens the identical sheet — a withdrawal must not behave differently
 // depending on which screen the user started from.
 //
@@ -61,7 +64,7 @@ struct MoveMoneySheet: View {
     }
 
     var body: some View {
-        let goals = savings.goals
+        let goals = mode == .add ? savings.goals : savings.movableGoals
         Color.clear
             .frame(width: 0, height: 0)
             .rnModal(isPresented: visible, animationType: .slide, onRequestClose: onClose) {
@@ -97,7 +100,7 @@ private struct MoveMoneyContent: View {
 
     // MARK: derived (same order as the .tsx)
 
-    private var goals: [SavingsGoal] { savings.goals }
+    private var goals: [SavingsGoal] { mode == .add ? savings.goals : savings.movableGoals }
     private var sourceGoal: SavingsGoal? { goals.first { $0.id == selectedGoalId } }
     private var destGoal: SavingsGoal? { goals.first { $0.id == destGoalId } }
 

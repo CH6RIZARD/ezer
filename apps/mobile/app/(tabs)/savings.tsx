@@ -45,6 +45,7 @@ import {
 } from '../../components/redesign/Primitives';
 import ProgressRing from '../../components/redesign/ProgressRing';
 import MoveMoneySheet, { type MoveMode } from '../../components/redesign/MoveMoneySheet';
+import MoneyActions from '../../components/redesign/MoneyActions';
 import GoalFormSheet from '../../components/redesign/GoalFormSheet';
 import { useCameraDove } from '../../components/CameraDove';
 import StackedMarks from '../../components/redesign/StackedMarks';
@@ -62,6 +63,7 @@ export default function SavingsScreen() {
   const { colors } = useTheme();
   const {
     goals,
+    movableGoals,
     pool,
     transactions,
     autoSave,
@@ -132,7 +134,8 @@ export default function SavingsScreen() {
   const hasGoals = goals.length > 0;
   const { subscriptions } = useData();
 
-  const goalName = (id: string) => goals.find(g => g.id === id)?.name ?? 'Savings';
+  // movableGoals, so the pool's own transfers read "Subscription savings".
+  const goalName = (id: string) => movableGoals.find(g => g.id === id)?.name ?? 'Savings';
   const openGoal = (id: string) => router.push({ pathname: '/screens/GoalDetail', params: { id } });
 
   // --- goal card --------------------------------------------------------------
@@ -420,53 +423,16 @@ export default function SavingsScreen() {
               </View>
             </View>
 
-            <View style={styles.actions}>
-              <PressScale
-                onPress={() => setMoveMode('add')}
-                scaleTo={motion.pressScaleStrong}
-                style={styles.actionSlot}
-                disabled={!hasGoals}
-              >
-                <View style={[styles.actionBtn, { backgroundColor: colors.accent }]}>
-                  <Ionicons name="add" size={16} color="#FFFFFF" />
-                  <Text style={[styles.actionText, { color: '#FFFFFF' }]}>Add</Text>
-                </View>
-              </PressScale>
-
-              <PressScale
-                onPress={() => setMoveMode('withdraw')}
-                scaleTo={motion.pressScaleStrong}
-                style={styles.actionSlot}
-                disabled={!hasGoals || totalSaved <= 0}
-              >
-                <View
-                  style={[
-                    styles.actionBtn,
-                    { backgroundColor: colors.bg2, borderColor: colors.line, borderWidth: 1 },
-                  ]}
-                >
-                  <Ionicons name="arrow-up" size={15} color={colors.ink} />
-                  <Text style={[styles.actionText, { color: colors.ink }]}>Withdraw</Text>
-                </View>
-              </PressScale>
-
-              <PressScale
-                onPress={() => setMoveMode('move')}
-                scaleTo={motion.pressScaleStrong}
-                style={styles.actionSlot}
-                disabled={goals.length < 2 || totalSaved <= 0}
-              >
-                <View
-                  style={[
-                    styles.actionBtn,
-                    { backgroundColor: colors.bg2, borderColor: colors.line, borderWidth: 1 },
-                  ]}
-                >
-                  <Ionicons name="swap-horizontal" size={15} color={colors.ink} />
-                  <Text style={[styles.actionText, { color: colors.ink }]}>Move</Text>
-                </View>
-              </PressScale>
-            </View>
+            {/* Withdraw / Move reach Subscription savings too (the sheet
+                offers it); Add never does. */}
+            <MoneyActions
+              onPress={setMoveMode}
+              disabled={{
+                add: !hasGoals,
+                withdraw: movableGoals.length === 0 || totalSaved <= 0,
+                move: movableGoals.length < 2 || totalSaved <= 0,
+              }}
+            />
           </Surface>
 
           {/* --- autopilot -------------------------------------------------- */}
@@ -701,24 +667,6 @@ const styles = StyleSheet.create({
   statLabel: {
     fontFamily: fontFamily.regular,
     fontSize: 11,
-  },
-  actions: {
-    flexDirection: 'row',
-    gap: 8,
-    marginTop: 16,
-  },
-  actionSlot: {
-    flex: 1,
-  },
-  actionBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    paddingVertical: 12,
-    paddingHorizontal: 4,
-    borderRadius: radius.button,
-    minHeight: layout.hitTarget,
   },
   actionText: {
     fontFamily: fontFamily.bold,

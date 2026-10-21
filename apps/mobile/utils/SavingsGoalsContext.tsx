@@ -193,7 +193,12 @@ export interface PoolRecent {
 
 export interface SubscriptionPool {
   goalId: string;
-  /** DOLLARS: the sources' saved + pending + queued, summed (the ledger is 0 until ACH exists). */
+  /**
+   * DOLLARS: the pool's ledger balance plus its sources' pending + queued. The
+   * ledger holds the settled sweeps AND whatever was moved in or withdrawn
+   * (Withdraw / Move treat the pool like any goal), so the sources' `saved`
+   * is already in it. Until ACH exists the ledger is 0 and this is pending + queued.
+   */
   saved: number;
   /** DOLLARS every ACTIVE source moves on its next charge, summed. */
   perCycle: number;
@@ -244,6 +249,12 @@ export type NewGoalInput = {
 interface SavingsContextValue {
   /** STANDARD goals only; the subscription pool is `pool`. */
   goals: SavingsGoal[];
+  /**
+   * What Withdraw and Move pick from: `goals` plus the subscription pool (last,
+   * "Subscription savings", its ledger figures). Not for Add: the pool fills
+   * from charges.
+   */
+  movableGoals: SavingsGoal[];
   pool: SubscriptionPool | null;
   transactions: SavingsTransaction[];
   autoSave: AutoSaveSettings;
@@ -584,6 +595,29 @@ export function SavingsGoalsProvider({ children }: { children: ReactNode }) {
     [wireGoals, appearance, colors.accInk]
   );
 
+  // PATCH-NOTES-subscription-savings.md: "Withdraw / Move (MoveMoneySheet)
+  // treat it like any goal": same ledger figures, same server calls. Last, so
+  // the sheet still opens on a standard goal.
+  const movableGoals = useMemo<SavingsGoal[]>(() => {
+    const p = wireGoals.find(g => g.kind === 'SUBSCRIPTION_POOL' && g.status !== 'CLOSED');
+    if (!p) return goals;
+    return [
+      ...goals,
+      {
+        id: p.id,
+        name: 'Subscription savings',
+        targetAmount: 0,
+        currentAmount: toDollars(p.fundedCents),
+        withdrawable: toDollars(p.withdrawableCents),
+        // The Savings tab's pool row mark.
+        icon: 'repeat',
+        color: colors.success,
+        autoSave: p.status === 'ACTIVE',
+        status: p.status,
+      },
+    ];
+  }, [goals, wireGoals, colors.success]);
+
   const transactions = useMemo<SavingsTransaction[]>(
     () =>
       transfers.map(t => ({
@@ -616,7 +650,10 @@ export function SavingsGoalsProvider({ children }: { children: ReactNode }) {
       (s.savedCents ?? 0) + (s.pendingCents ?? 0) + (s.queuedCents ?? 0);
     return {
       goalId: wirePool.goal.id,
-      saved: toDollars(wire.reduce((a, s) => a + totalCents(s), 0)),
+      saved: toDollars(
+        (wirePool.goal.fundedCents ?? 0) +
+          wire.reduce((a, s) => a + (s.pendingCents ?? 0) + (s.queuedCents ?? 0), 0)
+      ),
       perCycle: toDollars(
         wire.filter(s => s.status === 'ACTIVE').reduce((a, s) => a + (s.perChargeCents ?? 0), 0)
       ),
@@ -647,9 +684,8 @@ export function SavingsGoalsProvider({ children }: { children: ReactNode }) {
     };
   }, [wirePool]);
 
-  // The pool's ledger balance stays 0 until an ACH processor exists, so it
-  // counts by its sources' figure instead; the pool goal's own fundedCents is
-  // left out so nothing is counted twice.
+  // The pool counts through `pool.saved` (its ledger balance plus what is still
+  // on its way), so its own row is left out of `listed`: nothing counts twice.
   const totalSaved = useMemo(() => {
     const listed = wireGoals
       .filter(g => g.kind !== 'SUBSCRIPTION_POOL')
@@ -919,6 +955,7 @@ export function SavingsGoalsProvider({ children }: { children: ReactNode }) {
   const value: SavingsContextValue = useMemo(
     () => ({
       goals,
+      movableGoals,
       pool,
       transactions,
       autoSave: autoSaveSettings,
@@ -950,6 +987,7 @@ export function SavingsGoalsProvider({ children }: { children: ReactNode }) {
     }),
     [
       goals,
+      movableGoals,
       pool,
       transactions,
       autoSaveSettings,

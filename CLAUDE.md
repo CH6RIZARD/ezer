@@ -604,10 +604,36 @@ style problem.
   auto-cancel) ends the source in the same transaction (`endSubscriptionSaving`).
 - Sources key on a bare `userId`: `DELETE /account` deletes sources+accruals
   explicitly and `/account/export` includes them.
-- Migration `20261020000000_subscription_savings_pool` is **NOT yet applied**
-  to the live DB (as of 2026-10-20). Apply it by hand before deploying the API
-  that uses it, then run `apps/api/scripts/migrate-subscription-savings-goals.ts`
-  (`--dry-run` first) under `railway run` to fold old "X savings" goals in.
+- Migration `20261020000000_subscription_savings_pool` HAS been applied to the
+  live DB (2026-10-21, a PrismaClient script under `railway run`, same as
+  money_check_constraints). After the API that uses it is live, run
+  `apps/api/scripts/migrate-subscription-savings-goals.ts` (`--dry-run` first)
+  under `railway run` to fold old "X savings" goals in. A deposit still in
+  flight follows its goal into the pool (it sits IN_TRANSIT and settles into
+  whichever goal its row names); skipping those left a goal with a stub
+  SUBMITTED deposit (no processor, so it never settles) beside the pool for good.
+- **Withdraw / Move reach the pool through `movableGoals`** (RN
+  `SavingsGoalsContext`, Swift `SavingsGoalsStore`): `goals` plus "Subscription
+  savings", last. Never add the pool to `goals`: the Savings tab rows and the
+  Autopilot share maths need it separate, and Add never offers it (it fills
+  from charges). `pool.saved` = the pool's ledger `fundedCents` + its sources'
+  pending + queued; moves, withdrawals and folded balances exist only in the
+  ledger, so don't go back to summing the sources' totals.
+
+## The goal screen
+
+- **The standard goal screen (`app/screens/GoalDetail.tsx`, Swift
+  `GoalDetailView.swift`) is composed from the owner's handoff designs**
+  (Oct 21 2026: "the goal UI for any individual saved goal is still old, not my
+  redesign UI"): the pool screen's header, hero, Recent rows and legal line,
+  the Savings tab's Add / Withdraw / Move row, and Goal 1a's AUTOMATIC SAVING
+  card. There is no separate mock for a standard goal; that composition IS the
+  design. Don't bring back the ProgressRing hero or the Switch row.
+- **`AutoSaveCard` and `MoneyActions` (RN `components/redesign/`, Swift
+  `Features/Savings/`) are the only copies of that card and that row.**
+  GoalFormSheet and the goal screen draw AutoSaveCard; the Savings tab and the
+  goal screen draw MoneyActions. Dimming disabled buttons is opt-in (`dim`,
+  goal screen only), so the Savings tab looks as it did. Don't hand-copy either.
 
 ## Inbox scanning (`apps/mobile/utils/inboxScan/`, `SCOPES.md`)
 

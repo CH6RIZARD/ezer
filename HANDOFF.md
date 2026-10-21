@@ -79,6 +79,8 @@ Highnote ID.
    Options discussed: a Highnote Prepaid/GPR product (no interest), Increase
    (account number per goal), Dwolla/Plaid Transfer (user's own checking →
    savings; easiest approval). Don't schedule a sweep against the stub.
+   Moov DECLINED (Oct 19 2026, Andy McIntire): no consumer fintech programs,
+   no issuing/program management/sponsor bank. Don't re-approach them.
 3. The Highnote installment snapshot never showed the settled $5 as a paid
    installment. Re-check after the BIWEEKLY cycle closes. Due dates in the app
    are derived (start + 14d·i), not taken from Highnote.

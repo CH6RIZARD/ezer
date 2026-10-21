@@ -6,9 +6,9 @@
 // component means a field added to creation cannot go missing from editing.
 //
 // Layout: the target leads, centred, with presets under it. The name field carries the "look" chip
-// (icon + colour, one small picker). Auto-save is a full purple card with its own toggle; while the
-// keyboard is up it shrinks to a chip, and Create docks above the decimal pad. Create stays disabled
-// until there is a name and a target above $0.
+// (icon + colour, one small picker). Auto-save is a full purple card with its own toggle (AutoSaveCard,
+// the same card the goal screen shows); while the keyboard is up it shrinks to a chip, and Create
+// docks above the decimal pad. Create stays disabled until there is a name and a target above $0.
 //
 // There is NO auto-save amount or cadence here, by design. The user chooses whether a goal saves
 // automatically; the SERVER's engine decides how much. Putting an amount field back would turn the
@@ -269,7 +269,12 @@ private struct GoalFormContent: View {
             if kbUp {
                 autoChip(c)
             } else {
-                autoCard(c).padding(.top, 16)
+                AutoSaveCard(
+                    on: autoSave,
+                    text: "We work out what you can spare from your checking balance and move it here. You never set an amount.",
+                    onToggle: { autoSave.toggle() }
+                )
+                .padding(.top, 16)
             }
 
             if let error {
@@ -476,61 +481,7 @@ private struct GoalFormContent: View {
         .rnShadow("#000000", opacity: 0.55, radius: 25, y: 24)
     }
 
-    // --- automatic saving: a full card at rest ---
-    private func autoCard(_ c: ThemeColors) -> some View {
-        let on = autoSave
-        let shape = rnRect(22)
-        return SavingsPressable(action: { autoSave.toggle() }) {
-            VStack(alignment: .leading, spacing: 0) {
-                HStack(alignment: .center, spacing: 9) {
-                    Ionicon("sparkles", size: 15, color: on ? Color(css: "#FFFFFF") : c.mut)
-                        .frame(width: 30, height: 30)
-                        .background(rnRect(10).fill(on ? Color(css: "rgba(255,255,255,.14)") : c.card))
-                    Text("AUTOMATIC SAVING")
-                        .font(.ezer(FontFamily.semibold, 10))
-                        .tracking(0.6)
-                        .foregroundStyle(on ? Color(css: "rgba(255,255,255,.72)") : c.mut2)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    Capsule()
-                        .fill(on ? c.accInk : Color(css: "rgba(255,255,255,.12)"))
-                        .frame(width: 50, height: 30)
-                        .overlay(alignment: .leading) {
-                            Circle()
-                                .fill(on ? Color(css: "#2A0F5C") : c.mut2)
-                                .frame(width: 26, height: 26)
-                                .rnShadow("#000000", opacity: 0.3, radius: 3, y: 2)
-                                .offset(x: on ? 22 : 2)
-                        }
-                        .animation(.rn(.easeOut, 220), value: on)
-                }
-                Text("Save automatically")
-                    .font(.ezer(FontFamily.serif, 28))
-                    .rnLineHeight(31, family: FontFamily.serif, size: 28)
-                    .foregroundStyle(on ? Color(css: "#FFFFFF") : c.ink)
-                    .padding(.top, 12)
-                Text("We work out what you can spare from your checking balance and move it here. You never set an amount.")
-                    .font(.ezer(FontFamily.regular, 13))
-                    .rnLineHeight(19, family: FontFamily.regular, size: 13)
-                    .foregroundStyle(on ? Color(css: "rgba(255,255,255,.8)") : c.mut)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.top, 6)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(18 + 1)
-            .background(
-                shape.fill(
-                    LinearGradient.rn(
-                        on ? [c.accent, Color(css: "#2A0F5C")] : [c.bg2, c.bg2],
-                        start: UnitPoint(x: 0, y: 0),
-                        end: UnitPoint(x: 1, y: 1)
-                    )
-                )
-            )
-            .overlay(shape.strokeBorder(on ? Color(css: theme.tokens.accInk + "2E") : c.line, lineWidth: 1))
-        }
-    }
-
-    // --- ...and a chip while typing, so you still see it's on ---
+    // --- automatic saving: a full card at rest (AutoSaveCard) and a chip while typing, so you still see it's on ---
     private func autoChip(_ c: ThemeColors) -> some View {
         let on = autoSave
         return SavingsPressable(action: { autoSave.toggle() }) {
