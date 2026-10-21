@@ -107,6 +107,8 @@ export default function LockGate({ children }: { children: React.ReactNode }) {
   // range on every return, so the next switches waited on the network (Oct 21
   // 2026). The keypad ('locked') still unmounts them: nothing is under it.
   const [coverKeepsTabs, setCoverKeepsTabs] = useState(false);
+  // A past-grace return: the cover has dropped the tabs, the keypad is next.
+  const [relock, setRelock] = useState(false);
   const infoRef = useRef(info);
   infoRef.current = info;
 
@@ -247,10 +249,21 @@ export default function LockGate({ children }: { children: React.ReactNode }) {
       leftAt.current = null;
       if (phaseRef.current !== 'cover') return;
       const grace = leftInFlow.current ? IN_APP_FLOW_GRACE_MS : LOCK_GRACE_MS;
-      move(mono < grace && wall >= 0 && wall < grace ? resumeTo.current : 'locked');
+      if (mono < grace && wall >= 0 && wall < grace) return move(resumeTo.current);
+      // Past the grace: the tabs come down behind the opaque cover first and
+      // the keypad follows in the next commit (the effect below), so none of
+      // the teardown lands in the keypad's commit (k62 first-digit time).
+      setCoverKeepsTabs(false);
+      setRelock(true);
     });
     return () => sub.remove();
   }, [move, markLeft]);
+
+  useEffect(() => {
+    if (!relock) return;
+    setRelock(false);
+    if (phaseRef.current === 'cover') move('locked');
+  }, [relock, move]);
 
   // --- lift the layer --------------------------------------------------------------
   const lift = useCallback(() => {

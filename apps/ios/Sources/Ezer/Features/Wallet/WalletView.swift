@@ -187,6 +187,9 @@ private final class WalletRefs {
     /// animated scroll, or a swipe's snap target at release). Midpoint commits wait until it
     /// arrives: they flipped a dot tap back to the old card for ~140ms (Oct 21 2026).
     var target: Int?
+    /// The closest the scroll has come to `target`. Both scrolls only ever close in, so moving
+    /// away means a finger took over, and the target is dropped.
+    var targetDist: CGFloat = .infinity
     /// rafRef: bumping it cancels a pending focus re-assert.
     var focusGen = 0
 }
@@ -358,8 +361,7 @@ struct WalletView: View {
     private var holderName: String {
         // The account holder's actual name, not a generic "EZER MEMBER" — a real linked card
         // branded with the app's name instead of the person who owns it reads as a demo card.
-        let n = auth.user?.name ?? ""
-        return n.isEmpty ? "EZER MEMBER" : n
+        auth.cardholderName
     }
 
     var body: some View {
@@ -513,10 +515,14 @@ struct WalletView: View {
                         // A pending target (dot tap, release) holds the index until it arrives.
                         let mid = nearestIndex(x)
                         if let t = refs.target {
-                            if mid == t { refs.target = nil }
-                        } else if mid != index {
-                            index = mid
+                            let d = abs(x - CGFloat(t) * CARD_STEP)
+                            if mid != t, d <= refs.targetDist + 2 {
+                                refs.targetDist = min(refs.targetDist, d)
+                            } else {
+                                refs.target = nil
+                            }
                         }
+                        if refs.target == nil, mid != index { index = mid }
                         // onMomentumScrollEnd: while the release settles, every move resets the clock.
                         if refs.settling { scheduleCommit(x) }
                     }
@@ -530,6 +536,7 @@ struct WalletView: View {
                     // glide crosses the midpoint (~100ms later on a casual flick, Oct 21 2026).
                     let t = nearestIndex(signals.targetX)
                     refs.target = t
+                    refs.targetDist = .infinity
                     if t != index { index = t }
                     // onScrollEndDrag: "maybe settled, reset the clock".
                     refs.settling = true
@@ -549,6 +556,7 @@ struct WalletView: View {
                             refs.settleTask?.cancel()
                             refs.settling = false
                             refs.target = i
+                            refs.targetDist = .infinity
                             index = i
                             withAnimation { carouselProxy.scrollTo(c.id, anchor: .center) }
                         } label: {
@@ -570,6 +578,7 @@ struct WalletView: View {
             // there is the jump the owner reported.
             .onChange(of: WalletFocusKey(focused: focused, count: all.count), initial: true) { _, k in
                 refs.focusGen += 1 // cleanup: cancelAnimationFrame
+                refs.target = nil
                 guard k.focused, k.count > 0 else { return }
                 let id = all[min(index, k.count - 1)].id
                 let gen = refs.focusGen

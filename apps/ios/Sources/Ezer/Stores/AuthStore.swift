@@ -102,6 +102,14 @@ final class AuthStore {
         user = u
     }
 
+    /// The name a card prints: the account's own, else "EZER MEMBER" (what Highnote issues a
+    /// nameless account's card under). A nameless account (Sign in with Apple can withhold the
+    /// name) carries its email's local part as `name`, which on a card printed a relay handle.
+    var cardholderName: String {
+        guard let u = user, !u.name.isEmpty, u.name != Self.emailLocal(u.email) else { return "EZER MEMBER" }
+        return u.name
+    }
+
     private static func emailLocal(_ email: String) -> String {
         String(email.split(separator: "@", omittingEmptySubsequences: false).first ?? "")
     }

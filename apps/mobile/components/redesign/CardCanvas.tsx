@@ -40,7 +40,7 @@ import { cardFinishes, cardBackFinishes, gradients, isDarkFinish, type CardFinis
 import { fontFamily, radius } from '../../theme/type';
 import CardChip from './CardChip';
 import { DoveMark } from '../DoveReveal';
-import { useAuth } from '../../utils/AuthContext';
+import { cardholderName, useAuth } from '../../utils/AuthContext';
 
 export const CARD_W = 308;
 export const CARD_H = 190;
@@ -220,7 +220,7 @@ export function CardBackFace({
         <View style={styles.rowBetween}>
           <View style={[styles.nameBox, { backgroundColor: 'rgba(255,255,255,.92)' }]}>
             <Text selectable={false} numberOfLines={1} style={styles.nameBoxText}>
-              {(user?.name || 'EZER MEMBER').toUpperCase()}
+              {cardholderName(user).toUpperCase()}
             </Text>
           </View>
           <View style={[styles.cvvBox, { backgroundColor: backBoxBg }]}>

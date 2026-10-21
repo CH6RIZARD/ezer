@@ -285,6 +285,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
+/**
+ * The name a card prints: the account's own, else EZER MEMBER (what Highnote
+ * issues a nameless account's card under). A nameless account (Sign in with
+ * Apple can withhold the name) carries its email's local part as `name`
+ * here, which on a card printed a Hide My Email relay handle.
+ */
+export function cardholderName(user: User | null): string {
+  return user?.name && user.name !== user.email.split('@')[0] ? user.name : 'EZER MEMBER';
+}
+
 export function useAuth() {
   const ctx = useContext(AuthContext);
   if (!ctx) throw new Error('useAuth must be used within AuthProvider');

@@ -28,7 +28,7 @@ import { router, useFocusEffect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../utils/ThemeContext';
-import { useAuth } from '../../utils/AuthContext';
+import { cardholderName, useAuth } from '../../utils/AuthContext';
 import { usePremiumGate } from '../../utils/usePremiumGate';
 import { usePremium } from '../../utils/PremiumContext';
 import { useData, type PredictedCharge } from '../../contexts/DataContext';
@@ -657,8 +657,11 @@ export default function WalletScreen() {
    */
   const indexRef = useRef(index);
   indexRef.current = index;
+  /** A dot's card and the closest its scroll has come so far (handleScroll). */
+  const dotTarget = useRef<{ i: number; d: number } | null>(null);
   useFocusEffect(
     useCallback(() => {
+      dotTarget.current = null;
       if (cards.length === 0) return;
       const i = Math.min(indexRef.current, cards.length - 1);
       // A single requestAnimationFrame fires before the tab's native surface
@@ -755,13 +758,19 @@ export default function WalletScreen() {
    * first events are still nearest the OLD card, so the index flipped back
    * and the total rolled toward the new card, back, then forward again
    * ~150ms late (Oct 21 2026, "the total drained animation has a delay").
-   * A finger on the carousel hands control back.
+   * That scroll only ever closes in on its card, so the moment the offset
+   * moves AWAY (a finger, a wheel, a clamp) the guard is dropped.
    */
-  const dotTarget = useRef<number | null>(null);
   const handleScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
-    const i = nearestIndex(e.nativeEvent.contentOffset.x);
-    if (dotTarget.current !== null) {
-      if (i !== dotTarget.current) return;
+    const x = e.nativeEvent.contentOffset.x;
+    const i = nearestIndex(x);
+    const t = dotTarget.current;
+    if (t) {
+      const d = Math.abs(x - cardOffset(t.i));
+      if (i !== t.i && d <= t.d + 2) {
+        t.d = Math.min(t.d, d);
+        return;
+      }
       dotTarget.current = null;
     }
     if (i !== indexRef.current) setIndex(i);
@@ -802,9 +811,6 @@ export default function WalletScreen() {
               paddingTop: 18,
             }}
             onScroll={handleScroll}
-            onTouchStart={() => {
-              dotTarget.current = null;
-            }}
             onMomentumScrollBegin={IS_WEB ? undefined : cancelCommit}
             onMomentumScrollEnd={IS_WEB ? undefined : scheduleCommit}
             onScrollEndDrag={IS_WEB ? undefined : scheduleCommit}
@@ -821,7 +827,7 @@ export default function WalletScreen() {
                 // The account holder's actual name, not a generic "EZER MEMBER"
                 // — a real linked card branded with the app's name instead of
                 // the person who owns it reads as a demo card.
-                holderName={user?.name || 'EZER MEMBER'}
+                holderName={cardholderName(user)}
                 width={CARD_W}
                 height={CARD_H}
                 style={WEB_SNAP_CHILD}
@@ -841,7 +847,7 @@ export default function WalletScreen() {
                   key={c.id}
                   hitSlop={10}
                   onPress={() => {
-                    dotTarget.current = i;
+                    dotTarget.current = { i, d: Infinity };
                     setIndex(i);
                     carouselRef.current?.scrollTo({ x: cardOffset(i), animated: true });
                   }}

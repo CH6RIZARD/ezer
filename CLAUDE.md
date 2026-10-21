@@ -153,9 +153,14 @@ style problem.
   new card, back, then forward again ~150ms late. On iOS the release sets it
   too: `updateTarget` already knows where the snap will rest
   (`signals.targetX`), so the numbers switch at release, not ~100ms later
-  when the glide crosses the midpoint. Cleared on arrival, by the settle
-  commit (Swift) or by a finger on the carousel (RN `onTouchStart`). Nothing
-  scrolls on any of this. Don't remove the guard as a simplification.
+  when the glide crosses the midpoint. Android keeps the midpoint commit for
+  swipes: RN never reports the native snap target (`onScrollEndDrag` carries
+  only velocity), and predicting `flingAndSnap` in JS would mis-commit. The
+  guard is dropped on arrival, or as soon as the offset moves AWAY from the
+  target: both scrolls only ever close in, so moving away means a finger, a
+  wheel or a clamp took over. The focus/count re-assert and the Swift settle
+  commit also clear it. Nothing scrolls on any of this. Don't remove the
+  guard as a simplification.
 - **The Wallet's Custom range picker (`components/redesign/RangeCalendar.tsx`)
   is an overlay sheet with its OWN half-picked state, and applies once.** The
   Custom chip only opens it; `preset`/`rStart`/`rEnd` change in one batch in
@@ -257,8 +262,12 @@ style problem.
   customize a card ... your pay in 4 tab reflects your design". Nothing is
   written on its front: the number / CARDHOLDER EZER MEMBER / STATUS PREVIEW
   rows that sat on top of the design were "slop, the content is on the back"
-  (owner, Oct 21 2026). The back prints the cardholder's own name (`useAuth` /
-  `AuthStore`; "EZER MEMBER" only as a fallback) and only a number the server
+  (owner, Oct 21 2026). The back prints the cardholder's own name
+  (`cardholderName`, in AuthContext / AuthStore, also used by the Wallet's
+  bank cards). A nameless account gets "EZER MEMBER", which is what Highnote
+  issues its card under. The clients fill a missing name with the email's
+  local part, which for Hide My Email is a relay handle, so a `name` equal to
+  that local part counts as no name. The back also prints only a number the server
   gave: the issued last4 and expiry (`last4`/`expiry`), fully masked before
   that. It printed an invented "8873" until then. Don't give the Pay in 4 card
   a private face or put text back on its front. (The contactless mark that used to sit next to it
@@ -825,8 +834,11 @@ style problem.
   and the screen was back on card 0 / This month. A return inside the grace
   window now finds everything as left. The keypad (`locked`, past the grace)
   still unmounts them, so nothing of the tabs is ever under it. That
-  teardown now runs as the keypad appears instead of while the app was away.
-  If first-digit time after a re-lock regresses on the k62, look there first.
+  teardown now happens on return instead of while the app was away, so it is
+  done in TWO steps: the flag drops while the opaque cover is still up (the
+  tabs come down behind it), and the keypad follows in the next commit (RN
+  `relock` effect, Swift `onNextRunLoop`). Don't fold them into one move:
+  then the keypad's commit carried the whole teardown (k62 first-digit time).
 - **`useCardFlowStatus` must not set a fresh object on every focus.** It
   refreshes on every focus of Home; a new `access` object each time
   re-rendered the whole Home tree on every switch back. It keeps the previous

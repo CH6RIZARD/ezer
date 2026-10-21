@@ -134,7 +134,7 @@ struct CardBackFace: View {
     }
 
     var body: some View {
-        let name = auth?.user?.name ?? ""
+        let name = auth?.cardholderName ?? "EZER MEMBER"
         let backDark = isDarkFinish(finish)
         let backInk = Color(css: backDark ? "rgba(255,255,255,.92)" : "#241A38")
         let backSub = Color(css: backDark ? "rgba(255,255,255,.55)" : "rgba(36,26,56,.55)")
@@ -157,7 +157,7 @@ struct CardBackFace: View {
             VStack(alignment: .leading, spacing: 0) {
                 HStack(alignment: .center, spacing: 0) {
                     // A long name truncates instead of pushing the CVV box off the card.
-                    Text((name.isEmpty ? "EZER MEMBER" : name).uppercased())
+                    Text(name.uppercased())
                         .font(.ezer(FontFamily.bold, 11))
                         .foregroundStyle(Color(css: "#241A38"))
                         .lineLimit(1)

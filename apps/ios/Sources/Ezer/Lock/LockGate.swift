@@ -303,7 +303,14 @@ final class LockGateModel {
         leftAt = nil
         if phase != .cover { return }
         let grace = leftInFlow ? IN_APP_FLOW_GRACE_MS : LOCK_GRACE_MS
-        move(mono < grace && wall >= 0 && wall < grace ? resumeTo : .locked)
+        if mono < grace && wall >= 0 && wall < grace { return move(resumeTo) }
+        // Past the grace: the tabs come down behind the opaque cover first and the keypad follows
+        // a run loop later, so none of the teardown lands in the keypad's first frames.
+        coverKeepsTabs = false
+        onNextRunLoop { [weak self] in
+            guard let self, self.phase == .cover else { return }
+            self.move(.locked)
+        }
     }
 
     /// Every way INTO the app goes through here: an unlock or a lift that finishes while the app is
