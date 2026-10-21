@@ -13,10 +13,16 @@ PORT=$(echo $SSH | awk '{print $2}'); HOST=$(echo $SSH | awk '{print $3}')
 KEY=~/.ssh/vast_ed25519
 SHA=$(git rev-parse --short HEAD)
 git log --oneline -1
-scp -q -i $KEY -o StrictHostKeyChecking=no -P $PORT scripts/box-ezer-build.sh $HOST:/root/ezer/build.sh
+# tr: a Windows checkout (core.autocrlf) gives the script CRLF endings, and on the box `set -eo pipefail\r`
+# dies with "pipefail: invalid option name"; the build then silently ships the PREVIOUS Ezer.ipa (Oct 16 2026).
+tr -d '\r' < scripts/box-ezer-build.sh | ssh -T -i $KEY -o StrictHostKeyChecking=no -p $PORT $HOST \
+  'cat > /root/ezer/build.sh && chmod +x /root/ezer/build.sh && bash -n /root/ezer/build.sh' 2>&1 | grep -vE "Welcome to vast|Have fun"
 git archive --format=tar HEAD apps/ios | ssh -T -i $KEY -p $PORT $HOST "bash /root/ezer/build.sh $SHA" 2>&1 \
   | grep -vE "Welcome to vast|Have fun"
 mkdir -p /e/tmp
+# A stale .ipa (the box's build died early) must never pass as a fresh one.
+ssh -T -i $KEY -p $PORT $HOST "find /root/ezer/Ezer.ipa -mmin -30 | grep -q ." 2>/dev/null \
+  || { echo "ERROR: /root/ezer/Ezer.ipa is older than 30 min; the box build did not produce a new one" >&2; exit 1; }
 scp -q -i $KEY -P $PORT $HOST:/root/ezer/Ezer.ipa /e/tmp/Ezer.ipa
 ls -la /e/tmp/Ezer.ipa
 echo 'Install: wsl -d Ubuntu -- bash -lic "mkdir -p ~/apps/ipa && cp /mnt/e/tmp/Ezer.ipa ~/apps/ipa/Ezer.ipa && cd ~/apps/ipa && timeout 1800 xtool install Ezer.ipa"'

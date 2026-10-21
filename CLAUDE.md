@@ -908,6 +908,17 @@ style problem.
   and its point cell differ in aspect by up to 0.5%, and the default cover
   crop shifted outer columns by ~5% of a cell, so a neighbouring frame's wing
   could show at the window's edge.
+  **Swift sprite windows carry `.transaction { $0.animation = nil }`** (DoveP1,
+  DoveFlight, CameraDoveView). THIS was the "two doves / 3 birds rolling after
+  the passcode" on iPhone (owner's recordings, Oct 14-16 2026), not the sheets:
+  the word's breathing runs in `withAnimation(900 ms)` and SwiftUI carried that
+  transaction into the TimelineView's update, so the sheet's cell offset was
+  interpolated between cells and for ~8 frames after every breath the clip
+  window sat across two cells, showing the tail of one bird and the head of the
+  next (frame-by-frame: one bird sliced vertically, the two halves apart, the
+  split sliding). Three sheet re-renders (1024 px, 8 exits) could not touch it;
+  Android never showed it (Reanimated styles inherit no transaction). Any new
+  SwiftUI sprite that steps cells needs the same modifier.
   Tabs end with `insets.bottom + layout.tabBottom` (176): room past the floating
   bar so a scroll doesn't stop dead on the last row (owner's request).
 
@@ -973,8 +984,9 @@ style problem.
   the body shrinks away while the bird fades in out of it and a stub
   retracts. `scripts`-free check: `E:\ezer-dove\loaders\work\drop_check.py`
   draws the same maths frame by frame; run it after changing the timeline.
-- **The loading bird is drawn ×1.15 over its rendered size** (`BIRD_K`, owner:
-  "15 percent bigger") on top of the 8.5% larger v3 renders.
+- **The loading bird is drawn ×1.15 × 1.22 ≈ ×1.40 over its rendered size**
+  (`BIRD_K`, owner: "15 percent bigger" Oct 14, then "22 percent bigger... it's
+  so small" Oct 15 2026) on top of the 8.5% larger v3 renders. Both apps.
 - **The tabs' EZER perch is empty while the camera dove is out**
   (`useCameraDoveOut` / `CameraDoveCenter.shared.run == nil` in `TabMark`):
   it is the same bird, and perched + flying read as two ("dupe birds in

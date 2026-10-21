@@ -195,8 +195,11 @@ export function CameraDoveHost({ nested = false }: { nested?: boolean }) {
 const SPAWN = 10;
 /** Frames of the "entered liquid" bump after the bird is in the camera. */
 const ENTRY = 12;
-/** The loading bird drawn 15% over its rendered size (owner, Oct 14 2026: "15 percent bigger"). */
-const BIRD_K = 1.15;
+/**
+ * The loading bird drawn over its rendered size: 15% (owner, Oct 14 2026: "15 percent
+ * bigger"), then 22% more on top (Oct 15 2026: "22 percent bigger... it's so small").
+ */
+const BIRD_K = 1.15 * 1.22;
 /** Frames over which an early exit blends from the running loop into the out clip. */
 const EXIT_BLEND = 6;
 const AnimatedPath = Animated.createAnimatedComponent(Path);

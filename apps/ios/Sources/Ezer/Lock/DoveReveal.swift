@@ -226,6 +226,8 @@ struct DoveFlight: View {
                            cols: DoveFrames.CELL.cols, rows: DoveFrames.CELL.rows, i: i, edge: edge)
                     // The cell window moves along the path.
                     .offset(x: DoveFrames.XY[i].0 * k, y: DoveFrames.XY[i].1 * k)
+                    // Sprite steps must not inherit the word fade's animation (see DoveP1).
+                    .transaction { $0.animation = nil }
             }
             .opacity(play ? 1 : 0)
             .allowsHitTesting(false)
@@ -410,6 +412,14 @@ struct DoveP1: View {
                             window(w, q: q, k: k)
                         }
                     }
+                    // NEVER animate a sprite step. The word's breathing runs in withAnimation(900 ms)
+                    // (LockGateModel.runMarkAnimation) and that transaction reached this update: the
+                    // sheet's cell offset was interpolated between cells, so for a few frames after each
+                    // breath the window sat across two cells and showed the tail of one bird and the head
+                    // of the next ("3 birds rolling", owner's Oct 14-16 2026 recordings, iPhone only;
+                    // Reanimated styles can't inherit a transaction, so Android never showed it). Three
+                    // re-renders of the sheets changed nothing, because the sheets were never the cause.
+                    .transaction { $0.animation = nil }
                     .onChange(of: done, initial: true) { _, d in if d { onExited() } }
                 }
             }
