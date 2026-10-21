@@ -7,7 +7,8 @@ cd /root/ezer
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
 apt-get install -y -qq curl ca-certificates gnupg git libcurl4-openssl-dev libxml2-dev libz3-dev pkg-config \
-  libpython3-dev libncurses-dev libedit2 libsqlite3-0 tzdata zip unzip zstd xz-utils file > /dev/null
+  libpython3-dev libncurses-dev libedit2 libsqlite3-0 tzdata zip unzip zstd xz-utils file \
+  binutils libc6-dev libgcc-13-dev libstdc++-13-dev > /dev/null  # linker + C runtime: a bare ubuntu:24.04 image has none
 if ! command -v swiftly > /dev/null && [ ! -x ~/.local/share/swiftly/bin/swiftly ]; then
   curl -fsSLO "https://download.swift.org/swiftly/linux/swiftly-$(uname -m).tar.gz"
   tar zxf "swiftly-$(uname -m).tar.gz"
